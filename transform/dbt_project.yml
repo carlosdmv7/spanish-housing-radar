@@ -1,0 +1,36 @@
+name: 'spanish_housing_radar'
+version: '1.0.0'
+config-version: 2
+
+profile: 'spanish_housing_radar'
+
+model-paths:  ["models"]
+macro-paths:  ["macros"]
+test-paths:   ["tests"]
+seed-paths:   ["seeds"]
+target-path:  "target"
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  # Increment this on each run — used as _run_id in Bronze models
+  run_id: "manual"
+
+models:
+  spanish_housing_radar:
+    bronze:
+      +schema: bronze
+      +materialized: incremental
+      +tags: ["bronze"]
+    silver:
+      +schema: silver
+      +materialized: table
+      +tags: ["silver"]
+    gold:
+      +schema: gold
+      +materialized: table
+      +tags: ["gold"]
+      rpt_opportunities:
+        +materialized: view     # always fresh — points to scored fact table
+
+# Ensure dbt uses schema prefixes (bronze_, silver_, gold_) in MotherDuck
+# by overriding generate_schema_name in macros/generate_schema_name.sql

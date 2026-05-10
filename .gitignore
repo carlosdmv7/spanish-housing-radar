@@ -1,0 +1,35 @@
+# ── Secrets ───────────────────────────────────────────────────────────────────
+.env
+*.token
+
+# ── Python ────────────────────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+
+# ── dbt ───────────────────────────────────────────────────────────────────────
+transform/profiles.yml          # contains token — use .env instead
+transform/target/
+transform/dbt_packages/
+transform/logs/
+
+# ── Streamlit ─────────────────────────────────────────────────────────────────
+.streamlit/secrets.toml
+
+# ── VSCode ────────────────────────────────────────────────────────────────────
+# Keep launch.json and settings.json (useful for team)
+.vscode/extensions.json
+
+# ── OS / WSL ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+
+# ── Data / raw files ──────────────────────────────────────────────────────────
+data/raw/
+*.duckdb

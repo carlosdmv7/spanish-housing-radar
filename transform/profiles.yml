@@ -1,0 +1,12 @@
+spanish_housing_radar:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "md:spanish_housing_radar?motherduck_token={{ env_var('MOTHERDUCK_TOKEN') }}"
+      threads: 4
+      # Schema names are controlled via dbt_project.yml + generate_schema_name macro
+    prod:
+      type: duckdb
+      path: "md:spanish_housing_radar?motherduck_token={{ env_var('MOTHERDUCK_TOKEN') }}"
+      threads: 8

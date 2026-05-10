@@ -1,0 +1,20 @@
+models:
+  - name: fct_listings_scored
+    columns:
+      - name: listing_id
+        tests: [unique, not_null]
+      - name: opportunity_score
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+      - name: deal_tier
+        tests:
+          - accepted_values:
+              values: ['great_deal','good_deal','fair','overpriced','very_overpriced']
+      - name: price_per_sqm
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 1
+              max_value: 50000
