@@ -31,5 +31,5 @@ Thumbs.db
 *.swp
 
 # ── Data / raw files ──────────────────────────────────────────────────────────
-data/raw/
+data/
 *.duckdb

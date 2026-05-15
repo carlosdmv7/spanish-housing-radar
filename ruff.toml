@@ -1,0 +1,88 @@
+# ruff.toml
+# Ruff configuration for spanish-housing-radar
+
+target-version = "py311"
+line-length = 100
+indent-width = 4
+
+# Folders/files Ruff should ignore
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".ruff_cache",
+    "data",
+    "logs",
+    "transform/target",
+    "transform/dbt_packages",
+]
+
+[lint]
+# Core rules:
+# E/W = pycodestyle
+# F = pyflakes
+# I = import sorting
+# B = bugbear
+# UP = pyupgrade
+# SIM = simplify
+# C4 = comprehensions
+# ARG = unused arguments
+# PTH = pathlib recommendations
+# PL = pylint-style checks
+select = [
+    "E",
+    "F",
+    "W",
+    "I",
+    "B",
+    "UP",
+    "SIM",
+    "C4",
+    "ARG",
+    "PTH",
+    "PL",
+]
+
+ignore = [
+    # Allow long exception messages / SQL strings where needed
+    "E501",
+
+    # Too many arguments/branches/statements can be noisy early in a project
+    "PLR0911",
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
+
+    # Allow magic values in scraper parsing logic for now
+    "PLR2004",
+
+    # Allow abstract methods with ellipsis
+    "B027",
+
+    # Allow unused method arguments in abstract/interface methods
+    "ARG002",
+]
+
+fixable = ["ALL"]
+unfixable = []
+
+[lint.per-file-ignores]
+# Scripts are allowed to use prints
+"scripts/*.py" = ["T201"]
+
+# dbt-related generated/helper files can be more flexible
+"transform/**/*.py" = ["ALL"]
+
+# Init files often only expose imports
+"__init__.py" = ["F401"]
+
+[lint.isort]
+known-first-party = ["extraction", "app"]
+combine-as-imports = true
+force-sort-within-sections = true
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"

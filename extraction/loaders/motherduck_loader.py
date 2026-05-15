@@ -16,13 +16,14 @@ from extraction.schemas.raw_listings import RawListing
 
 logger = logging.getLogger(__name__)
 
-# DDL executed once at startup to ensure the raw schema and tables exist
+
 _CREATE_SCHEMA_SQL = "CREATE SCHEMA IF NOT EXISTS raw;"
 
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS {table} (
     source_id           VARCHAR,
     source_name         VARCHAR,
+    raw_url             VARCHAR,
     raw_price_eur       DOUBLE,
     raw_operation_type  VARCHAR,
     raw_size_sqm        DOUBLE,
@@ -43,10 +44,22 @@ CREATE TABLE IF NOT EXISTS {table} (
 _UPSERT_SQL = """
 INSERT OR REPLACE INTO {table}
 SELECT
-    source_id, source_name, raw_price_eur, raw_operation_type,
-    raw_size_sqm, raw_rooms, raw_bathrooms, raw_property_type,
-    raw_lat, raw_lon, raw_municipality, raw_district, raw_neighborhood,
-    _loaded_at, _run_id
+    source_id,
+    source_name,
+    raw_url,
+    raw_price_eur,
+    raw_operation_type,
+    raw_size_sqm,
+    raw_rooms,
+    raw_bathrooms,
+    raw_property_type,
+    raw_lat,
+    raw_lon,
+    raw_municipality,
+    raw_district,
+    raw_neighborhood,
+    _loaded_at,
+    _run_id
 FROM df;
 """
 
@@ -59,43 +72,45 @@ class MotherDuckLoader:
         self.dry_run = dry_run
         self._conn: duckdb.DuckDBPyConnection | None = None
 
-    # ── Context manager ───────────────────────────────────────────────────────
-
     def __enter__(self) -> "MotherDuckLoader":
         if not self.dry_run:
             logger.info("Connecting to MotherDuck…")
             self._conn = duckdb.connect(MOTHERDUCK_DSN)
             self._conn.execute(_CREATE_SCHEMA_SQL)
+
         return self
 
     def __exit__(self, *_) -> None:
         if self._conn:
             self._conn.close()
 
-    # ── Public ────────────────────────────────────────────────────────────────
-
     def load(self, listings: list[RawListing], source_name: str) -> int:
         """
         Upsert listings into the correct raw table.
-        Returns the number of rows written (0 in dry-run mode).
+        Returns the number of rows written, or 0 in dry-run mode.
         """
         if not listings:
             logger.warning("No listings to load for source=%s", source_name)
             return 0
 
         table = RAW_TABLE_MAP.get(source_name)
+
         if not table:
-            raise ValueError(f"Unknown source: {source_name!r}. Add it to RAW_TABLE_MAP.")
+            raise ValueError(
+                f"Unknown source: {source_name!r}. Add it to RAW_TABLE_MAP."
+            )
 
         df = self._to_dataframe(listings)
 
         if self.dry_run:
             logger.info("[DRY RUN] Would load %d rows into %s", len(df), table)
-            print(df.head(3).to_string())
+            print(df.head(5).to_string())
             return 0
 
-        # Register df as a DuckDB relation so the UPSERT SQL can reference it
-        self._conn.register("df", df)  # type: ignore[union-attr]
+        if self._conn is None:
+            raise RuntimeError("MotherDuck connection is not initialised.")
+
+        self._conn.register("df", df)
         self._conn.execute(_CREATE_TABLE_SQL.format(table=table))
         self._conn.execute(_UPSERT_SQL.format(table=table))
         self._conn.unregister("df")
@@ -103,27 +118,31 @@ class MotherDuckLoader:
         logger.info("Loaded %d rows → %s", len(df), table)
         return len(df)
 
-    # ── Private ───────────────────────────────────────────────────────────────
-
     def _to_dataframe(self, listings: list[RawListing]) -> pd.DataFrame:
         now = datetime.now(tz=timezone.utc)
+
         rows = []
+
         for l in listings:
-            rows.append({
-                "source_id":           l.source_id,
-                "source_name":         l.source_name,
-                "raw_price_eur":       l.raw_price_eur,
-                "raw_operation_type":  l.raw_operation_type,
-                "raw_size_sqm":        l.raw_size_sqm,
-                "raw_rooms":           l.raw_rooms,
-                "raw_bathrooms":       l.raw_bathrooms,
-                "raw_property_type":   l.raw_property_type,
-                "raw_lat":             l.raw_lat,
-                "raw_lon":             l.raw_lon,
-                "raw_municipality":    l.raw_municipality,
-                "raw_district":        l.raw_district,
-                "raw_neighborhood":    l.raw_neighborhood,
-                "_loaded_at":          now,
-                "_run_id":             self.run_id,
-            })
+            rows.append(
+                {
+                    "source_id": l.source_id,
+                    "source_name": l.source_name,
+                    "raw_url": l.raw_url,
+                    "raw_price_eur": l.raw_price_eur,
+                    "raw_operation_type": l.raw_operation_type,
+                    "raw_size_sqm": l.raw_size_sqm,
+                    "raw_rooms": l.raw_rooms,
+                    "raw_bathrooms": l.raw_bathrooms,
+                    "raw_property_type": l.raw_property_type,
+                    "raw_lat": l.raw_lat,
+                    "raw_lon": l.raw_lon,
+                    "raw_municipality": l.raw_municipality,
+                    "raw_district": l.raw_district,
+                    "raw_neighborhood": l.raw_neighborhood,
+                    "_loaded_at": now,
+                    "_run_id": self.run_id,
+                }
+            )
+
         return pd.DataFrame(rows)

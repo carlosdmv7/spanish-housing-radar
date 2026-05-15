@@ -137,6 +137,12 @@ spanish-housing-radar/
 │   │   └── fotocasa.py         # Fotocasa HTML scraper
 │   └── loaders/
 │       └── motherduck_loader.py  # DuckDB client → MotherDuck upsert
+├── data/
+│   └── debug/
+│       └── idealista_search_madrid_sale.html
+│
+├── scripts/
+│   └── test_scrapfly_idealista.py
 │
 ├── transform/                  # dbt project
 │   ├── dbt_project.yml

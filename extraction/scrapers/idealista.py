@@ -1,15 +1,20 @@
 """
 Idealista HTML scraper.
 
-This scraper does not use the official Idealista API. It extracts listing URLs
-from public search pages and then parses each listing detail page.
+Strategy: search-card-only (no detail pages) → 1 Scrapfly credit per 30 listings.
+All fields extracted from the <article class="item"> card on search result pages.
 
-Keep the first version intentionally small:
-- limited pages
-- limited listings
-- slow request rate
-- no phone numbers
-- no personal/contact data
+Selector reference (Idealista 2026):
+  <article class="item">
+    <a class="item-link" href="/inmueble/12345678/" title="Piso en venta en Malasaña, Madrid">
+    <span class="item-price">350.000<span>€</span></span>
+    <div class="item-detail-char">
+      <span class="item-detail">3 hab.</span>
+      <span class="item-detail">90 m²</span>
+      <span class="item-detail">2 baños</span>
+    </div>
+    <p class="item-description">free-text description</p>
+  </article>
 """
 from __future__ import annotations
 
@@ -18,15 +23,15 @@ import re
 from typing import Iterator
 from urllib.parse import urljoin
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 from extraction.config import (
     IDEALISTA_BASE_URL,
     IDEALISTA_MAX_LISTINGS,
     IDEALISTA_MAX_SEARCH_PAGES,
-    IDEALISTA_SEARCH_URLS,
+    IDEALISTA_SELECTORS,
+    get_idealista_search_url,
 )
-from extraction.constants import IDEALISTA_SELECTORS
 from extraction.scrapers.base import AbstractScraper
 
 logger = logging.getLogger(__name__)
@@ -35,248 +40,194 @@ logger = logging.getLogger(__name__)
 class IdealistaScraper(AbstractScraper):
     source_name = "idealista"
 
+    # ── AbstractScraper interface ─────────────────────────────────────────────
+
     def _paginate(self, operation: str = "sale") -> Iterator[dict]:
-        search_url = IDEALISTA_SEARCH_URLS.get((self.province, operation))
+        search_url = get_idealista_search_url(self.province, operation)
+        logger.info("[idealista] Starting: province=%s op=%s url=%s", self.province, operation, search_url)
 
-        if not search_url:
-            raise ValueError(
-                f"No Idealista search URL configured for province={self.province!r}, "
-                f"operation={operation!r}. Add it to IDEALISTA_SEARCH_URLS in config.py."
-            )
-
-        listing_urls = self._collect_listing_urls(search_url)
-
-        logger.info(
-            "Collected %d Idealista listing URLs for province=%s operation=%s",
-            len(listing_urls),
-            self.province,
-            operation,
-        )
-
-        for idx, url in enumerate(listing_urls, start=1):
-            logger.info("Scraping listing %d/%d: %s", idx, len(listing_urls), url)
-
-            try:
-                response = self._get(url)
-            except Exception as exc:
-                logger.warning("Failed to fetch listing url=%s error=%s", url, exc)
-                continue
-
-            parsed = self._parse_listing_html(response.text, url=url, operation=operation)
-
-            if parsed:
-                yield parsed
-
-            self._polite_sleep()
-
-    def _collect_listing_urls(self, first_page_url: str) -> list[str]:
-        urls: list[str] = []
-        seen: set[str] = set()
-
+        yielded = 0
         for page in range(1, IDEALISTA_MAX_SEARCH_PAGES + 1):
-            page_url = self._build_search_page_url(first_page_url, page)
-
-            logger.info("Scraping Idealista search page %d: %s", page, page_url)
+            page_url = self._build_page_url(search_url, page)
+            logger.info("[idealista] Fetching page %d → %s", page, page_url)
 
             try:
-                response = self._get(page_url)
+                html = self._get_html(page_url)
             except Exception as exc:
-                logger.warning("Failed to fetch search page=%s error=%s", page_url, exc)
+                logger.warning("[idealista] Could not fetch page %d: %s", page, exc)
                 break
 
-            page_urls = self._parse_search_page(response.text, base_url=page_url)
-
-            logger.info("Found %d listing URLs on search page %d", len(page_urls), page)
-
-            if not page_urls:
+            if self._is_blocked(html):
+                logger.error(
+                    "[idealista] Anti-bot page detected. Set SCRAPFLY_ENABLED=true in .env."
+                )
                 break
 
-            for url in page_urls:
-                if url not in seen:
-                    seen.add(url)
-                    urls.append(url)
+            cards = self._parse_search_page(html, operation)
+            logger.info("[idealista] Page %d → %d valid cards", page, len(cards))
 
-                if len(urls) >= IDEALISTA_MAX_LISTINGS:
-                    return urls
+            if not cards:
+                break
+
+            for card in cards:
+                yield card
+                yielded += 1
+                if yielded >= IDEALISTA_MAX_LISTINGS:
+                    logger.info("[idealista] Hit IDEALISTA_MAX_LISTINGS=%d", IDEALISTA_MAX_LISTINGS)
+                    return
 
             self._polite_sleep()
-
-        return urls
-
-    @staticmethod
-    def _build_search_page_url(first_page_url: str, page: int) -> str:
-        if page == 1:
-            return first_page_url
-
-        return first_page_url.rstrip("/") + f"/pagina-{page}.htm"
-
-    def _parse_search_page(self, html: str, base_url: str) -> list[str]:
-        soup = BeautifulSoup(html, "lxml")
-
-        links = soup.select(IDEALISTA_SELECTORS["listing_link"])
-
-        urls = []
-        for link in links:
-            href = link.get("href")
-
-            if not href:
-                continue
-
-            absolute_url = urljoin(IDEALISTA_BASE_URL, href)
-
-            if "/inmueble/" not in absolute_url:
-                continue
-
-            urls.append(absolute_url)
-
-        return urls
 
     def _parse_listing(self, raw: dict) -> dict:
-        """
-        Required by AbstractScraper.
+        return raw  # search-card mode builds dicts directly
 
-        Not used directly because this scraper parses HTML pages rather than API dicts.
-        """
-        return raw
+    # ── Page → cards ──────────────────────────────────────────────────────────
 
-    def _parse_listing_html(self, html: str, url: str, operation: str) -> dict:
+    def _parse_search_page(self, html: str, operation: str) -> list[dict]:
         soup = BeautifulSoup(html, "lxml")
+        results = []
+        for card in soup.select(IDEALISTA_SELECTORS["search_card"]):
+            if card.select_one(".item-adv-label"):
+                continue  # skip promoted ads
+            parsed = self._parse_search_card(card, operation)
+            if parsed:
+                results.append(parsed)
+        return results
 
+    def _parse_search_card(self, card: Tag, operation: str) -> dict | None:
         try:
-            source_id = self._extract_source_id(url)
+            link_tag = card.select_one(IDEALISTA_SELECTORS["search_link"])
+            if not link_tag:
+                return None
 
-            price = self._extract_price(soup)
-            size_sqm = self._extract_size_sqm(soup)
+            href  = link_tag.get("href", "")
+            url   = urljoin(IDEALISTA_BASE_URL, href)
+            sid   = self._extract_id(url)
+            title = link_tag.get("title", "")
 
-            if price is None or size_sqm is None:
-                raise ValueError("Missing price or size")
+            if not sid:
+                return None
 
-            location_text = self._text_or_none(
-                soup.select_one(IDEALISTA_SELECTORS["location"])
-            )
+            price = self._extract_price(card)
+            if price is None:
+                return None
 
-            municipality, district, neighborhood = self._parse_location(location_text)
+            details = [
+                s.get_text(" ", strip=True)
+                for s in card.select(IDEALISTA_SELECTORS["search_details"])
+            ]
+
+            size = self._extract_size(details)
+            if size is None:
+                return None
+
+            muni, district, hood = self._parse_location(title, self.province)
 
             return {
-                "source_id": source_id,
-                "source_name": self.source_name,
-                "raw_url": url,
-                "raw_price_eur": price,
+                "source_id":          sid,
+                "source_name":        self.source_name,
+                "raw_url":            url,
+                "raw_price_eur":      price,
                 "raw_operation_type": operation,
-                "raw_size_sqm": size_sqm,
-                "raw_rooms": self._extract_rooms(soup),
-                "raw_bathrooms": self._extract_bathrooms(soup),
-                "raw_property_type": "home",
-                "raw_lat": None,
-                "raw_lon": None,
-                "raw_municipality": municipality or self.province,
-                "raw_district": district,
-                "raw_neighborhood": neighborhood,
+                "raw_size_sqm":       size,
+                "raw_rooms":          self._extract_rooms(details),
+                "raw_bathrooms":      self._extract_bathrooms(details),
+                "raw_property_type":  self._property_type(title),
+                "raw_lat":            None,
+                "raw_lon":            None,
+                "raw_municipality":   muni,
+                "raw_district":       district,
+                "raw_neighborhood":   hood,
             }
-
         except Exception as exc:
-            logger.debug("Could not parse listing url=%s error=%s", url, exc)
-            return {}
-
-    @staticmethod
-    def _extract_source_id(url: str) -> str:
-        match = re.search(r"/inmueble/(\d+)/", url)
-        if not match:
-            raise ValueError(f"Could not extract source_id from URL: {url}")
-        return match.group(1)
-
-    @staticmethod
-    def _extract_price(soup: BeautifulSoup) -> float | None:
-        price_node = soup.select_one(IDEALISTA_SELECTORS["price"])
-
-        if not price_node:
+            logger.debug("[idealista] Card parse error: %s", exc, exc_info=True)
             return None
 
-        text = price_node.get_text(" ", strip=True)
-
-        # Examples: "350.000 €", "1.250 €/mes"
-        match = re.search(r"([\d\.,]+)", text)
-
-        if not match:
-            return None
-
-        return float(match.group(1).replace(".", "").replace(",", "."))
+    # ── Field extractors ──────────────────────────────────────────────────────
 
     @staticmethod
-    def _extract_size_sqm(soup: BeautifulSoup) -> float | None:
-        feature_texts = [
-            node.get_text(" ", strip=True)
-            for node in soup.select(IDEALISTA_SELECTORS["features"])
-        ]
+    def _extract_price(card: Tag) -> float | None:
+        """
+        <span class="item-price">350.000<span>€</span></span>
+        Clone → strip child spans → parse the number text.
+        Spanish thousands separator is "." (no decimal part in prices).
+        """
+        tag = card.select_one(".item-price")
+        if not tag:
+            return None
+        clone = BeautifulSoup(str(tag), "lxml").select_one(".item-price")
+        for child in clone.find_all("span"):
+            child.decompose()
+        raw = clone.get_text(strip=True)
+        m = re.search(r"([\d\.]+)", raw)
+        if not m:
+            return None
+        return float(m.group(1).replace(".", ""))
 
-        for text in feature_texts:
-            normalized = text.lower().replace(".", "")
-            match = re.search(r"(\d+(?:,\d+)?)\s*m²", normalized)
-
-            if match:
-                return float(match.group(1).replace(",", "."))
-
+    @staticmethod
+    def _extract_size(details: list[str]) -> float | None:
+        for t in details:
+            m = re.search(r"(\d+(?:[,\.]\d+)?)\s*m[²2]", t, re.IGNORECASE)
+            if m:
+                return float(m.group(1).replace(",", "."))
         return None
 
     @staticmethod
-    def _extract_rooms(soup: BeautifulSoup) -> int | None:
-        feature_texts = [
-            node.get_text(" ", strip=True).lower()
-            for node in soup.select(IDEALISTA_SELECTORS["features"])
-        ]
-
-        for text in feature_texts:
-            match = re.search(r"(\d+)\s*(hab|habitaciones|dormitorios)", text)
-
-            if match:
-                return int(match.group(1))
-
+    def _extract_rooms(details: list[str]) -> int | None:
+        for t in details:
+            m = re.search(r"(\d+)\s*(?:hab\.?|habitaci[oó]nes?|dormitorios?)", t, re.IGNORECASE)
+            if m:
+                return int(m.group(1))
         return None
 
     @staticmethod
-    def _extract_bathrooms(soup: BeautifulSoup) -> int | None:
-        feature_texts = [
-            node.get_text(" ", strip=True).lower()
-            for node in soup.select(IDEALISTA_SELECTORS["features"])
-        ]
-
-        for text in feature_texts:
-            match = re.search(r"(\d+)\s*(baño|baños)", text)
-
-            if match:
-                return int(match.group(1))
-
+    def _extract_bathrooms(details: list[str]) -> int | None:
+        for t in details:
+            m = re.search(r"(\d+)\s*ba[ñn]os?", t, re.IGNORECASE)
+            if m:
+                return int(m.group(1))
         return None
 
     @staticmethod
-    def _parse_location(location_text: str | None) -> tuple[str | None, str | None, str | None]:
-        if not location_text:
-            return None, None, None
-
-        parts = [part.strip().lower() for part in location_text.split(",") if part.strip()]
-
-        # Idealista often shows things like:
-        # "Barrio de Salamanca, Madrid"
-        # "Russafa, València"
-        # "La Dreta de l'Eixample, Barcelona"
-        if len(parts) == 1:
-            return parts[0], None, None
-
-        if len(parts) == 2:
-            neighborhood = parts[0]
-            municipality = parts[1]
-            return municipality, None, neighborhood
-
-        neighborhood = parts[0]
-        district = parts[1]
-        municipality = parts[-1]
-
-        return municipality, district, neighborhood
+    def _property_type(title: str) -> str:
+        t = title.lower()
+        if any(k in t for k in ["chalet", "villa", "casa", "unifamiliar"]):
+            return "house"
+        if any(k in t for k in ["ático", "atico", "penthouse", "dúplex", "duplex"]):
+            return "penthouse"
+        if any(k in t for k in ["estudio", "studio", "loft"]):
+            return "studio"
+        return "apartment"
 
     @staticmethod
-    def _text_or_none(node) -> str | None:
-        if not node:
-            return None
+    def _parse_location(title: str, fallback: str) -> tuple[str, str | None, str | None]:
+        """
+        Title: "Piso en venta en Barrio Salamanca, Madrid"
+        → municipality="madrid", district=None, neighbourhood="barrio salamanca"
+        """
+        m = re.search(r"\ben\s+(?:venta|alquiler)\s+en\s+(.+)$", title, re.IGNORECASE)
+        loc = m.group(1).strip() if m else title
+        parts = [p.strip().lower() for p in loc.split(",") if p.strip()]
 
-        text = node.get_text(" ", strip=True)
-        return text or None
+        if not parts:         return fallback, None, None
+        if len(parts) == 1:   return parts[0], None, None
+        if len(parts) == 2:   return parts[1], None, parts[0]
+        return parts[-1], parts[1], parts[0]
+
+    @staticmethod
+    def _extract_id(url: str) -> str | None:
+        m = re.search(r"/inmueble/(\d+)/", url)
+        return m.group(1) if m else None
+
+    @staticmethod
+    def _build_page_url(base: str, page: int) -> str:
+        if page == 1:
+            return base
+        return base.rstrip("/") + f"/pagina-{page}.htm"
+
+    @staticmethod
+    def _is_blocked(html: str) -> bool:
+        signals = ["datadome", "please enable js", "captcha", "acceso denegado",
+                   "too many requests", "robot", "access denied"]
+        h = html.lower()
+        return any(s in h for s in signals)
