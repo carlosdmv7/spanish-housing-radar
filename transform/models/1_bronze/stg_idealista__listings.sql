@@ -10,26 +10,22 @@ with source as (
 
 renamed as (
     select
-        -- natural key from the portal
-        cast(id            as varchar)   as source_id,
-        'idealista'                      as source_name,
-        cast(price         as double)    as raw_price_eur,
-        cast(size          as double)    as raw_size_sqm,
-        cast(rooms         as integer)   as raw_rooms,
-        cast(bathrooms     as integer)   as raw_bathrooms,
-        lower(trim(propertyType))        as raw_property_type,
-        lower(trim(operation))           as raw_operation_type,  -- 'sale' | 'rent'
-        cast(latitude      as double)    as raw_lat,
-        cast(longitude     as double)    as raw_lon,
-        -- location hierarchy (denormalised for Bronze)
-        lower(trim(municipality))        as raw_municipality,
-        lower(trim(district))            as raw_district,
-        lower(trim(neighborhood))        as raw_neighborhood,
-        -- raw JSON blob kept for future field extraction
-        to_json(address)                 as raw_address_json,
-        -- pipeline metadata
-        current_timestamp                as _loaded_at,
-        '{{ var("run_id", "manual") }}'  as _run_id
+        source_id,
+        source_name,
+        raw_url,
+        raw_price_eur,
+        raw_operation_type,
+        raw_size_sqm,
+        raw_rooms,
+        raw_bathrooms,
+        raw_property_type,
+        raw_lat,
+        raw_lon,
+        lower(trim(raw_municipality))  as raw_municipality,
+        lower(trim(raw_district))      as raw_district,
+        lower(trim(raw_neighborhood))  as raw_neighborhood,
+        _loaded_at,
+        _run_id
     from source
 )
 

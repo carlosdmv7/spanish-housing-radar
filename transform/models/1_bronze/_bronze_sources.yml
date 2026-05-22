@@ -1,0 +1,8 @@
+version: 2
+
+sources:
+  - name: raw
+    database: spanish_housing_radar
+    schema: raw
+    tables:
+      - name: idealista_listings

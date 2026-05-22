@@ -227,7 +227,26 @@ class IdealistaScraper(AbstractScraper):
 
     @staticmethod
     def _is_blocked(html: str) -> bool:
-        signals = ["datadome", "please enable js", "captcha", "acceso denegado",
-                   "too many requests", "robot", "access denied"]
+        """
+        Detect a genuine Idealista block page.
+
+        Do NOT check for "captcha" or "datadome" — Idealista embeds DataDome
+        JS on every page including successful ones (confirmed via debug_scrapfly.py).
+        Only flag when hard block signals appear AND listings are absent.
+        """
         h = html.lower()
-        return any(s in h for s in signals)
+
+        # These strings only appear on real interstitial/block pages
+        hard_blocks = [
+            "please enable js and disable any ad blocker",
+            "acceso denegado",
+            "429 too many requests",
+        ]
+        if any(s in h for s in hard_blocks):
+            return True
+
+        # Short response with no article tags = wall page, not listings
+        if len(html) < 5_000 and "<article" not in h:
+            return True
+
+        return False

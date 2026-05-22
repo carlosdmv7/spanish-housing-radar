@@ -1,11 +1,11 @@
-# ── Core data stack ──────────────────────────────────────────────────────────
-duckdb==1.2.1
-dbt-duckdb==1.9.1
+# ── Core data stack ───────────────────────────────────────────────────────────
+duckdb==1.5.2          # MotherDuck requires >= 1.5.2
+dbt-duckdb==1.10.1
 dbt-core==1.9.5
 
 # ── Streamlit app ─────────────────────────────────────────────────────────────
-streamlit==1.57
-pydeck==0.9.1          # map component
+streamlit==1.44.1
+pydeck==0.9.1
 plotly==5.24.1
 pandas==2.2.3
 
@@ -16,14 +16,13 @@ lxml==5.3.0
 pydantic==2.10.6
 typer==0.15.1
 python-dotenv==1.0.1
-tenacity==9.0.0        # retry logic for scrapers
-beautifulsoup4
-lxml
-scrapfly-sdk
+tenacity==9.0.0
+
+# ── Scrapfly anti-bot SDK ─────────────────────────────────────────────────────
+scrapfly-sdk==0.10.3
 
 # ── Dev / quality ─────────────────────────────────────────────────────────────
 black==25.1.0
 ruff==0.9.9
 pytest==8.3.5
 pytest-mock==3.14.0
-astral-uv

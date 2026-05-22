@@ -2,7 +2,7 @@
 {{ config(materialized='table', schema='silver') }}
 
 -- DRY: the macro enforces the same price_per_sqm formula everywhere
-{% set sources = ['stg_idealista__listings', 'stg_fotocasa__listings'] %}
+{% set sources = ['stg_idealista__listings'] %}
 
 with unioned as (
     {% for model in sources %}

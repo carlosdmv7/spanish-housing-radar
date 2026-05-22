@@ -17,15 +17,15 @@ vars:
 
 models:
   spanish_housing_radar:
-    bronze:
+    1_bronze:
       +schema: bronze
       +materialized: incremental
       +tags: ["bronze"]
-    silver:
+    2_silver:
       +schema: silver
       +materialized: table
       +tags: ["silver"]
-    gold:
+    3_gold:
       +schema: gold
       +materialized: table
       +tags: ["gold"]

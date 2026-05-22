@@ -78,7 +78,7 @@ unfixable = []
 "__init__.py" = ["F401"]
 
 [lint.isort]
-known-first-party = ["extraction", "app"]
+known-first-party = ["extraction", "app", "shared"]
 combine-as-imports = true
 force-sort-within-sections = true
 
