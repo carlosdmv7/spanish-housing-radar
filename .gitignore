@@ -33,3 +33,5 @@ Thumbs.db
 # ── Data / raw files ──────────────────────────────────────────────────────────
 data/
 *.duckdb
+
+debug_output/
