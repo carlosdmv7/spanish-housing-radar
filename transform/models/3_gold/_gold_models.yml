@@ -1,7 +1,13 @@
+version: 2
+
 models:
   - name: fct_listings_scored
+    description: >
+      Final fact table combining current listings with neighborhood benchmarks
+      and opportunity scoring. Grain: one row per listing_pk.
+      Primary consumption layer for Streamlit and BI tools.
     columns:
-      - name: listing_id
+      - name: listing_pk
         tests: [unique, not_null]
       - name: opportunity_score
         tests:
@@ -11,10 +17,17 @@ models:
               max_value: 100
       - name: deal_tier
         tests:
+          - not_null
           - accepted_values:
-              values: ['great_deal','good_deal','fair','overpriced','very_overpriced']
-      - name: price_per_sqm
+              values: [great_deal, good_deal, fair, overpriced, very_overpriced]
+      - name: ppsqm_z_score
         tests:
           - dbt_utils.accepted_range:
-              min_value: 1
-              max_value: 50000
+              min_value: -3
+              max_value: 3
+
+  - name: rpt_opportunities
+    description: >
+      Filtered view of fct_listings_scored exposing only high-confidence listings.
+      Optimized for direct consumption in dashboards and opportunity alerts.
+      Not a new grain — subset of fct_listings_scored where low_confidence_flag = false.

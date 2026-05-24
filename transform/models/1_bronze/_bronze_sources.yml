@@ -4,5 +4,36 @@ sources:
   - name: raw
     database: spanish_housing_radar
     schema: raw
+    description: >
+      Append-only raw tables written by the extraction pipeline.
+      Never modified after insert — every scraping run adds new rows.
+
+    freshness:
+      warn_after: {count: 2, period: day}
+      error_after: {count: 7, period: day}
+    loaded_at_field: _loaded_at
+
     tables:
       - name: idealista_listings
+        description: Raw listings scraped from idealista.com, one row per listing per run.
+        columns:
+          - name: source_id
+            description: Idealista's internal listing ID (e.g. 109947740).
+            tests: [not_null]
+          - name: _run_id
+            description: Identifier of the extraction run that produced this row.
+            tests: [not_null]
+          - name: raw_price_eur
+            tests:
+              - not_null
+              - dbt_utils.accepted_range:
+                  min_value: 1
+                  max_value: 50000000
+
+      - name: fotocasa_listings
+        description: Raw listings scraped from fotocasa.es, one row per listing per run.
+        columns:
+          - name: source_id
+            tests: [not_null]
+          - name: _run_id
+            tests: [not_null]

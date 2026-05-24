@@ -1,0 +1,37 @@
+version: 2
+
+models:
+  - name: stg_idealista__listings
+    description: >
+      Cleaned and typed snapshot of every Idealista listing per run.
+      Grain: one row per (source_id, _run_id).
+      Adds snapshot_pk, listing_pk, and DQ flags.
+    columns:
+      - name: snapshot_pk
+        description: "Surrogate PK: source_name__source_id__run_id. Globally unique."
+        tests: [unique, not_null]
+      - name: listing_pk
+        description: "Stable listing identifier across runs: source_name__source_id."
+        tests: [not_null]
+      - name: operation_type
+        tests:
+          - accepted_values:
+              values: [sale, rent]
+      - name: dq_bad_price
+        tests: [not_null]
+      - name: dq_bad_size
+        tests: [not_null]
+
+  - name: stg_fotocasa__listings
+    description: >
+      Cleaned and typed snapshot of every Fotocasa listing per run.
+      Grain and columns identical to stg_idealista__listings.
+    columns:
+      - name: snapshot_pk
+        tests: [unique, not_null]
+      - name: listing_pk
+        tests: [not_null]
+      - name: operation_type
+        tests:
+          - accepted_values:
+              values: [sale, rent]

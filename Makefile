@@ -41,7 +41,7 @@ extract-dry: ## Dry-run: idealista madrid sale — validate without writing to M
 		--source idealista --city madrid --operation sale --dry-run
 
 .PHONY: extract
-extract: ## Single city (make extract CITY=barcelona SOURCE=idealista OP=rent)
+extract: ## Single city (make extract CITY=valencia SOURCE=idealista OP=sale/rent)
 	$(PYTHON) extraction/run_extraction.py \
 		--source    $(or $(SOURCE),idealista) \
 		--city      $(or $(CITY),madrid) \

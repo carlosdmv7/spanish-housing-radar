@@ -1,71 +1,51 @@
--- transform/models/silver/int_listings_unioned.sql
-{{ config(materialized='table', schema='silver') }}
+-- silver/int_listings_unioned.sql
+{{ config(materialized='incremental', unique_key='snapshot_pk', schema='silver') }}
 
--- DRY: the macro enforces the same price_per_sqm formula everywhere
-{% set sources = ['stg_idealista__listings'] %}
-
-with unioned as (
-    {% for model in sources %}
-    select
-        source_id,
-        source_name,
-        raw_price_eur,
-        raw_size_sqm,
-        raw_rooms,
-        raw_bathrooms,
-        raw_property_type,
-        raw_operation_type,
-        raw_lat,
-        raw_lon,
-        raw_municipality,
-        raw_district,
-        raw_neighborhood,
-        _loaded_at
-    from {{ ref(model) }}
-    where raw_price_eur > 0
-      and raw_size_sqm  > 0
-    {% if not loop.last %} union all {% endif %}
-    {% endfor %}
+with idealista as (
+    select * from {{ ref('stg_idealista__listings') }}
 ),
 
-deduped as (
-    -- keep the most recently loaded record per portal + id combination
-    select *,
-        row_number() over (
-            partition by source_name, source_id
-            order by _loaded_at desc
-        ) as _rn
-    from unioned
+fotocasa as (
+    select * from {{ ref('stg_fotocasa__listings') }}
 ),
 
-enriched as (
+all_sources as (
+    select * from idealista
+    union all
+    select * from fotocasa
+),
+
+cleaned as (
     select
-        {{ dbt_utils.generate_surrogate_key(['source_name', 'source_id']) }} as listing_id,
+        snapshot_pk,
+        listing_pk,
         source_id,
         source_name,
-        raw_price_eur                                    as price_eur,
-        raw_size_sqm                                     as size_sqm,
-        {{ price_per_sqm('raw_price_eur', 'raw_size_sqm') }} as price_per_sqm,
-        raw_rooms                                        as rooms,
-        raw_bathrooms                                    as bathrooms,
-        -- normalise property type across portals
-        case raw_property_type
-            when 'flat'        then 'apartment'
-            when 'apartment'   then 'apartment'
-            when 'penthouse'   then 'apartment'
-            when 'house'       then 'house'
-            when 'chalet'      then 'house'
+        url,
+        price_eur,
+        size_sqm,
+        round(price_eur / size_sqm, 2)   as price_per_sqm,
+        rooms,
+        bathrooms,
+        -- normalización cross-source aquí, no en cada stg_
+        case property_type
+            when 'flat'      then 'apartment'
+            when 'apartment' then 'apartment'
+            when 'penthouse' then 'apartment'
+            when 'house'     then 'house'
+            when 'chalet'    then 'house'
             else 'other'
-        end                                              as property_type,
-        raw_operation_type                               as operation_type,
-        raw_lat                                          as lat,
-        raw_lon                                          as lon,
-        raw_neighborhood                                 as neighborhood,
-        raw_district                                     as district,
-        raw_municipality                                 as municipality,
-        _loaded_at
-    from deduped
-    where _rn = 1
+        end                              as property_type,
+        operation_type,
+        lat, lon,
+        municipality, district, neighborhood,
+        scraped_date, _loaded_at, _run_id,
+        dq_bad_price, dq_bad_size, dq_extreme_ppsqm
+    from all_sources
+    {% if is_incremental() %}
+        where _loaded_at > (select max(_loaded_at) from {{ this }})
+    {% endif %}
 )
 
-select * from enriched
+select * from cleaned
+where not dq_bad_price and not dq_bad_size and not dq_extreme_ppsqm

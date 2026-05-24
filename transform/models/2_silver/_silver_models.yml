@@ -1,0 +1,60 @@
+version: 2
+
+models:
+  - name: int_listings_unioned
+    description: >
+      Union of all bronze staging models after DQ filtering.
+      Grain: one row per (source_id, _run_id) across all sources.
+      This is the single entry point for all downstream silver models.
+    columns:
+      - name: snapshot_pk
+        tests: [unique, not_null]
+      - name: listing_pk
+        tests: [not_null]
+      - name: price_per_sqm
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+              max_value: 50000
+
+  - name: int_listings_current
+    description: >
+      Latest valid snapshot per listing (current state).
+      Grain: one row per listing_pk.
+      Use this for pricing analysis, scoring, and maps.
+    columns:
+      - name: listing_pk
+        tests: [unique, not_null]
+      - name: property_type
+        tests:
+          - accepted_values:
+              values: [apartment, house, other]
+
+  - name: int_listings_history
+    description: >
+      All valid snapshots per listing across time.
+      Grain: one row per snapshot_pk.
+      Use this for price evolution and trend analysis.
+    columns:
+      - name: snapshot_pk
+        tests: [unique, not_null]
+
+  - name: int_neighborhood_stats
+    description: >
+      Pre-aggregated price benchmarks by neighborhood × operation × property_type.
+      Grain: one row per (municipality, neighborhood, operation_type, property_type).
+    columns:
+      - name: total_listings
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 1
+
+  - name: dim_neighborhoods
+    description: >
+      Master list of neighborhoods observed in the data.
+      Grain: one row per (municipality, neighborhood).
+      Will be enriched with INE codes and geodata when available.
+    columns:
+      - name: neighborhood_pk
+        tests: [unique, not_null]
