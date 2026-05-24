@@ -1,303 +1,213 @@
-# Spanish Housing Radar
+# Spanish Housing Radar — Conversation Context
 
-Identify real estate opportunities across Spain. The app compares any listing's price per m² against its neighbourhood median and surfaces an **Opportunity Score (0–100)** — so you can find undervalued properties at a glance.
+## What this is
+A real estate opportunity finder for Spain. Scrapes Idealista → loads into MotherDuck (DuckDB cloud) → transforms with dbt (Medallion architecture) → Streamlit dashboard with Opportunity Score (0–100).
 
-**Stack:** Python scrapers → MotherDuck (DuckDB cloud) → dbt Core (Medallion) → Streamlit
-
----
-
-## Architecture overview
-
-```
-Python scrapers  →  MotherDuck (raw)  →  dbt Bronze  →  dbt Silver  →  dbt Gold  →  Streamlit
-  Idealista             DuckDB cloud        raw layer      cleaned       scored        dashboard
-  Fotocasa
-  (+ future)
-```
-
-The three dbt layers follow the **Medallion architecture**:
-
-| Layer | Schema | Purpose |
-|-------|--------|---------|
-| Bronze | `bronze.*` | Raw data as-scraped, append/upsert only |
-| Silver | `silver.*` | Cleaned, normalised, deduplicated |
-| Gold | `gold.*` | Business-ready tables with Opportunity Score |
+**Stack:** Python + BeautifulSoup + Scrapfly → MotherDuck → dbt Core → Streamlit  
+**Environment:** WSL 2 Ubuntu, VSCode, Python 3.12, venv at `.venv/`
 
 ---
 
-## Prerequisites
-
-- **WSL 2** running Ubuntu 22.04+ (tested on Ubuntu 22.04 & 24.04)
-- **Python 3.11+** — check with `python3 --version`
-- **VSCode** with the [Remote - WSL](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-wsl) extension
-- A free **MotherDuck** account → [app.motherduck.com](https://app.motherduck.com)
-
-If Python 3.11+ is missing on your WSL:
-```bash
-sudo apt update && sudo apt install -y python3.11 python3.11-venv python3-pip
-```
-
----
-
-## Quick start (WSL + VSCode)
-
-### 1. Clone and open in VSCode
-
-```bash
-git clone https://github.com/your-org/spanish-housing-radar.git
-cd spanish-housing-radar
-code .          # opens the project in VSCode via WSL
-```
-
-VSCode will prompt you to install the recommended extensions (`.vscode/extensions.json`) — accept all.
-
-### 2. Create the virtual environment
-
-```bash
-make install
-```
-
-This runs:
-```
-python3 -m venv .venv
-pip install -r requirements.txt
-cp .env.example .env
-cp transform/profiles.yml.example transform/profiles.yml
-```
-
-VSCode will automatically detect `.venv` as your interpreter (set in `.vscode/settings.json`).
-If it doesn't: `Ctrl+Shift+P` → **Python: Select Interpreter** → pick `.venv/bin/python`.
-
-### 3. Add your MotherDuck token
-
-```bash
-# Get your token at: https://app.motherduck.com → Settings → Access Tokens
-nano .env
-```
-
-Set:
-```
-MOTHERDUCK_TOKEN=your_token_here
-```
-
-`transform/profiles.yml` reads this automatically via `{{ env_var('MOTHERDUCK_TOKEN') }}` — you don't need to paste it twice.
-
-### 4. Install dbt packages
-
-```bash
-source .venv/bin/activate
-make dbt-deps
-```
-
-### 5. Run your first extraction (dry run)
-
-```bash
-make extract-dry SOURCE=idealista PROVINCE=madrid
-```
-
-If you have Idealista API credentials (see [API access](#idealista-api-access)):
-```bash
-make extract SOURCE=idealista PROVINCE=madrid OP=sale
-```
-
-### 6. Transform with dbt
-
-```bash
-make transform        # runs bronze → silver → gold
-make test             # runs all dbt schema tests
-```
-
-### 7. Launch the Streamlit app
-
-**Option A — terminal:**
-```bash
-make app
-# Open http://localhost:8501 in your browser
-```
-
-**Option B — press F5 in VSCode** (uses `.vscode/launch.json` → "▶ Streamlit App")
-
-> WSL note: if your browser doesn't open automatically, navigate to `http://localhost:8501` manually. Port forwarding from WSL → Windows is automatic in modern WSL 2.
+## Current status
+- ✅ Extraction pipeline working end-to-end
+- ✅ 3 rows loaded in `raw.idealista_listings` in MotherDuck (Madrid, sale)
+- ✅ Scrapfly integrated (`asp=True`, `render_js=False` works for Idealista)
+- ✅ Makefile, requirements.txt, .env, VSCode launch.json all working
+- ⏳ **dbt models not created yet — this is the next step**
+- ⏳ Streamlit app scaffolded but not connected to real data
 
 ---
 
 ## Project structure
-
 ```
 spanish-housing-radar/
-│
-├── extraction/                 # Python extraction layer
-│   ├── config.py               # All settings from environment
-│   ├── run_extraction.py       # CLI entrypoint (also F5-runnable)
-│   ├── schemas/
-│   │   └── raw_listings.py     # Pydantic v2 validation before load
+├── extraction/
+│   ├── config.py                  # all settings from .env, dynamic URL builder
+│   ├── run_extraction.py          # Typer CLI: --source, --city, --all-cities, --all
+│   ├── aux_logger.py              # colored logging + rotating file handler
+│   ├── debug_scrapfly.py          # diagnostic script (do NOT run again, wastes credits)
 │   ├── scrapers/
-│   │   ├── base.py             # AbstractScraper (retry, rate limiting)
-│   │   ├── idealista.py        # Idealista API v3.5 (OAuth2)
-│   │   └── fotocasa.py         # Fotocasa HTML scraper
-│   └── loaders/
-│       └── motherduck_loader.py  # DuckDB client → MotherDuck upsert
-├── data/
-│   └── debug/
-│       └── idealista_search_madrid_sale.html
-│
-├── scripts/
-│   └── test_scrapfly_idealista.py
-│
-├── transform/                  # dbt project
+│   │   ├── base.py                # AbstractScraper, _get_html() dispatches Scrapfly/requests
+│   │   ├── idealista.py           # search-card parser, fixed _is_blocked()
+│   │   └── fotocasa.py            # __NEXT_DATA__ JSON first, CSS fallback
+│   ├── loaders/
+│   │   └── motherduck_loader.py   # context manager, INSERT OR REPLACE upsert
+│   └── schemas/
+│       └── raw_listings.py        # Pydantic v2 validation + price/sqm sanity check
+├── transform/                     # dbt project
 │   ├── dbt_project.yml
-│   ├── profiles.yml.example    # Copy to profiles.yml (git-ignored)
-│   ├── packages.yml            # dbt_utils, dbt_expectations
+│   ├── profiles.yml.example
+│   ├── packages.yml               # dbt_utils, dbt_expectations
 │   ├── macros/
-│   │   ├── generate_schema_name.sql  # Enforces bronze/silver/gold
-│   │   └── price_per_sqm.sql         # DRY formula
+│   │   ├── generate_schema_name.sql   # enforces exact names: bronze, silver, gold
+│   │   └── price_per_sqm.sql          # reusable macro
 │   └── models/
-│       ├── bronze/             # stg_idealista__listings, stg_fotocasa__listings
-│       ├── silver/             # int_listings_unioned, dim_neighborhoods
-│       └── gold/               # fct_listings_scored, rpt_opportunities
-│
-├── app/                        # Streamlit frontend
-│   ├── main.py                 # Entry point (F5 target)
-│   ├── connection.py           # Singleton MotherDuck connector
-│   ├── queries/                # .sql files — never inline SQL in Python
+│       ├── bronze/                # ⚠️ EMPTY — needs stg_idealista__listings.sql
+│       ├── silver/                # ⚠️ EMPTY — needs int_listings_unioned.sql etc
+│       └── gold/                  # ⚠️ EMPTY — needs fct_listings_scored.sql etc
+├── app/
+│   ├── main.py
+│   ├── connection.py              # st.cache_resource singleton
+│   ├── queries/
 │   │   ├── listings.sql
 │   │   └── neighborhood_stats.sql
 │   └── pages/
-│       ├── 1_Search.py         # Filters + Opportunity Score + map
-│       ├── 2_Market_Stats.py   # Neighbourhood price distributions
-│       └── 3_Affordability.py  # Mortgage calculator (Phase 2)
-│
+│       ├── 1_Search.py
+│       ├── 2_Market_Stats.py
+│       └── 3_Affordability.py
 ├── .vscode/
-│   ├── launch.json             # F5 = Streamlit, Shift+F5 = extraction
-│   ├── settings.json           # Interpreter, formatter, WSL tweaks
-│   └── extensions.json         # Recommended extensions
-│
-├── .env.example                # Template — copy to .env
+│   ├── launch.json                # F5 = Streamlit, dropdown = extraction/pytest
+│   └── settings.json
+├── .env.example
 ├── .gitignore
-├── Makefile                    # make install | extract | transform | app
+├── Makefile
 ├── requirements.txt
 └── README.md
 ```
 
 ---
 
-## VSCode F5 launch configurations
+## MotherDuck schema
 
-`.vscode/launch.json` contains three configurations selectable from the Run panel (`Ctrl+Shift+D`):
+**Database:** `spanish_housing_radar`  
+**Table:** `raw.idealista_listings` — 3 rows currently
 
-| Name | What it does |
-|------|--------------|
-| **▶ Streamlit App** | Starts the app on port 8501 |
-| **🔄 Run Extraction (Madrid)** | Runs `run_extraction.py` with `--dry-run` |
-| **🧪 Pytest** | Runs the Python test suite |
+```sql
+source_id           VARCHAR   -- PK composite with source_name
+source_name         VARCHAR   -- 'idealista'
+raw_url             VARCHAR   -- https://www.idealista.com/inmueble/{id}/
+raw_price_eur       DOUBLE
+raw_operation_type  VARCHAR   -- 'sale' | 'rent'
+raw_size_sqm        DOUBLE
+raw_rooms           INTEGER   -- nullable
+raw_bathrooms       INTEGER   -- nullable (not available on search cards)
+raw_property_type   VARCHAR   -- 'apartment' | 'house' | 'penthouse' | 'studio'
+raw_lat             DOUBLE    -- nullable (not available on search cards)
+raw_lon             DOUBLE    -- nullable (not available on search cards)
+raw_municipality    VARCHAR
+raw_district        VARCHAR   -- nullable
+raw_neighborhood    VARCHAR   -- nullable
+_loaded_at          TIMESTAMPTZ
+_run_id             VARCHAR
+```
 
-Switch between them in the dropdown at the top of the Run & Debug panel before pressing F5.
+Sample data:
+```
+109947740 | idealista | 2100000 | sale | 137m² | 3 rooms | madrid | goya          | piso en calle alcalá
+110438977 | idealista |  820000 | sale | 110m² | 4 rooms | madrid | sol           | piso en calle de la lechuga
+110632197 | idealista | 3150000 | sale | 332m² | 5 rooms | madrid | cuatro caminos | piso en calle de raimundo...
+```
 
 ---
 
-## Makefile reference
+## Key technical decisions already made
 
+**Scrapfly:** `asp=True`, `render_js=False` — sufficient for Idealista. DataDome is bypassed by ASP alone. `render_js=True` costs 25–29 credits vs 1 and is NOT needed.
+
+**`_is_blocked()` fix:** Only flags on literal string `"please enable js and disable any ad blocker"` or response <5KB with no `<article>` tag. Does NOT flag on `"captcha"` or `"datadome"` — these appear in Idealista's JS on every page including successful ones (this was the original bug).
+
+**Search-card-only:** No detail page requests. `raw_lat`, `raw_lon`, `raw_bathrooms` are NULL at this stage. Phase 2 will add detail-page enrichment.
+
+**Scrapfly credits:** ~805/1000 remaining on free tier (resets June 10). Keep `IDEALISTA_MAX_LISTINGS=30` and `IDEALISTA_MAX_SEARCH_PAGES=1` during dev. Each `make extract` call = 1 credit.
+
+**dbt schema names:** `generate_schema_name.sql` macro enforces exact names `bronze`, `silver`, `gold` in MotherDuck — not `dev_bronze` etc.
+
+**DuckDB version:** Must be `>=1.5.2` for MotherDuck compatibility.
+
+---
+
+## .env structure
 ```bash
-make install          # Create .venv + install deps + copy config templates
-make dbt-deps         # Install dbt packages (run once after install)
-make extract          # Run extraction (SOURCE=, PROVINCE=, OP= overrides)
-make extract-dry      # Dry-run — validates without writing to MotherDuck
-make transform        # Full dbt run: bronze → silver → gold
-make transform-bronze # Bronze models only (fast iteration)
-make test             # dbt test suite
-make transform-test   # dbt run + dbt test
-make app              # Launch Streamlit on :8501
-make pipeline         # Full nightly run: extract + transform + test
-make lint             # ruff
-make format           # black
-make pytest           # Python unit tests
+MOTHERDUCK_TOKEN=...
+MOTHERDUCK_DATABASE=spanish_housing_radar
+
+SCRAPFLY_ENABLED=true
+SCRAPFLY_API_KEY=...
+SCRAPFLY_ASP=true
+SCRAPFLY_COUNTRY=ES
+SCRAPFLY_RENDER_JS=false          # false is enough for Idealista
+
+IDEALISTA_MAX_SEARCH_PAGES=1      # keep low to save credits
+IDEALISTA_MAX_LISTINGS=30
+SCRAPER_DELAY_SECONDS=2
 ```
 
 ---
 
-## Opportunity Score explained
-
-The score (0–100) is a **Z-score** of a listing's price/m² relative to its neighbourhood, inverted and scaled:
-
+## requirements.txt key pins
 ```
-z_score   = (listing_ppsqm - neighbourhood_median_ppsqm) / neighbourhood_stddev_ppsqm
+duckdb==1.5.2          # MotherDuck requires >=1.5.2
+dbt-duckdb==1.10.1
+dbt-core==1.9.5
+streamlit==1.44.1
+scrapfly-sdk==0.10.3
+pydantic==2.10.6
+typer==0.15.1
+tenacity==9.0.0
+```
+
+---
+
+## Makefile commands
+```bash
+make extract CITY=madrid OP=sale   # extract one city (1 Scrapfly credit)
+make extract-dry                   # validate without writing (1 credit)
+make extract-all-cities            # all cities, one source
+make check-db                      # row counts in MotherDuck
+make dbt-deps                      # install dbt packages (once)
+make transform                     # dbt run: bronze → silver → gold
+make dbt-test                      # dbt test
+make app                           # streamlit run app/main.py :8501
+```
+
+---
+
+## Next step: build the dbt models
+
+The `transform/models/` directories exist but are completely empty. Need to create all SQL files.
+
+### Bronze
+**`stg_idealista__listings.sql`** — reads `raw.idealista_listings`, incremental on `_loaded_at`, safe casts, adds metadata. One staging model per source portal.
+
+### Silver
+**`int_listings_unioned.sql`** — UNION ALL across sources, dedup with `ROW_NUMBER()`, normalise property types, compute `price_per_sqm` via macro.  
+**`dim_neighborhoods.sql`** — distinct neighbourhood/municipality/district combinations.
+
+### Gold
+**`fct_listings_scored.sql`** — joins listings with neighbourhood stats, computes Z-score Opportunity Score 0–100.  
+**`rpt_neighborhood_stats.sql`** — pre-aggregated benchmark table (median, p25, p75, stddev per neighbourhood × operation × property_type). Materialised as `table`.  
+**`rpt_opportunities.sql`** — view on top of `fct_listings_scored`, filters `low_confidence=false`, Streamlit-ready.
+
+### Opportunity Score formula
+```sql
+z_score  = (price_per_sqm - neighbourhood_median_ppsqm) / neighbourhood_stddev_ppsqm
 z_clamped = GREATEST(-3, LEAST(3, z_score))
-score     = 50 - z_clamped × (50 / 3)
+score     = GREATEST(0, LEAST(100, 50 - z_clamped * (50.0 / 3.0)))
+-- 100 = very undervalued vs neighbourhood
+-- 50  = exactly at median
+-- 0   = very overpriced
+deal_tier: great_deal (≥75) | good_deal (≥55) | fair (≥45) | overpriced (≥25) | very_overpriced
 ```
 
-| Score range | Label | Meaning |
-|-------------|-------|---------|
-| 75–100 | Great deal | 1.5+ std below median |
-| 55–74 | Good deal | Below median |
-| 45–54 | Fair | At or near median |
-| 25–44 | Overpriced | Above median |
-| 0–24 | Very overpriced | 1.5+ std above median |
-
-Listings in neighbourhoods with fewer than 10 comparables are flagged `low_confidence = true` and excluded from the app until more data is collected.
-
----
-
-## Idealista API access
-
-The `IdealistaScraper` uses the official **Idealista API v3.5** which requires partner approval:
-
-1. Apply at [developers.idealista.com/access-request](https://developers.idealista.com/access-request)
-2. Add your credentials to `.env`:
-   ```
-   IDEALISTA_API_KEY=your_key
-   IDEALISTA_API_SECRET=your_secret
-   ```
-3. Without credentials, the scraper logs a warning and returns an empty set — the pipeline won't crash.
-
----
-
-## Adding a new data source (Phase 2 pattern)
-
-1. Create `extraction/scrapers/your_source.py` inheriting `AbstractScraper`
-2. Add it to `SCRAPER_REGISTRY` in `run_extraction.py`
-3. Add the raw table name to `RAW_TABLE_MAP` in `config.py`
-4. Create `transform/models/bronze/stg_your_source__listings.sql` with the same output columns as the existing staging models
-5. Add the new source to the `{% for model in sources %}` loop in `int_listings_unioned.sql`
-
-Silver and Gold models — including the Opportunity Score — pick it up automatically.
-
----
-
-## Running in production (GitHub Actions)
-
-`.github/workflows/daily_extract_and_transform.yml` runs the full pipeline on a cron:
-
+### dbt profiles.yml (transform/profiles.yml)
 ```yaml
-on:
-  schedule:
-    - cron: '0 6 * * *'   # 06:00 UTC daily
+spanish_housing_radar:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "md:spanish_housing_radar?motherduck_token={{ env_var('MOTHERDUCK_TOKEN') }}"
+      threads: 4
 ```
+`DBT_PROFILES_DIR=./transform` is set in `.env`.
 
-Secrets to add in your GitHub repo settings:
-- `MOTHERDUCK_TOKEN`
-- `IDEALISTA_API_KEY`
-- `IDEALISTA_API_SECRET`
-
----
-
-## Troubleshooting (WSL)
-
-**`python3: command not found`**
-```bash
-sudo apt install python3.11 python3.11-venv
-```
-
-**VSCode doesn't see the `.venv` interpreter**
-Press `Ctrl+Shift+P` → *Python: Select Interpreter* → *Enter interpreter path* → `./.venv/bin/python`
-
-**Port 8501 not reachable in Windows browser**
-WSL 2 forwards ports automatically. If it doesn't work, run `wsl hostname -I` to get the WSL IP and navigate to `http://<IP>:8501`.
-
-**MotherDuck connection timeout**
-Check that your `MOTHERDUCK_TOKEN` in `.env` is correct and not expired. Tokens can be regenerated at [app.motherduck.com](https://app.motherduck.com) → Settings.
-
-**dbt can't find `profiles.yml`**
-```bash
-export DBT_PROFILES_DIR=$(pwd)/transform
-# or add to .env: DBT_PROFILES_DIR=./transform
+### _sources.yml for Bronze
+```yaml
+sources:
+  - name: raw
+    database: spanish_housing_radar
+    schema: raw
+    tables:
+      - name: idealista_listings
+      - name: fotocasa_listings
 ```
