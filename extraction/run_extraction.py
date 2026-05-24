@@ -135,7 +135,7 @@ def main(
         logger.warning("No jobs to run.")
         raise typer.Exit(0)
 
-    run_id = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    run_id = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d_%H:%M:%S")
     total_rows = 0
     failed_jobs: list[tuple[str, str, str]] = []
 

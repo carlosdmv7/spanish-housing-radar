@@ -2,7 +2,7 @@
 {{ config(materialized='view', schema='gold') }}
 
 select
-    listing_id,
+    listing_pk,
     source_name,
     municipality,
     district,

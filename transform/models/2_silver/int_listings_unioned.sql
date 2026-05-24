@@ -5,14 +5,14 @@ with idealista as (
     select * from {{ ref('stg_idealista__listings') }}
 ),
 
-fotocasa as (
-    select * from {{ ref('stg_fotocasa__listings') }}
-),
+-- fotocasa as (
+--     select * from {{ ref('stg_fotocasa__listings') }}
+-- ),
 
 all_sources as (
     select * from idealista
-    union all
-    select * from fotocasa
+    -- union all
+    -- select * from fotocasa
 ),
 
 cleaned as (

@@ -1,6 +1,6 @@
 # app/queries/listings.sql
 select
-    listing_id,
+    listing_pk,
     municipality,
     neighborhood,
     operation_type,

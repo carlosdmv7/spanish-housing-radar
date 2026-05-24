@@ -119,7 +119,6 @@ class MotherDuckLoader:
         return len(df)
 
     def _to_dataframe(self, listings: list[RawListing]) -> pd.DataFrame:
-        now = datetime.now(tz=timezone.utc)
         return pd.DataFrame([
             {
                 "source_id":          l.source_id,
@@ -136,7 +135,7 @@ class MotherDuckLoader:
                 "raw_municipality":   l.raw_municipality,
                 "raw_district":       l.raw_district,
                 "raw_neighborhood":   l.raw_neighborhood,
-                "_loaded_at":         now,
+                "_loaded_at":         datetime.now(tz=timezone.utc),
                 "_run_id":            self.run_id,
             }
             for l in listings

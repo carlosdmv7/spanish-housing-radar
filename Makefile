@@ -73,6 +73,10 @@ dbt-test: ## Run all dbt tests
 .PHONY: transform-test
 transform-test: transform dbt-test ## dbt run + dbt test
 
+.PHONY: transform-full-refresh
+transform-full-refresh: ## Full dbt run with full-refresh (rebuilds all incrementals from scratch)
+	cd transform && $(DBT) run --full-refresh
+	
 # ── App ────────────────────────────────────────────────────────────────────────
 .PHONY: app
 app: ## Launch Streamlit on :8501 (or press F5 in VSCode)
