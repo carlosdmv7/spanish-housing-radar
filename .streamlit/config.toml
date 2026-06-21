@@ -1,0 +1,16 @@
+# Streamlit app configuration (committed — no secrets here).
+# Secrets (MOTHERDUCK_TOKEN, ...) go in .streamlit/secrets.toml (gitignored)
+# or in the Streamlit Community Cloud "Secrets" UI.
+
+[theme]
+primaryColor = "#2563eb"
+backgroundColor = "#0e1117"
+secondaryBackgroundColor = "#1a1f2b"
+textColor = "#fafafa"
+font = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false

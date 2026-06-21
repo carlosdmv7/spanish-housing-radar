@@ -10,6 +10,14 @@ select
     price_eur,
     round(price_eur / size_sqm, 2)  as price_per_sqm,
     size_sqm,
+    case property_type
+        when 'flat'      then 'apartment'
+        when 'apartment' then 'apartment'
+        when 'penthouse' then 'apartment'
+        when 'house'     then 'house'
+        when 'chalet'    then 'house'
+        else 'other'
+    end                              as property_type,
     operation_type,
     municipality,
     district,

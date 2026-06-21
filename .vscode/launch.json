@@ -6,6 +6,7 @@
             "type": "debugpy",
             "request": "launch",
             "module": "streamlit",
+            "python": "${workspaceFolder}/.venv/bin/python",
             "args": [
                 "run",
                 "app/main.py",
@@ -19,11 +20,12 @@
             "console": "integratedTerminal"
         },
         {
-            "name": "Run Extraction (Madrid)",
+            "name": "Run Extraction (Valencia)",
             "type": "debugpy",
             "request": "launch",
+            "python": "${workspaceFolder}/.venv/bin/python",
             "program": "${workspaceFolder}/extraction/run_extraction.py",
-            "args": ["--source", "idealista", "--province", "madrid", "--dry-run"],
+            "args": ["--source", "idealista", "--city", "valencia", "--dry-run"],
             "env": {
                 "PYTHONPATH": "${workspaceFolder}"
             },
@@ -34,6 +36,7 @@
             "name": "Pytest",
             "type": "debugpy",
             "request": "launch",
+            "python": "${workspaceFolder}/.venv/bin/python",
             "module": "pytest",
             "args": ["-v", "extraction/tests/"],
             "env": {

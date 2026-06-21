@@ -1,213 +1,199 @@
-# Spanish Housing Radar — Conversation Context
+# 🏘️ Spanish Housing Radar
 
-## What this is
-A real estate opportunity finder for Spain. Scrapes Idealista → loads into MotherDuck (DuckDB cloud) → transforms with dbt (Medallion architecture) → Streamlit dashboard with Opportunity Score (0–100).
+**An end-to-end analytics-engineering pipeline that finds undervalued homes across Spain.**
+It scrapes live listings from Idealista, models them through a Medallion (bronze → silver → gold)
+dbt project on a cloud warehouse, and serves an **Opportunity Score (0–100)** per listing in an
+interactive Streamlit app — surfacing deals priced below their neighbourhood's market rate.
 
-**Stack:** Python + BeautifulSoup + Scrapfly → MotherDuck → dbt Core → Streamlit  
-**Environment:** WSL 2 Ubuntu, VSCode, Python 3.12, venv at `.venv/`
+<p align="center">
+  <img alt="Python"     src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white">
+  <img alt="dbt"        src="https://img.shields.io/badge/dbt-1.9-FF694B?logo=dbt&logoColor=white">
+  <img alt="DuckDB"     src="https://img.shields.io/badge/MotherDuck-DuckDB-FFF000?logo=duckdb&logoColor=black">
+  <img alt="Streamlit"  src="https://img.shields.io/badge/Streamlit-1.44-FF4B4B?logo=streamlit&logoColor=white">
+  <img alt="Prefect"    src="https://img.shields.io/badge/Prefect-orchestration-024DFD?logo=prefect&logoColor=white">
+  <img alt="License"    src="https://img.shields.io/badge/license-MIT-green">
+</p>
 
----
+> **🔗 Live demo:** _coming soon — deploying to Streamlit Community Cloud_
+> **📊 dbt docs (lineage):** _coming soon — publishing to GitHub Pages_
 
-## Current status
-- ✅ Extraction pipeline working end-to-end
-- ✅ 3 rows loaded in `raw.idealista_listings` in MotherDuck (Madrid, sale)
-- ✅ Scrapfly integrated (`asp=True`, `render_js=False` works for Idealista)
-- ✅ Makefile, requirements.txt, .env, VSCode launch.json all working
-- ⏳ **dbt models not created yet — this is the next step**
-- ⏳ Streamlit app scaffolded but not connected to real data
-
----
-
-## Project structure
-```
-spanish-housing-radar/
-├── extraction/
-│   ├── config.py                  # all settings from .env, dynamic URL builder
-│   ├── run_extraction.py          # Typer CLI: --source, --city, --all-cities, --all
-│   ├── aux_logger.py              # colored logging + rotating file handler
-│   ├── debug_scrapfly.py          # diagnostic script (do NOT run again, wastes credits)
-│   ├── scrapers/
-│   │   ├── base.py                # AbstractScraper, _get_html() dispatches Scrapfly/requests
-│   │   ├── idealista.py           # search-card parser, fixed _is_blocked()
-│   │   └── fotocasa.py            # __NEXT_DATA__ JSON first, CSS fallback
-│   ├── loaders/
-│   │   └── motherduck_loader.py   # context manager, INSERT OR REPLACE upsert
-│   └── schemas/
-│       └── raw_listings.py        # Pydantic v2 validation + price/sqm sanity check
-├── transform/                     # dbt project
-│   ├── dbt_project.yml
-│   ├── profiles.yml.example
-│   ├── packages.yml               # dbt_utils, dbt_expectations
-│   ├── macros/
-│   │   ├── generate_schema_name.sql   # enforces exact names: bronze, silver, gold
-│   │   └── price_per_sqm.sql          # reusable macro
-│   └── models/
-│       ├── bronze/                # ⚠️ EMPTY — needs stg_idealista__listings.sql
-│       ├── silver/                # ⚠️ EMPTY — needs int_listings_unioned.sql etc
-│       └── gold/                  # ⚠️ EMPTY — needs fct_listings_scored.sql etc
-├── app/
-│   ├── main.py
-│   ├── connection.py              # st.cache_resource singleton
-│   ├── queries/
-│   │   ├── listings.sql
-│   │   └── neighborhood_stats.sql
-│   └── pages/
-│       ├── 1_Search.py
-│       ├── 2_Market_Stats.py
-│       └── 3_Affordability.py
-├── .vscode/
-│   ├── launch.json                # F5 = Streamlit, dropdown = extraction/pytest
-│   └── settings.json
-├── .env.example
-├── .gitignore
-├── Makefile
-├── requirements.txt
-└── README.md
-```
+<!-- TODO: replace with a real screenshot / GIF of the Opportunities page once data volume is up -->
+<!-- ![Opportunities page](docs/opportunities.png) -->
 
 ---
 
-## MotherDuck schema
+## Why this project
 
-**Database:** `spanish_housing_radar`  
-**Table:** `raw.idealista_listings` — 3 rows currently
+Spanish housing portals tell you the *price* of a flat, but never whether that price is *good*.
+"€280k for 90 m² in this area" means nothing without a benchmark. **Spanish Housing Radar builds
+that benchmark from data**: it compares every listing against the live €/m² distribution of its own
+neighbourhood and quantifies how much of a deal it is.
 
-```sql
-source_id           VARCHAR   -- PK composite with source_name
-source_name         VARCHAR   -- 'idealista'
-raw_url             VARCHAR   -- https://www.idealista.com/inmueble/{id}/
-raw_price_eur       DOUBLE
-raw_operation_type  VARCHAR   -- 'sale' | 'rent'
-raw_size_sqm        DOUBLE
-raw_rooms           INTEGER   -- nullable
-raw_bathrooms       INTEGER   -- nullable (not available on search cards)
-raw_property_type   VARCHAR   -- 'apartment' | 'house' | 'penthouse' | 'studio'
-raw_lat             DOUBLE    -- nullable (not available on search cards)
-raw_lon             DOUBLE    -- nullable (not available on search cards)
-raw_municipality    VARCHAR
-raw_district        VARCHAR   -- nullable
-raw_neighborhood    VARCHAR   -- nullable
-_loaded_at          TIMESTAMPTZ
-_run_id             VARCHAR
-```
-
-Sample data:
-```
-109947740 | idealista | 2100000 | sale | 137m² | 3 rooms | madrid | goya          | piso en calle alcalá
-110438977 | idealista |  820000 | sale | 110m² | 4 rooms | madrid | sol           | piso en calle de la lechuga
-110632197 | idealista | 3150000 | sale | 332m² | 5 rooms | madrid | cuatro caminos | piso en calle de raimundo...
-```
+It's also a deliberate showcase of a **modern, governed data stack** — the same problems I solve
+professionally (reliable ELT, trusted metrics, a single source of truth), built in the open and
+fully reproducible.
 
 ---
 
-## Key technical decisions already made
+## Architecture
 
-**Scrapfly:** `asp=True`, `render_js=False` — sufficient for Idealista. DataDome is bypassed by ASP alone. `render_js=True` costs 25–29 credits vs 1 and is NOT needed.
+```mermaid
+flowchart LR
+    subgraph SRC["Sources"]
+        I["Idealista"]
+        F["Fotocasa<br/><i>(scraper ready)</i>"]
+    end
 
-**`_is_blocked()` fix:** Only flags on literal string `"please enable js and disable any ad blocker"` or response <5KB with no `<article>` tag. Does NOT flag on `"captcha"` or `"datadome"` — these appear in Idealista's JS on every page including successful ones (this was the original bug).
+    subgraph EXTRACT["Extraction · Python"]
+        SC["Scrapfly<br/>anti-bot proxy"]
+        PY["Typer CLI scrapers<br/>Pydantic validation"]
+    end
 
-**Search-card-only:** No detail page requests. `raw_lat`, `raw_lon`, `raw_bathrooms` are NULL at this stage. Phase 2 will add detail-page enrichment.
+    subgraph WH["MotherDuck · DuckDB (cloud)"]
+        RAW["raw.*<br/><b>Bronze source</b>"]
+        BRONZE["staging<br/>(1_bronze)"]
+        SILVER["intermediate + dims<br/>(2_silver)"]
+        GOLD["facts + reports<br/>(3_gold)"]
+    end
 
-**Scrapfly credits:** ~805/1000 remaining on free tier (resets June 10). Keep `IDEALISTA_MAX_LISTINGS=30` and `IDEALISTA_MAX_SEARCH_PAGES=1` during dev. Each `make extract` call = 1 credit.
+    APP["Streamlit app<br/>4 pages"]
 
-**dbt schema names:** `generate_schema_name.sql` macro enforces exact names `bronze`, `silver`, `gold` in MotherDuck — not `dev_bronze` etc.
+    I --> SC --> PY
+    F -.-> SC
+    PY -->|"INSERT OR REPLACE<br/>(idempotent upsert)"| RAW
+    RAW --> BRONZE --> SILVER --> GOLD --> APP
 
-**DuckDB version:** Must be `>=1.5.2` for MotherDuck compatibility.
+    ORCH["⏱️ Prefect<br/>schedule + retries"]:::wip
+    CI["🧪 GitHub Actions<br/>dbt build + tests"]:::wip
+    ORCH -.orchestrates.-> PY
+    ORCH -.orchestrates.-> GOLD
+    CI -.validates.-> GOLD
+
+    classDef wip fill:#fff6e5,stroke:#e0a800,stroke-dasharray:4 3;
+```
+
+**Legend:** solid = built & running · dashed = Phase 2 (orchestration & CI, in progress).
+
+| Layer | Tech | Role |
+|---|---|---|
+| **Ingestion** | Python · BeautifulSoup · Scrapfly · Pydantic · Typer | Robust scraping behind an anti-bot proxy; schema-validated; idempotent loads |
+| **Warehouse** | MotherDuck (DuckDB in the cloud) | Cheap, serverless, zero-ops analytical store |
+| **Transformation** | dbt Core (Medallion: bronze → silver → gold) | Tested, documented, lineage-tracked SQL models |
+| **Orchestration** 🚧 | Prefect | Scheduled daily runs, retries, observability |
+| **CI/CD** 🚧 | GitHub Actions | `dbt build` + tests on every push |
+| **Serving** | Streamlit · Plotly · pydeck | 4-page interactive analytical app |
 
 ---
 
-## .env structure
+## The Opportunity Score
+
+The heart of the product. For each listing we compute its price per m² and compare it to the
+**median and standard deviation of comparable listings** in the same neighbourhood
+(same municipality × operation × property type):
+
+```text
+z_score   = (price_per_sqm − neighbourhood_median_ppsqm) / neighbourhood_stddev_ppsqm
+z_clamped = clamp(z_score, −3, +3)
+score     = clamp(50 − z_clamped × (50/3), 0, 100)
+```
+
+| Score | Meaning | Deal tier |
+|---|---|---|
+| **100** | far below neighbourhood market | `great_deal` (≥75) |
+| **50** | exactly at the median | `good_deal` (≥55) · `fair` (≥45) |
+| **0** | far above market | `overpriced` (≥25) · `very_overpriced` |
+
+Neighbourhoods with fewer than 10 comparable listings are flagged `low_confidence` and
+**surfaced with a warning badge rather than silently dropped** — an honest UX choice while the
+dataset grows, instead of hiding sparse-data uncertainty.
+
+---
+
+## dbt models (lineage)
+
+```
+1_bronze   stg_idealista__listings · stg_fotocasa__listings        (sources + light typing)
+2_silver   int_listings_unioned → int_listings_current             (latest snapshot per listing)
+                                 → int_listings_history             (all snapshots, for trends)
+           int_neighborhood_stats · dim_neighborhoods              (benchmarks + dimension)
+3_gold     fct_listings_scored                                     (the scoring fact table)
+           rpt_opportunities                                       (consumption view for the app)
+```
+
+Every model carries a **grain declaration**, column descriptions, and tests
+(`unique`, `not_null`, `accepted_values`, `dbt_utils.accepted_range`) so the warehouse fails
+loudly when an assumption breaks. See [`transform/models/`](transform/models/).
+
+---
+
+## The Streamlit app
+
+| Page | What it answers |
+|---|---|
+| **Opportunities** | Where are the under-priced listings right now? Ranked by score, with deal-tier breakdown and map. |
+| **Market** | What's the €/m² benchmark by neighbourhood, and how is it evolving? |
+| **Mortgage** | Fixed vs variable French-amortisation simulator. |
+| **Affordability** | What income does each neighbourhood require? Buy-vs-rent comparison. |
+
+---
+
+## Key engineering decisions & trade-offs
+
+- **MotherDuck/DuckDB as the warehouse.** A pragmatic call for the project's scale, not a technical
+  moat: at thousands-of-rows volume, a serverless DuckDB warehouse is free, zero-ops and fast, while
+  Snowflake/BigQuery/Redshift would add cost and operational overhead for no analytical benefit here.
+  Crucially the dbt project is **warehouse-agnostic** — it's the same `ref()`/`source()` SQL I'd run
+  on Snowflake at work, portable with just a profile swap, so the modelling skills transfer 1:1.
+- **Idempotent upserts (`INSERT OR REPLACE`, PK `(source_name, source_id)`).** Re-running an
+  extraction never duplicates rows, so the pipeline is safe to retry — a prerequisite for scheduled
+  orchestration.
+- **Search-card scraping over detail-page scraping.** ~1 Scrapfly credit per request vs 25–29 with
+  JS rendering. The trade-off: no per-listing coordinates (see limitations). For a benchmark engine,
+  breadth of comparables matters more than per-listing depth.
+- **Low-confidence data is shown, not hidden.** Dropping sparse neighbourhoods would make the app
+  look complete while quietly lying about coverage. Flagging is the honest default.
+- **Snapshot history as a first-class table.** `int_listings_history` keeps every observation so
+  price-evolution is real (accumulated daily) rather than reconstructed.
+
+---
+
+## Run it locally
+
 ```bash
-MOTHERDUCK_TOKEN=...
-MOTHERDUCK_DATABASE=spanish_housing_radar
+make install        # venv + deps + config templates
+# edit .env  → MOTHERDUCK_TOKEN, SCRAPFLY_API_KEY
+make dbt-deps        # install dbt packages (once)
 
-SCRAPFLY_ENABLED=true
-SCRAPFLY_API_KEY=...
-SCRAPFLY_ASP=true
-SCRAPFLY_COUNTRY=ES
-SCRAPFLY_RENDER_JS=false          # false is enough for Idealista
-
-IDEALISTA_MAX_SEARCH_PAGES=1      # keep low to save credits
-IDEALISTA_MAX_LISTINGS=30
-SCRAPER_DELAY_SECONDS=2
+make extract CITY=valencia OP=sale     # ~1 Scrapfly credit (render_js=false)
+make transform                          # dbt run: bronze → silver → gold
+make dbt-test                           # data-quality tests
+make app                                # Streamlit on :8501
 ```
+
+Full command list: `make help`.
 
 ---
 
-## requirements.txt key pins
-```
-duckdb==1.5.2          # MotherDuck requires >=1.5.2
-dbt-duckdb==1.10.1
-dbt-core==1.9.5
-streamlit==1.44.1
-scrapfly-sdk==0.10.3
-pydantic==2.10.6
-typer==0.15.1
-tenacity==9.0.0
-```
+## Roadmap
+
+- [ ] **Prefect** flow orchestrating `extract → dbt build`, scheduled daily with retries
+- [ ] **GitHub Actions** CI: `dbt build` + tests on every push; nightly scheduled run
+- [ ] **Dockerise** the pipeline for one-command reproducibility
+- [ ] Publish **`dbt docs`** (navigable lineage) to GitHub Pages
+- [ ] Enrich `dim_neighborhoods` with **lat/lon via offline geocoding** → unlock the map page
+- [ ] Wire **Fotocasa** into `int_listings_unioned` for a second source / larger samples
+- [ ] dbt **contracts** + **exposures** linking models to app pages
+- [ ] `pytest` unit tests for the `_parse_location()` heuristic
+
+## Known limitations
+
+1. **Data volume is still growing.** With a young dataset many neighbourhoods are `low_confidence`;
+   the fix is sustained scraping across cities + daily scheduled runs, not lowering the threshold.
+2. **`lat`/`lon` are null** until geocoding (roadmap) — the map page degrades gracefully.
+3. **Fotocasa** scraper exists but isn't unioned into the models yet.
+4. **Price-evolution** charts need several days of accumulated snapshots to be meaningful.
 
 ---
 
-## Makefile commands
-```bash
-make extract CITY=madrid OP=sale   # extract one city (1 Scrapfly credit)
-make extract-dry                   # validate without writing (1 credit)
-make extract-all-cities            # all cities, one source
-make check-db                      # row counts in MotherDuck
-make dbt-deps                      # install dbt packages (once)
-make transform                     # dbt run: bronze → silver → gold
-make dbt-test                      # dbt test
-make app                           # streamlit run app/main.py :8501
-```
-
----
-
-## Next step: build the dbt models
-
-The `transform/models/` directories exist but are completely empty. Need to create all SQL files.
-
-### Bronze
-**`stg_idealista__listings.sql`** — reads `raw.idealista_listings`, incremental on `_loaded_at`, safe casts, adds metadata. One staging model per source portal.
-
-### Silver
-**`int_listings_unioned.sql`** — UNION ALL across sources, dedup with `ROW_NUMBER()`, normalise property types, compute `price_per_sqm` via macro.  
-**`dim_neighborhoods.sql`** — distinct neighbourhood/municipality/district combinations.
-
-### Gold
-**`fct_listings_scored.sql`** — joins listings with neighbourhood stats, computes Z-score Opportunity Score 0–100.  
-**`rpt_neighborhood_stats.sql`** — pre-aggregated benchmark table (median, p25, p75, stddev per neighbourhood × operation × property_type). Materialised as `table`.  
-**`rpt_opportunities.sql`** — view on top of `fct_listings_scored`, filters `low_confidence=false`, Streamlit-ready.
-
-### Opportunity Score formula
-```sql
-z_score  = (price_per_sqm - neighbourhood_median_ppsqm) / neighbourhood_stddev_ppsqm
-z_clamped = GREATEST(-3, LEAST(3, z_score))
-score     = GREATEST(0, LEAST(100, 50 - z_clamped * (50.0 / 3.0)))
--- 100 = very undervalued vs neighbourhood
--- 50  = exactly at median
--- 0   = very overpriced
-deal_tier: great_deal (≥75) | good_deal (≥55) | fair (≥45) | overpriced (≥25) | very_overpriced
-```
-
-### dbt profiles.yml (transform/profiles.yml)
-```yaml
-spanish_housing_radar:
-  target: dev
-  outputs:
-    dev:
-      type: duckdb
-      path: "md:spanish_housing_radar?motherduck_token={{ env_var('MOTHERDUCK_TOKEN') }}"
-      threads: 4
-```
-`DBT_PROFILES_DIR=./transform` is set in `.env`.
-
-### _sources.yml for Bronze
-```yaml
-sources:
-  - name: raw
-    database: spanish_housing_radar
-    schema: raw
-    tables:
-      - name: idealista_listings
-      - name: fotocasa_listings
-```
+<sub>Built by <a href="https://www.linkedin.com/in/carlos-demanuel">Carlos De Manuel</a> ·
+Analytics / Data Engineering portfolio · MIT License</sub>

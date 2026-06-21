@@ -4,6 +4,7 @@
 select
     listing_pk,
     source_name,
+    url,
     municipality,
     district,
     neighborhood,
@@ -16,6 +17,7 @@ select
     price_per_sqm,
     neighborhood_median_ppsqm,
     ppsqm_vs_median,
+    ppsqm_z_score,
     opportunity_score,
     deal_tier,
     low_confidence_flag,
@@ -23,5 +25,5 @@ select
     lon,
     _loaded_at
 from {{ ref('fct_listings_scored') }}
--- Only expose listings with enough neighborhood data to be meaningful
-where low_confidence_flag = false
+-- low_confidence listings are surfaced (not hidden) so the app can flag them
+-- instead of silently dropping rows when a neighborhood has too few comps

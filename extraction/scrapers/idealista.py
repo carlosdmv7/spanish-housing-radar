@@ -199,15 +199,41 @@ class IdealistaScraper(AbstractScraper):
             return "studio"
         return "apartment"
 
-    @staticmethod
-    def _parse_location(title: str, fallback: str) -> tuple[str, str | None, str | None]:
+    _STREET_KEYWORDS = re.compile(
+        r"\b(calle|avenida|av\.?|paseo|plaza|carrer|passeig|ronda|"
+        r"glorieta|traves[ií]a|camino|cami|c/)\b",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _parse_location(cls, title: str, fallback: str) -> tuple[str, str | None, str | None]:
         """
-        Title: "Piso en venta en Barrio Salamanca, Madrid"
-        → municipality="madrid", district=None, neighbourhood="barrio salamanca"
+        Idealista title templates vary, and street-style titles leak into the
+        location chain in two different ways:
+          "Piso en venta en Barrio Salamanca, Madrid"
+            → neighbourhood-titled, regex below captures the location cleanly
+          "Piso en alquiler en calle dels Vivons, Russafa, Valencia"
+            → regex matches "en alquiler en" but the captured group still starts
+              with the street, not the real neighbourhood
+          "Piso en calle de Alcalá, Goya, Madrid"
+            → no "venta/alquiler en" at all, so nothing gets stripped
+          "Piso en calle de los Vivons, 34, Russafa, Valencia"
+            → same, plus a bare house-number segment
+        In every street-titled case, leading comma-segments that are a street
+        name or a house number aren't real locations and must be dropped before
+        the municipality/district/neighbourhood split — otherwise the street
+        gets misread as the neighbourhood and pushes the real one to district.
         """
         m = re.search(r"\ben\s+(?:venta|alquiler)\s+en\s+(.+)$", title, re.IGNORECASE)
         loc = m.group(1).strip() if m else title
         parts = [p.strip().lower() for p in loc.split(",") if p.strip()]
+
+        if parts:
+            # strip a leftover "<tipo> en " prefix, e.g. "piso en calle de alcalá" → "calle de alcalá"
+            parts[0] = re.sub(r"^\S+\s+en\s+", "", parts[0])
+
+        while parts and (cls._STREET_KEYWORDS.search(parts[0]) or parts[0].isdigit()):
+            parts.pop(0)
 
         if not parts:         return fallback, None, None
         if len(parts) == 1:   return parts[0], None, None
