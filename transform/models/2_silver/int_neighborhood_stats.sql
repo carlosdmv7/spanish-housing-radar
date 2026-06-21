@@ -1,9 +1,13 @@
 -- transform/models/silver/int_neighborhood_stats.sql
 {{ config(materialized='table', schema='silver') }}
 
+-- Grain: one row per (municipality, neighborhood, operation_type, property_type).
+-- district is NOT part of the grain (it is collapsed with max) — benchmarks are
+-- neighbourhood-level. Keeping district in the GROUP BY would fan out the join in
+-- fct_listings_scored and duplicate listings.
 select
     municipality,
-    district,
+    max(district)                                               as district,
     neighborhood,
     operation_type,
     property_type,
@@ -18,4 +22,4 @@ select
     round(median(size_sqm), 1)                                  as median_size_sqm,
     current_timestamp                                           as _refreshed_at
 from {{ ref('int_listings_current') }}
-group by 1,2,3,4,5
+group by municipality, neighborhood, operation_type, property_type

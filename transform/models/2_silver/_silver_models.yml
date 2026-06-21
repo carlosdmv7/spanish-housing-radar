@@ -44,6 +44,15 @@ models:
     description: >
       Pre-aggregated price benchmarks by neighborhood × operation × property_type.
       Grain: one row per (municipality, neighborhood, operation_type, property_type).
+    tests:
+      # Guards the grain — a duplicate here fans out fct_listings_scored and
+      # silently duplicates listings (regression caught 2026-06).
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - municipality
+            - neighborhood
+            - operation_type
+            - property_type
     columns:
       - name: total_listings
         tests:

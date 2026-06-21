@@ -32,8 +32,16 @@ with_zscore as (
         round(price_per_sqm - neighborhood_median_ppsqm, 2) as ppsqm_vs_median,
         round(
             greatest(-3.0, least(3.0,
-                (price_per_sqm - neighborhood_median_ppsqm)
-                / nullif(neighborhood_stddev_ppsqm, 0)
+                -- coalesce to 0 (neutral) when the neighbourhood has no price
+                -- dispersion (single comparable → stddev 0/NULL). Without this,
+                -- DuckDB's greatest/least ignore the NULL and snap the z-score to
+                -- the +3 bound, mislabelling every single-comp listing as
+                -- very_overpriced (score 0). These rows are already low_confidence.
+                coalesce(
+                    (price_per_sqm - neighborhood_median_ppsqm)
+                    / nullif(neighborhood_stddev_ppsqm, 0),
+                    0
+                )
             )), 3
         ) as ppsqm_z_score
     from joined

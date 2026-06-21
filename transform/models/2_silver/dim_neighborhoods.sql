@@ -1,6 +1,9 @@
 -- silver/dim_neighborhoods.sql
+-- Grain: one row per (municipality, neighborhood).
+-- district is collapsed (max) so a neighbourhood that shows up under several
+-- district spellings / null districts does not break neighborhood_pk uniqueness.
 select
-    municipality || '__' || neighborhood   as neighborhood_pk,  -- DT_NEIGHBORHOODS.neighborhood_pk
+    municipality || '__' || coalesce(neighborhood, '(unknown)') as neighborhood_pk,
     municipality,
     district,
     neighborhood,
@@ -9,6 +12,10 @@ select
     null::float as centroid_lon,
     null::varchar as ine_code
 from (
-    select distinct municipality, district, neighborhood
+    select
+        municipality,
+        neighborhood,
+        max(district) as district
     from {{ ref('int_listings_unioned') }}
+    group by municipality, neighborhood
 )
