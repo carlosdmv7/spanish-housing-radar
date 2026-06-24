@@ -2,18 +2,17 @@
 Page 2 — Market Overview
 Neighborhood stats, price distribution, historical evolution.
 """
-import sys
 from pathlib import Path
+import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
-import plotly.graph_objects as go
-import streamlit as st
 
 from components.charts import bar_ppsqm_by_neighborhood, line_price_history
 from components.filters import municipality_filter, operation_filter
 from config import PAGE_ICON
 from connection import query
+import plotly.graph_objects as go
+import streamlit as st
 
 st.set_page_config(page_title="Market · SHR", page_icon=PAGE_ICON, layout="wide")
 st.title("📊 Market Overview")
@@ -84,9 +83,9 @@ with col_right:
         x=df_sorted["neighborhood"],
         y=df_sorted["median_ppsqm"],
         mode="markers",
-        marker=dict(color="#2563eb", size=8),
+        marker={"color":"#2563eb", "size":8},
     ))
-    fig.update_layout(title="Price range by neighborhood (top 15)", margin=dict(l=0, r=0, t=40, b=0))
+    fig.update_layout(title="Price range by neighborhood (top 15)", margin={"l":0, "r":0, "t":40, "b":0})
     st.plotly_chart(fig, use_container_width=True)
 
 # ── Stats table ───────────────────────────────────────────────────────────────

@@ -1,0 +1,105 @@
+"""Unit tests for IdealistaScraper's pure parsing helpers — no network involved."""
+from extraction.scrapers.idealista import IdealistaScraper
+
+scraper = IdealistaScraper(province="madrid")
+
+
+class TestParseLocation:
+    def test_neighborhood_titled(self):
+        muni, district, hood = scraper._parse_location(
+            "Piso en venta en Barrio Salamanca, Madrid", fallback="madrid"
+        )
+        assert muni == "madrid"
+        assert hood == "barrio salamanca"
+        assert district is None
+
+    def test_street_titled_drops_street_segment(self):
+        muni, district, hood = scraper._parse_location(
+            "Piso en alquiler en calle dels Vivons, Russafa, Valencia", fallback="valencia"
+        )
+        assert muni == "valencia"
+        assert hood == "russafa"
+        assert district is None
+
+    def test_street_titled_no_operation_prefix(self):
+        muni, district, hood = scraper._parse_location(
+            "Piso en calle de Alcalá, Goya, Madrid", fallback="madrid"
+        )
+        assert muni == "madrid"
+        assert hood == "goya"
+
+    def test_street_with_house_number_segment(self):
+        muni, district, hood = scraper._parse_location(
+            "Piso en calle de los Vivons, 34, Russafa, Valencia", fallback="valencia"
+        )
+        assert muni == "valencia"
+        assert hood == "russafa"
+
+    def test_district_and_neighborhood_present(self):
+        muni, district, hood = scraper._parse_location(
+            "Piso en venta en Malasaña, Centro, Madrid", fallback="madrid"
+        )
+        assert muni == "madrid"
+        assert district == "centro"
+        assert hood == "malasaña"
+
+    def test_no_location_info_falls_back(self):
+        muni, district, hood = scraper._parse_location("Piso en calle Mayor", fallback="madrid")
+        assert muni == "madrid"
+        assert district is None
+        assert hood is None
+
+
+class TestExtractSize:
+    def test_parses_square_meters(self):
+        assert scraper._extract_size(["3 hab.", "90 m²"]) == 90.0
+
+    def test_parses_comma_decimal(self):
+        assert scraper._extract_size(["72,5 m2"]) == 72.5
+
+    def test_returns_none_when_missing(self):
+        assert scraper._extract_size(["3 hab.", "2 baños"]) is None
+
+
+class TestExtractRoomsAndBathrooms:
+    def test_extracts_rooms(self):
+        assert scraper._extract_rooms(["3 hab."]) == 3
+
+    def test_extracts_bathrooms(self):
+        assert scraper._extract_bathrooms(["2 baños"]) == 2
+
+    def test_returns_none_when_absent(self):
+        assert scraper._extract_rooms(["90 m²"]) is None
+
+
+class TestPropertyType:
+    def test_house_keywords(self):
+        assert scraper._property_type("Chalet en venta en Pozuelo") == "house"
+
+    def test_penthouse_keywords(self):
+        assert scraper._property_type("Ático en venta en Malasaña") == "penthouse"
+
+    def test_studio_keywords(self):
+        assert scraper._property_type("Estudio en alquiler en Lavapiés") == "studio"
+
+    def test_defaults_to_apartment(self):
+        assert scraper._property_type("Piso en venta en Goya") == "apartment"
+
+
+class TestExtractId:
+    def test_extracts_numeric_id(self):
+        assert scraper._extract_id("https://www.idealista.com/inmueble/109947740/") == "109947740"
+
+    def test_returns_none_without_match(self):
+        assert scraper._extract_id("https://www.idealista.com/somewhere-else/") is None
+
+
+class TestBuildPageUrl:
+    def test_first_page_unchanged(self):
+        assert scraper._build_page_url("https://x.com/venta-pisos/madrid/", 1) == "https://x.com/venta-pisos/madrid/"
+
+    def test_subsequent_page_appends_suffix(self):
+        assert (
+            scraper._build_page_url("https://x.com/venta-pisos/madrid/", 3)
+            == "https://x.com/venta-pisos/madrid/pagina-3.htm"
+        )

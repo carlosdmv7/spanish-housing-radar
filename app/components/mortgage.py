@@ -4,8 +4,8 @@ All functions are deterministic and unit-testable.
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
+import math
 
 
 @dataclass
@@ -31,10 +31,11 @@ def compute_mortgage(
     n = years * 12
     r = annual_rate / 100 / 12  # monthly rate
 
-    if r == 0:
-        monthly = principal / n
-    else:
-        monthly = principal * (r * (1 + r) ** n) / ((1 + r) ** n - 1)
+    monthly = (
+        principal / n
+        if r == 0
+        else principal * (r * (1 + r) ** n) / ((1 + r) ** n - 1)
+    )
 
     schedule = []
     balance  = principal

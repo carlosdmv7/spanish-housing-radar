@@ -8,8 +8,8 @@ INSERT OR REPLACE makes every run fully idempotent — safe to re-run anytime.
 """
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import logging
-from datetime import datetime, timezone
 
 import duckdb
 import pandas as pd
@@ -72,7 +72,7 @@ class MotherDuckLoader:
         self.dry_run = dry_run
         self._conn: duckdb.DuckDBPyConnection | None = None
 
-    def __enter__(self) -> "MotherDuckLoader":
+    def __enter__(self) -> MotherDuckLoader:
         if not self.dry_run:
             logger.info("Connecting to MotherDuck…")
             self._conn = duckdb.connect(MOTHERDUCK_DSN)
@@ -121,22 +121,22 @@ class MotherDuckLoader:
     def _to_dataframe(self, listings: list[RawListing]) -> pd.DataFrame:
         return pd.DataFrame([
             {
-                "source_id":          l.source_id,
-                "source_name":        l.source_name,
-                "raw_url":            l.raw_url,
-                "raw_price_eur":      l.raw_price_eur,
-                "raw_operation_type": l.raw_operation_type,
-                "raw_size_sqm":       l.raw_size_sqm,
-                "raw_rooms":          l.raw_rooms,
-                "raw_bathrooms":      l.raw_bathrooms,
-                "raw_property_type":  l.raw_property_type,
-                "raw_lat":            l.raw_lat,
-                "raw_lon":            l.raw_lon,
-                "raw_municipality":   l.raw_municipality,
-                "raw_district":       l.raw_district,
-                "raw_neighborhood":   l.raw_neighborhood,
-                "_loaded_at":         datetime.now(tz=timezone.utc),
+                "source_id":          listing.source_id,
+                "source_name":        listing.source_name,
+                "raw_url":            listing.raw_url,
+                "raw_price_eur":      listing.raw_price_eur,
+                "raw_operation_type": listing.raw_operation_type,
+                "raw_size_sqm":       listing.raw_size_sqm,
+                "raw_rooms":          listing.raw_rooms,
+                "raw_bathrooms":      listing.raw_bathrooms,
+                "raw_property_type":  listing.raw_property_type,
+                "raw_lat":            listing.raw_lat,
+                "raw_lon":            listing.raw_lon,
+                "raw_municipality":   listing.raw_municipality,
+                "raw_district":       listing.raw_district,
+                "raw_neighborhood":   listing.raw_neighborhood,
+                "_loaded_at":         datetime.now(tz=UTC),
                 "_run_id":            self.run_id,
             }
-            for l in listings
+            for listing in listings
         ])

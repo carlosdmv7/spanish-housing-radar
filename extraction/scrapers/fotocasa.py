@@ -22,11 +22,11 @@ Fotocasa search URL pattern:
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 import json
 import logging
 import re
-from typing import Iterator
-from urllib.parse import urljoin, urlparse, parse_qs, urlencode, urlunparse
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup, Tag
 
@@ -186,7 +186,7 @@ class FotocasaScraper(AbstractScraper):
             price_data = item.get("price") or item.get("prices") or {}
             if isinstance(price_data, dict):
                 price = float(price_data.get("value") or price_data.get("amount") or 0)
-            elif isinstance(price_data, (int, float)):
+            elif isinstance(price_data, int | float):
                 price = float(price_data)
             else:
                 price = 0.0
@@ -441,9 +441,12 @@ class FotocasaScraper(AbstractScraper):
     @staticmethod
     def _parse_location(loc_text: str, fallback: str) -> tuple[str, str | None, str | None]:
         parts = [p.strip().lower() for p in loc_text.split(",") if p.strip()]
-        if not parts:     return fallback, None, None
-        if len(parts) == 1: return parts[0], None, None
-        if len(parts) == 2: return parts[1], None, parts[0]
+        if not parts:
+            return fallback, None, None
+        if len(parts) == 1:
+            return parts[0], None, None
+        if len(parts) == 2:
+            return parts[1], None, parts[0]
         return parts[-1], parts[1], parts[0]
 
     # ── Utilities ─────────────────────────────────────────────────────────────

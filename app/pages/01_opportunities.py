@@ -2,12 +2,10 @@
 Page 1 — Search & Opportunities
 Listings ranked by opportunity score with filters and map.
 """
-import sys
 from pathlib import Path
+import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
-import streamlit as st
 
 from components.charts import scatter_size_vs_price
 from components.filters import (
@@ -20,6 +18,7 @@ from components.listing_card import listing_card
 from components.map_view import listings_map
 from config import DEAL_TIER_LABELS, PAGE_ICON
 from connection import query
+import streamlit as st
 
 st.set_page_config(page_title="Opportunities · SHR", page_icon=PAGE_ICON, layout="wide")
 st.title("🔍 Opportunities")

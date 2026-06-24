@@ -10,14 +10,15 @@ so you can open it in a browser and see what Scrapfly actually returned.
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
+import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from scrapfly import ScrapflyClient, ScrapeConfig  # type: ignore
+from scrapfly import ScrapeConfig, ScrapflyClient  # type: ignore  # noqa: E402
 
 API_KEY = os.environ.get("SCRAPFLY_API_KEY", "")
 URL     = "https://www.idealista.com/venta-viviendas/madrid-madrid/"
@@ -53,7 +54,7 @@ def main() -> None:
     print("\n[Test 3] Full bypass (asp=True, render_js=True) — ~5 credits")
     _scrape_and_save(client, URL, asp=True, render_js=True, tag="full")
 
-    print(f"\n✓ Done — open files in debug_output/ to inspect the HTML")
+    print("\n✓ Done — open files in debug_output/ to inspect the HTML")
 
 
 def _scrape_and_save(

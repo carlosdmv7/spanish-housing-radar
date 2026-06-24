@@ -2,10 +2,9 @@
 Spanish Housing Radar — main entry point.
 Configures page layout and shows a landing summary.
 """
-import streamlit as st
-
 from config import PAGE_ICON, PAGE_TITLE
 from connection import query
+import streamlit as st
 
 st.set_page_config(
     page_title=PAGE_TITLE,

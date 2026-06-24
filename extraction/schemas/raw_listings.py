@@ -5,8 +5,6 @@ If a field is missing or the wrong type, the row is logged and skipped.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -16,7 +14,7 @@ class RawListing(BaseModel):
     # ── Identifiers ───────────────────────────────────────────────────────────
     source_id: str = Field(..., description="Portal's own ID for the listing")
     source_name: str = Field(..., description="e.g. 'idealista'")
-    raw_url: Optional[str] = Field(None, description="Original listing URL")
+    raw_url: str | None = Field(None, description="Original listing URL")
 
     # ── Price ─────────────────────────────────────────────────────────────────
     raw_price_eur: float = Field(..., gt=0)
@@ -24,16 +22,16 @@ class RawListing(BaseModel):
 
     # ── Physical attributes ───────────────────────────────────────────────────
     raw_size_sqm: float = Field(..., gt=0, lt=10_000)
-    raw_rooms: Optional[int] = Field(None, ge=0, le=50)
-    raw_bathrooms: Optional[int] = Field(None, ge=0, le=20)
+    raw_rooms: int | None = Field(None, ge=0, le=50)
+    raw_bathrooms: int | None = Field(None, ge=0, le=20)
     raw_property_type: str = Field(..., description="Normalised in Silver layer")
 
     # ── Location ──────────────────────────────────────────────────────────────
-    raw_lat: Optional[float] = Field(None, ge=35.0, le=44.0)
-    raw_lon: Optional[float] = Field(None, ge=-9.5, le=4.5)
+    raw_lat: float | None = Field(None, ge=35.0, le=44.0)
+    raw_lon: float | None = Field(None, ge=-9.5, le=4.5)
     raw_municipality: str
-    raw_district: Optional[str] = None
-    raw_neighborhood: Optional[str] = None
+    raw_district: str | None = None
+    raw_neighborhood: str | None = None
 
     @field_validator("raw_operation_type")
     @classmethod
@@ -55,7 +53,7 @@ class RawListing(BaseModel):
         return normalised
 
     @model_validator(mode="after")
-    def price_per_sqm_sanity(self) -> "RawListing":
+    def price_per_sqm_sanity(self) -> RawListing:
         ppsqm = self.raw_price_eur / self.raw_size_sqm
 
         if self.raw_operation_type == "sale" and not (100 < ppsqm < 50_000):

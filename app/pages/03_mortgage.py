@@ -2,13 +2,10 @@
 Page 3 — Mortgage Calculator
 Fixed vs variable, French amortisation schedule, affordability check.
 """
-import sys
 from pathlib import Path
+import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
-import pandas as pd
-import streamlit as st
 
 from components.charts import line_amortisation, waterfall_mortgage
 from components.mortgage import (
@@ -26,6 +23,8 @@ from config import (
     MORTGAGE_DEFAULT_YEARS,
     PAGE_ICON,
 )
+import pandas as pd
+import streamlit as st
 
 st.set_page_config(page_title="Mortgage · SHR", page_icon=PAGE_ICON, layout="wide")
 st.title("🏠 Mortgage Calculator")

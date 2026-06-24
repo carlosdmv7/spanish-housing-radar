@@ -6,9 +6,10 @@ from __future__ import annotations
 
 import os
 
-import duckdb
-import streamlit as st
 from dotenv import load_dotenv
+import duckdb
+import pandas as pd
+import streamlit as st
 
 load_dotenv()
 
@@ -43,9 +44,8 @@ def get_connection() -> duckdb.DuckDBPyConnection:
     return conn
 
 
-def query(sql: str, **params) -> "pd.DataFrame":
+def query(sql: str, **params) -> pd.DataFrame:
     """Execute a SQL string and return a DataFrame. Supports {param} placeholders."""
-    import pandas as pd
     conn = get_connection()
     if params:
         sql = sql.format(**params)
