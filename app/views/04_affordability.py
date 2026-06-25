@@ -12,17 +12,20 @@ from config import (
     AFFORDABILITY_RATIO_MAX,
     MORTGAGE_DEFAULT_RATE_FIXED,
     MORTGAGE_DEFAULT_YEARS,
-    PAGE_ICON,
     VALENCIA_AVG_NET_SALARY_MONTHLY,
 )
 from connection import query
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from styles import page_hero
 
-st.set_page_config(page_title="Affordability · SHR", page_icon=PAGE_ICON, layout="wide")
-st.title("💰 Affordability Index")
-st.caption("How much do you need to earn to live in each neighborhood? Buy vs rent comparison.")
+page_hero(
+    "💰",
+    "Affordability Index",
+    "What you need to earn to buy in each neighbourhood, how many years of "
+    "salary a flat costs, and whether buying beats renting.",
+)
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -41,7 +44,7 @@ with st.sidebar:
     max_ratio = st.slider("Max payment/income ratio (%)", 20, 50, int(AFFORDABILITY_RATIO_MAX))
     muni      = st.selectbox(
         "City",
-        options=["all", "valència", "madrid", "barcelona"],
+        options=["valència", "madrid", "barcelona", "all"],
         format_func=lambda k: "All cities" if k == "all" else k.title(),
     )
 
@@ -112,7 +115,7 @@ with col_l:
         title=f"Reference line: €{net_income:,}/month",
     )
     fig.add_vline(
-        x=net_income, line_dash="dash", line_color="#2563eb",
+        x=net_income, line_dash="dash", line_color="#3b82f6",
         annotation_text=f"Your income: €{net_income:,}",
     )
     fig.update_layout(margin={"l":0, "r":0, "t":40, "b":0}, showlegend=False)
@@ -157,7 +160,7 @@ if not df_rent.empty:
         name="Monthly mortgage (€)",
         x=merged["neighborhood"],
         y=merged["monthly_mortgage"],
-        marker_color="#2563eb",
+        marker_color="#3b82f6",
     ))
     fig3.add_trace(go.Bar(
         name="Median rent (€/month)",

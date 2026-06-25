@@ -3,12 +3,22 @@ version: 2
 models:
   - name: fct_listings_scored
     description: >
-      Final fact table combining current listings with neighborhood benchmarks
-      and opportunity scoring. Grain: one row per listing_pk.
-      Primary consumption layer for Streamlit and BI tools.
+      Final fact table combining current listings with hierarchical price
+      benchmarks (neighbourhood → district → city) and opportunity scoring.
+      Grain: one row per listing_pk. Primary consumption layer for Streamlit/BI.
     columns:
       - name: listing_pk
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              to: ref('int_listings_current')
+              field: listing_pk
+      - name: operation_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: [sale, rent]
       - name: opportunity_score
         tests:
           - not_null
@@ -20,6 +30,18 @@ models:
           - not_null
           - accepted_values:
               values: [great_deal, good_deal, fair, overpriced, very_overpriced]
+      - name: benchmark_level
+        description: Which grain actually scored the listing once the comparable threshold was applied.
+        tests:
+          - not_null
+          - accepted_values:
+              values: [neighbourhood, district, city]
+      - name: benchmark_comp_count
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 1
+      - name: low_confidence_flag
+        tests: [not_null]
       - name: ppsqm_z_score
         tests:
           - dbt_utils.accepted_range:
@@ -28,6 +50,13 @@ models:
 
   - name: rpt_opportunities
     description: >
-      Filtered view of fct_listings_scored exposing only high-confidence listings.
-      Optimized for direct consumption in dashboards and opportunity alerts.
-      Not a new grain — subset of fct_listings_scored where low_confidence_flag = false.
+      Reporting view over fct_listings_scored — the table the Streamlit app reads.
+      Same grain (one row per listing_pk); low-confidence rows are surfaced (not
+      hidden) so the UI can flag them rather than silently dropping listings.
+    columns:
+      - name: listing_pk
+        tests: [unique, not_null]
+      - name: benchmark_level
+        tests:
+          - accepted_values:
+              values: [neighbourhood, district, city]

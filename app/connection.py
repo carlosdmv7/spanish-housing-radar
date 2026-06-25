@@ -44,9 +44,34 @@ def get_connection() -> duckdb.DuckDBPyConnection:
     return conn
 
 
+def _sanitize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    DuckDB maps nullable INTEGER columns to pandas' extension dtypes (Int32/
+    Int64/boolean), whose missing value is `pd.NA`. Plotly serialises figures
+    with orjson, which cannot encode `pd.NA` and raises
+    "Type is not JSON serializable: NAType" the moment such a column reaches a
+    chart's hover_data/customdata (e.g. `rooms`, `bathrooms`).
+
+    Downcast those extension columns to plain numpy dtypes (float64 with NaN,
+    or object) here — once, centrally — so every page and chart is safe.
+    """
+    for col in df.columns:
+        dtype = df[col].dtype
+        if pd.api.types.is_extension_array_dtype(dtype):
+            if pd.api.types.is_integer_dtype(dtype) or pd.api.types.is_float_dtype(dtype):
+                df[col] = df[col].astype("float64")
+            elif pd.api.types.is_bool_dtype(dtype):
+                df[col] = df[col].astype("object").where(df[col].notna(), None)
+    return df
+
+
 def query(sql: str, **params) -> pd.DataFrame:
-    """Execute a SQL string and return a DataFrame. Supports {param} placeholders."""
+    """
+    Execute a SQL string and return a DataFrame.
+
+    Values are bound as DuckDB named parameters ($name) — never string-formatted
+    into the SQL — so user-driven filters can't break or inject into the query.
+    """
     conn = get_connection()
-    if params:
-        sql = sql.format(**params)
-    return conn.execute(sql).df()
+    result = conn.execute(sql, params) if params else conn.execute(sql)
+    return _sanitize_dtypes(result.df())

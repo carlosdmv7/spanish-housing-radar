@@ -86,24 +86,26 @@ flowchart LR
 ## The Opportunity Score
 
 The heart of the product. For each listing we compute its price per m² and compare it to the
-**median and standard deviation of comparable listings** in the same neighbourhood
-(same municipality × operation × property type):
+**median and standard deviation of comparable listings** (same operation × property type):
 
 ```text
-z_score   = (price_per_sqm − neighbourhood_median_ppsqm) / neighbourhood_stddev_ppsqm
+z_score   = (price_per_sqm − benchmark_median_ppsqm) / benchmark_stddev_ppsqm
 z_clamped = clamp(z_score, −3, +3)
 score     = clamp(50 − z_clamped × (50/3), 0, 100)
 ```
 
 | Score | Meaning | Deal tier |
 |---|---|---|
-| **100** | far below neighbourhood market | `great_deal` (≥75) |
+| **100** | far below market | `great_deal` (≥75) |
 | **50** | exactly at the median | `good_deal` (≥55) · `fair` (≥45) |
 | **0** | far above market | `overpriced` (≥25) · `very_overpriced` |
 
-Neighbourhoods with fewer than 10 comparable listings are flagged `low_confidence` and
-**surfaced with a warning badge rather than silently dropped** — an honest UX choice while the
-dataset grows, instead of hiding sparse-data uncertainty.
+**Hierarchical benchmark.** Spanish listings are sparse at the neighbourhood level, so comparing a
+flat only against its own barrio would mean comparing it against itself (z-score 0 → a meaningless
+"fair" 50). Instead the score picks the **finest grain with enough comparables**: neighbourhood →
+district → **city**, controlled by `min_comps_for_benchmark` (default 8). Each row records which grain
+scored it (`benchmark_level`), and the app shows it ("scored vs city"). Only rows that fall back to a
+thin city grain are flagged `low_confidence` and **surfaced with a warning rather than dropped**.
 
 ---
 
@@ -178,19 +180,24 @@ Full command list: `make help`.
 
 - [x] **Prefect** flow orchestrating `extract → dbt build`, with task-level retries
 - [x] **GitHub Actions** CI: lint + `pytest` + `dbt build` on every PR; daily scheduled pipeline run
-- [x] `pytest` unit tests for the `_parse_location()` heuristic (+ orchestration flow tests)
+- [x] `pytest` unit tests for the `_parse_location()` heuristic, orchestration flow, and mortgage math
+- [x] **Hierarchical opportunity score** (neighbourhood → district → city fallback) so the score is
+      meaningful even where a barrio is sparse
+- [x] **Offline geocoding** of Valencia barrios (seed of canonical names + centroids) → the map works
+- [x] `int_listings_unioned` as the multi-source spine with cross-source dedup wired in
 - [ ] **Dockerise** the pipeline for one-command reproducibility
 - [ ] Publish **`dbt docs`** (navigable lineage) to GitHub Pages
-- [ ] Enrich `dim_neighborhoods` with **lat/lon via offline geocoding** → unlock the map page
-- [ ] Wire **Fotocasa** into `int_listings_unioned` for a second source / larger samples
+- [ ] Ingest **Fotocasa** (`raw.fotocasa_listings`) — staging + union are ready, only the source feed is missing
+- [ ] Extend barrio centroids beyond Valencia (Madrid / Barcelona)
 - [ ] dbt **contracts** + **exposures** linking models to app pages
 
 ## Known limitations
 
-1. **Data volume is still growing.** With a young dataset many neighbourhoods are `low_confidence`;
-   the fix is sustained scraping across cities + daily scheduled runs, not lowering the threshold.
-2. **`lat`/`lon` are null** until geocoding (roadmap) — the map page degrades gracefully.
-3. **Fotocasa** scraper exists but isn't unioned into the models yet.
+1. **Data volume is still growing.** Most listings currently benchmark against the **city** grain
+   (`benchmark_level`); barrios flip to local benchmarks as they accumulate ≥ 8 comparables. The fix
+   is sustained scraping + daily runs, not lowering the threshold.
+2. **Geocoding covers Valencia only.** Other cities have no centroids yet, so they don't plot on the map.
+3. **Fotocasa** scraper and staging exist but `raw.fotocasa_listings` isn't fed yet.
 4. **Price-evolution** charts need several days of accumulated snapshots to be meaningful.
 
 ---

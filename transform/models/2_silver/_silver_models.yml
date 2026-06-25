@@ -3,13 +3,24 @@ version: 2
 models:
   - name: int_listings_unioned
     description: >
-      Union of all bronze staging models after DQ filtering.
-      Grain: one row per (source_id, _run_id) across all sources.
-      This is the single entry point for all downstream silver models.
+      The multi-source spine: bronze staging unioned, DQ-filtered, property-type
+      normalised, barrios cleaned and geocoded, with cross-source dedup.
+      Grain: one row per snapshot_pk. Single entry point for downstream silver.
     columns:
       - name: snapshot_pk
         tests: [unique, not_null]
       - name: listing_pk
+        tests: [not_null]
+      - name: operation_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: [sale, rent]
+      - name: property_type
+        tests:
+          - accepted_values:
+              values: [apartment, house, other]
+      - name: neighborhood_is_canonical
         tests: [not_null]
       - name: price_per_sqm
         tests:
@@ -26,6 +37,13 @@ models:
     columns:
       - name: listing_pk
         tests: [unique, not_null]
+      - name: municipality
+        tests: [not_null]
+      - name: price_eur
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
       - name: property_type
         tests:
           - accepted_values:
@@ -61,9 +79,21 @@ models:
 
   - name: dim_neighborhoods
     description: >
-      Master list of neighborhoods observed in the data.
+      Master list of neighborhoods observed in the data, with centroid coordinates
+      (from scraped lat/lon or the Valencia barrio seed).
       Grain: one row per (municipality, neighborhood).
-      Will be enriched with INE codes and geodata when available.
     columns:
       - name: neighborhood_pk
         tests: [unique, not_null]
+      # Catch a mis-geocoded centroid (e.g. a pin dropped in the sea). Spain's
+      # mainland bounding box; nulls (un-geocoded barrios) are ignored.
+      - name: centroid_lat
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 35
+              max_value: 44
+      - name: centroid_lon
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -10
+              max_value: 5

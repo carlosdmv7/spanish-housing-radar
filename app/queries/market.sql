@@ -15,6 +15,6 @@ SELECT
     p75_ppsqm,
     median_size_sqm
 FROM spanish_housing_radar.main_silver.int_neighborhood_stats
-WHERE operation_type = '{operation_type}'
-  AND ('{municipality}' = 'all' OR municipality = '{municipality}')
+WHERE operation_type = $operation_type
+  AND ($municipality = 'all' OR municipality = $municipality)
 ORDER BY median_ppsqm DESC
