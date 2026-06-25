@@ -3,9 +3,8 @@ Listing card component — renders a single listing as a styled Streamlit card.
 """
 from __future__ import annotations
 
-import streamlit as st
-
 from config import DEAL_TIER_COLORS, DEAL_TIER_LABELS
+import streamlit as st
 
 
 def listing_card(row: dict) -> None:

@@ -7,10 +7,10 @@ All subclasses get this for free without any extra code.
 """
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
+from collections.abc import Iterator
 import logging
 import time
-from abc import ABC, abstractmethod
-from typing import Iterator
 
 import requests
 from tenacity import before_sleep_log, retry, stop_after_attempt, wait_exponential
@@ -116,13 +116,13 @@ class AbstractScraper(ABC):
     def _scrapfly_get(self, url: str) -> str:
         """Fetch via Scrapfly anti-bot API. Requires scrapfly-sdk installed."""
         try:
-            from scrapfly import ScrapflyClient, ScrapeConfig  # type: ignore[import]
-        except ImportError:
+            from scrapfly import ScrapeConfig, ScrapflyClient  # type: ignore[import]
+        except ImportError as exc:
             raise RuntimeError(
                 "scrapfly-sdk is not installed.\n"
                 "Run: pip install scrapfly-sdk\n"
                 "Or set SCRAPFLY_ENABLED=false in .env to use plain requests."
-            )
+            ) from exc
 
         client = ScrapflyClient(key=SCRAPFLY_API_KEY)
         result = client.scrape(

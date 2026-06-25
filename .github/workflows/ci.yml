@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel older runs on the same branch when new commits land
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: Lint + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ruff lint
+        run: ruff check extraction/ app/
+
+      - name: Pytest
+        run: pytest extraction/ -v
+        env:
+          # extraction/config.py requires this at import time even though
+          # these tests never touch MotherDuck — any non-empty value works.
+          MOTHERDUCK_TOKEN: unused-in-ci
+
+  dbt-build:
+    name: dbt build (CI schema)
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    defaults:
+      run:
+        working-directory: transform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r ../requirements.txt
+
+      - name: dbt deps
+        run: dbt deps
+
+      # CI writes to ci_bronze / ci_silver / ci_gold, never main_* — a broken
+      # PR can never overwrite the tables the live Streamlit app reads from.
+      - name: Write CI profile
+        run: |
+          mkdir -p "$RUNNER_TEMP/dbt"
+          cat > "$RUNNER_TEMP/dbt/profiles.yml" <<EOF
+          spanish_housing_radar:
+            target: ci
+            outputs:
+              ci:
+                type: duckdb
+                path: "md:spanish_housing_radar?motherduck_token=${MOTHERDUCK_TOKEN}"
+                schema: ci
+                threads: 4
+          EOF
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+
+      - name: dbt build
+        run: dbt build --target ci --profiles-dir "$RUNNER_TEMP/dbt"
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}

@@ -18,9 +18,9 @@ Selector reference (Idealista 2026):
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 import logging
 import re
-from typing import Iterator
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup, Tag
@@ -235,9 +235,12 @@ class IdealistaScraper(AbstractScraper):
         while parts and (cls._STREET_KEYWORDS.search(parts[0]) or parts[0].isdigit()):
             parts.pop(0)
 
-        if not parts:         return fallback, None, None
-        if len(parts) == 1:   return parts[0], None, None
-        if len(parts) == 2:   return parts[1], None, parts[0]
+        if not parts:
+            return fallback, None, None
+        if len(parts) == 1:
+            return parts[0], None, None
+        if len(parts) == 2:
+            return parts[1], None, parts[0]
         return parts[-1], parts[1], parts[0]
 
     @staticmethod
@@ -272,7 +275,4 @@ class IdealistaScraper(AbstractScraper):
             return True
 
         # Short response with no article tags = wall page, not listings
-        if len(html) < 5_000 and "<article" not in h:
-            return True
-
-        return False
+        return len(html) < 5_000 and "<article" not in h

@@ -4,9 +4,8 @@ Each function renders filters and returns the selected values.
 """
 from __future__ import annotations
 
-import streamlit as st
-
 from config import OPERATION_LABELS, PROPERTY_TYPE_LABELS
+import streamlit as st
 
 
 def operation_filter(default: str = "sale") -> str:

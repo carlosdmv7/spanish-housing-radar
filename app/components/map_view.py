@@ -4,11 +4,10 @@ Falls back gracefully if lat/lon are null.
 """
 from __future__ import annotations
 
+from config import DEAL_TIER_COLORS
 import pandas as pd
 import pydeck as pdk
 import streamlit as st
-
-from config import DEAL_TIER_COLORS
 
 
 def _tier_to_rgb(tier: str) -> list[int]:

@@ -2,14 +2,10 @@
 Page 4 — Affordability Index
 Buy vs rent, years-of-salary, income required per neighborhood.
 """
-import sys
 from pathlib import Path
+import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
-import plotly.express as px
-import plotly.graph_objects as go
-import streamlit as st
 
 from components.mortgage import compute_mortgage, max_affordable_loan, required_income
 from config import (
@@ -20,6 +16,9 @@ from config import (
     VALENCIA_AVG_NET_SALARY_MONTHLY,
 )
 from connection import query
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
 
 st.set_page_config(page_title="Affordability · SHR", page_icon=PAGE_ICON, layout="wide")
 st.title("💰 Affordability Index")
@@ -116,7 +115,7 @@ with col_l:
         x=net_income, line_dash="dash", line_color="#2563eb",
         annotation_text=f"Your income: €{net_income:,}",
     )
-    fig.update_layout(margin=dict(l=0, r=0, t=40, b=0), showlegend=False)
+    fig.update_layout(margin={"l":0, "r":0, "t":40, "b":0}, showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
 
 with col_r:
@@ -131,7 +130,7 @@ with col_r:
         labels={"years_of_salary": "Years of net salary", "neighborhood": ""},
         title="Median price / annual net salary",
     )
-    fig2.update_layout(coloraxis_showscale=False, margin=dict(l=0, r=0, t=40, b=0))
+    fig2.update_layout(coloraxis_showscale=False, margin={"l":0, "r":0, "t":40, "b":0})
     st.plotly_chart(fig2, use_container_width=True)
 
 # ── Buy vs Rent ───────────────────────────────────────────────────────────────
@@ -171,7 +170,7 @@ if not df_rent.empty:
         title="Monthly mortgage vs median rent",
         xaxis_title="",
         yaxis_title="€/month",
-        margin=dict(l=0, r=0, t=40, b=0),
+        margin={"l":0, "r":0, "t":40, "b":0},
     )
     st.plotly_chart(fig3, use_container_width=True)
 

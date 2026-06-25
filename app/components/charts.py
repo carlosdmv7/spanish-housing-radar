@@ -4,11 +4,10 @@ All functions return a plotly Figure — caller does st.plotly_chart().
 """
 from __future__ import annotations
 
+from config import ACCENT, DEAL_TIER_COLORS
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-
-from config import ACCENT, DEAL_TIER_COLORS
 
 
 def bar_ppsqm_by_neighborhood(df: pd.DataFrame, title: str = "€/sqm by neighborhood") -> go.Figure:
@@ -23,7 +22,7 @@ def bar_ppsqm_by_neighborhood(df: pd.DataFrame, title: str = "€/sqm by neighbo
         color="median_ppsqm",
         color_continuous_scale="Blues",
     )
-    fig.update_layout(coloraxis_showscale=False, margin=dict(l=0, r=0, t=40, b=0))
+    fig.update_layout(coloraxis_showscale=False, margin={"l":0, "r":0, "t":40, "b":0})
     return fig
 
 
@@ -36,7 +35,7 @@ def box_ppsqm_distribution(df: pd.DataFrame) -> go.Figure:
         labels={"price_per_sqm": "€/sqm", "neighborhood": ""},
         color_discrete_sequence=[ACCENT],
     )
-    fig.update_layout(margin=dict(l=0, r=0, t=40, b=0))
+    fig.update_layout(margin={"l":0, "r":0, "t":40, "b":0})
     return fig
 
 
@@ -50,7 +49,7 @@ def line_price_history(df: pd.DataFrame) -> go.Figure:
         labels={"scraped_date": "", "median_ppsqm": "€/sqm", "neighborhood": "Neighborhood"},
         markers=True,
     )
-    fig.update_layout(margin=dict(l=0, r=0, t=40, b=0))
+    fig.update_layout(margin={"l":0, "r":0, "t":40, "b":0})
     return fig
 
 
@@ -66,7 +65,7 @@ def scatter_size_vs_price(df: pd.DataFrame) -> go.Figure:
         labels={"size_sqm": "sqm", "price_eur": "Price (€)"},
         opacity=0.7,
     )
-    fig.update_layout(margin=dict(l=0, r=0, t=40, b=0))
+    fig.update_layout(margin={"l":0, "r":0, "t":40, "b":0})
     return fig
 
 
@@ -84,7 +83,7 @@ def waterfall_mortgage(result) -> go.Figure:
     fig.update_layout(
         title="Total cost breakdown",
         showlegend=False,
-        margin=dict(l=0, r=0, t=40, b=0),
+        margin={"l":0, "r":0, "t":40, "b":0},
     )
     return fig
 
@@ -104,6 +103,6 @@ def line_amortisation(schedule: list[dict]) -> go.Figure:
         title="Annual payment: principal vs interest",
         xaxis_title="Year",
         yaxis_title="€",
-        margin=dict(l=0, r=0, t=40, b=0),
+        margin={"l":0, "r":0, "t":40, "b":0},
     )
     return fig

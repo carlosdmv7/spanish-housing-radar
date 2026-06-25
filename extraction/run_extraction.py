@@ -22,22 +22,20 @@ VSCode F5: uses .vscode/launch.json → "Run Extraction (Madrid dry-run)"
 """
 from __future__ import annotations
 
-import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
+import sys
 
 import typer
 
 # Make sure project root is on PYTHONPATH when run as a script
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from shared.aux_logger import configure_logger, get_logger
-
 from extraction.config import SCRAPING_CITIES
 from extraction.loaders.motherduck_loader import MotherDuckLoader
 from extraction.scrapers.fotocasa import FotocasaScraper
 from extraction.scrapers.idealista import IdealistaScraper
+from shared.aux_logger import configure_logger, get_logger
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 configure_logger()
@@ -57,7 +55,7 @@ app = typer.Typer(pretty_exceptions_enable=False, add_completion=False)
 @app.command()
 def main(
     # ── Source selection ──────────────────────────────────────────────────────
-    source: Optional[str] = typer.Option(
+    source: str | None = typer.Option(
         None, "--source", "-s",
         help=f"Portal to scrape. Options: {', '.join(VALID_SOURCES)}"
     ),
@@ -66,11 +64,11 @@ def main(
         help="Run ALL sources × ALL cities × ALL operations (full nightly pipeline)."
     ),
     # ── City selection ────────────────────────────────────────────────────────
-    city: Optional[str] = typer.Option(
+    city: str | None = typer.Option(
         None, "--city", "-c",
         help="Single city to scrape. Mutually exclusive with --cities / --all-cities."
     ),
-    cities: Optional[str] = typer.Option(
+    cities: str | None = typer.Option(
         None, "--cities",
         help="Comma-separated city list: madrid,barcelona,valencia"
     ),
@@ -135,7 +133,7 @@ def main(
         logger.warning("No jobs to run.")
         raise typer.Exit(0)
 
-    run_id = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d_%H:%M:%S")
+    run_id = datetime.now(tz=UTC).strftime("%Y-%m-%d_%H:%M:%S")
     total_rows = 0
     failed_jobs: list[tuple[str, str, str]] = []
 
