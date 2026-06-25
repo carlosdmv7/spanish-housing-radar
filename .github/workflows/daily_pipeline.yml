@@ -33,3 +33,7 @@ jobs:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
           SCRAPFLY_API_KEY: ${{ secrets.SCRAPFLY_API_KEY }}
           SCRAPFLY_ENABLED: "true"
+          # Reports this flow run to Prefect Cloud instead of spinning up an
+          # ephemeral local server — gives a persistent UI/history across runs.
+          PREFECT_API_KEY: ${{ secrets.PREFECT_API_KEY }}
+          PREFECT_API_URL: ${{ secrets.PREFECT_API_URL }}
