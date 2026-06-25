@@ -27,10 +27,10 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Ruff lint
-        run: ruff check extraction/ app/
+        run: ruff check extraction/ app/ orchestration/
 
       - name: Pytest
-        run: pytest extraction/ -v
+        run: pytest extraction/ orchestration/ -v
         env:
           # extraction/config.py requires this at import time even though
           # these tests never touch MotherDuck — any non-empty value works.

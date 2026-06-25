@@ -87,6 +87,10 @@ app: ## Launch Streamlit on :8501 (or press F5 in VSCode)
 pipeline: extract-all transform dbt-test ## Nightly: extract + transform + test
 	@echo "✅  Pipeline complete."
 
+.PHONY: pipeline-prefect
+pipeline-prefect: ## Nightly pipeline via Prefect (retries + structured logging)
+	$(PYTHON) -m orchestration.flows.daily_pipeline
+
 # ── Utilities ──────────────────────────────────────────────────────────────────
 .PHONY: check-db
 check-db: ## Show row counts for all raw tables in MotherDuck
