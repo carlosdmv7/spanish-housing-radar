@@ -63,24 +63,22 @@ flowchart LR
     PY -->|"INSERT OR REPLACE<br/>(idempotent upsert)"| RAW
     RAW --> BRONZE --> SILVER --> GOLD --> APP
 
-    ORCH["⏱️ Prefect<br/>schedule + retries"]:::wip
-    CI["🧪 GitHub Actions<br/>dbt build + tests"]:::wip
+    ORCH["⏱️ Prefect<br/>daily schedule + retries"]
+    CI["🧪 GitHub Actions<br/>lint + tests + dbt build"]
     ORCH -.orchestrates.-> PY
     ORCH -.orchestrates.-> GOLD
     CI -.validates.-> GOLD
-
-    classDef wip fill:#fff6e5,stroke:#e0a800,stroke-dasharray:4 3;
 ```
 
-**Legend:** solid = built & running · dashed = Phase 2 (orchestration & CI, in progress).
+**Legend:** solid = core data flow · dashed = orchestration/validation layers wrapping it.
 
 | Layer | Tech | Role |
 |---|---|---|
 | **Ingestion** | Python · BeautifulSoup · Scrapfly · Pydantic · Typer | Robust scraping behind an anti-bot proxy; schema-validated; idempotent loads |
 | **Warehouse** | MotherDuck (DuckDB in the cloud) | Cheap, serverless, zero-ops analytical store |
 | **Transformation** | dbt Core (Medallion: bronze → silver → gold) | Tested, documented, lineage-tracked SQL models |
-| **Orchestration** 🚧 | Prefect | Scheduled daily runs, retries, observability |
-| **CI/CD** 🚧 | GitHub Actions | `dbt build` + tests on every push |
+| **Orchestration** | Prefect | `extract → dbt build` flow with task-level retries + structured logging, triggered daily by a GitHub Actions cron (`.github/workflows/daily_pipeline.yml`) |
+| **CI/CD** | GitHub Actions | Ruff + pytest + `dbt build` against an isolated `ci_*` schema on every PR (`.github/workflows/ci.yml`) |
 | **Serving** | Streamlit · Plotly · pydeck | 4-page interactive analytical app |
 
 ---
@@ -168,6 +166,8 @@ make extract CITY=valencia OP=sale     # ~1 Scrapfly credit (render_js=false)
 make transform                          # dbt run: bronze → silver → gold
 make dbt-test                           # data-quality tests
 make app                                # Streamlit on :8501
+
+make pipeline-prefect                   # same extract → dbt build, run as a Prefect flow
 ```
 
 Full command list: `make help`.
@@ -176,14 +176,14 @@ Full command list: `make help`.
 
 ## Roadmap
 
-- [ ] **Prefect** flow orchestrating `extract → dbt build`, scheduled daily with retries
-- [ ] **GitHub Actions** CI: `dbt build` + tests on every push; nightly scheduled run
+- [x] **Prefect** flow orchestrating `extract → dbt build`, with task-level retries
+- [x] **GitHub Actions** CI: lint + `pytest` + `dbt build` on every PR; daily scheduled pipeline run
+- [x] `pytest` unit tests for the `_parse_location()` heuristic (+ orchestration flow tests)
 - [ ] **Dockerise** the pipeline for one-command reproducibility
 - [ ] Publish **`dbt docs`** (navigable lineage) to GitHub Pages
 - [ ] Enrich `dim_neighborhoods` with **lat/lon via offline geocoding** → unlock the map page
 - [ ] Wire **Fotocasa** into `int_listings_unioned` for a second source / larger samples
 - [ ] dbt **contracts** + **exposures** linking models to app pages
-- [ ] `pytest` unit tests for the `_parse_location()` heuristic
 
 ## Known limitations
 
