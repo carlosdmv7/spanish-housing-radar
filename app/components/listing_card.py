@@ -34,10 +34,15 @@ def listing_card(row: dict) -> None:
                 unsafe_allow_html=True,
             )
 
+        level = row.get("benchmark_level", "city")
+        level_label = {"neighbourhood": "Area median", "district": "District median",
+                       "city": "City median"}.get(level, "Benchmark")
+
         col3, col4, col5 = st.columns(3)
-        col3.metric("€/sqm",               f"€{row['price_per_sqm']:,.0f}")
-        col4.metric("Neighborhood median",  f"€{row['neighborhood_median_ppsqm']:,.0f}")
-        col5.metric("Opportunity score",    f"{row['opportunity_score']:.0f}/100")
+        col3.metric("€/sqm",            f"€{row['price_per_sqm']:,.0f}")
+        col4.metric(level_label,        f"€{row['neighborhood_median_ppsqm']:,.0f}",
+                    help=f"Scored against the {level} median ({int(row.get('benchmark_comp_count', 0))} comparable listings)")
+        col5.metric("Opportunity score", f"{row['opportunity_score']:.0f}/100")
 
         st.markdown(
             f"<a href='{row['url']}' target='_blank'>View on {row['source_name'].capitalize()} →</a>",

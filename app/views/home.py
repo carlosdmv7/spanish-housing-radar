@@ -7,6 +7,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from connection import query
+import pandas as pd
 import streamlit as st
 from styles import page_hero, section
 
@@ -35,6 +36,14 @@ try:
     c2.metric("Cities", int(row["cities"]))
     c3.metric("Neighbourhoods", int(row["neighborhoods"]))
     c4.metric("Last updated", str(row["last_run"]))
+
+    # Freshness guard — the daily pipeline should refresh this; warn if it hasn't.
+    days_stale = (pd.Timestamp.today().normalize() - pd.Timestamp(row["last_run"])).days
+    if days_stale >= 3:
+        st.warning(
+            f"⚠️ Data is **{days_stale} days old** — the daily pipeline may not have "
+            f"run recently. Figures below may be stale."
+        )
 
     # ── Coverage by city (Valencia is the focus market) ───────────────────────
     cov = query("""

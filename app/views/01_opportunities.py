@@ -23,8 +23,8 @@ from styles import page_hero, section
 page_hero(
     "🔍",
     "Opportunities",
-    "Every listing is scored 0–100 against the median €/sqm of its own "
-    "neighbourhood. Higher score = better deal for the area.",
+    "Every listing is scored 0–100 against comparable flats — its neighbourhood "
+    "if there are enough, otherwise its district or city. Higher = better deal.",
 )
 
 
@@ -106,7 +106,7 @@ with tab_list:
         cols = [
             "neighborhood", "district", "price_eur", "size_sqm", "rooms",
             "price_per_sqm", "neighborhood_median_ppsqm", "ppsqm_vs_median",
-            "opportunity_score", "deal_tier", "low_confidence_flag",
+            "opportunity_score", "deal_tier", "benchmark_level", "low_confidence_flag",
         ]
         st.dataframe(
             df[cols].rename(columns={
@@ -116,10 +116,11 @@ with tab_list:
                 "size_sqm": "sqm",
                 "rooms": "Beds",
                 "price_per_sqm": "€/sqm",
-                "neighborhood_median_ppsqm": "Area median €/sqm",
-                "ppsqm_vs_median": "Δ vs area",
+                "neighborhood_median_ppsqm": "Benchmark €/sqm",
+                "ppsqm_vs_median": "Δ vs benchmark",
                 "opportunity_score": "Score",
                 "deal_tier": "Tier",
+                "benchmark_level": "Scored vs",
                 "low_confidence_flag": "⚠️ Low data",
             }),
             use_container_width=True,

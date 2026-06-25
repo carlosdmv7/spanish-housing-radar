@@ -14,6 +14,18 @@ clean-targets: ["target", "dbt_packages"]
 vars:
   # Increment this on each run — used as _run_id in Bronze models
   run_id: "manual"
+  # A benchmark grain needs at least this many comparable listings to be trusted.
+  # Below it, the opportunity score falls back to the next-coarser grain
+  # (neighbourhood → district → city) instead of comparing a flat to itself.
+  min_comps_for_benchmark: 8
+
+seeds:
+  spanish_housing_radar:
+    +schema: silver
+    valencia_barrios:
+      +column_types:
+        lat: double
+        lon: double
 
 models:
   spanish_housing_radar:

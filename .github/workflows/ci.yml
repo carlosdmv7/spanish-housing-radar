@@ -29,11 +29,20 @@ jobs:
       - name: Ruff lint
         run: ruff check extraction/ app/ orchestration/
 
-      - name: Pytest
+      - name: Pytest (extraction + orchestration)
         run: pytest extraction/ orchestration/ -v
         env:
           # extraction/config.py requires this at import time even though
           # these tests never touch MotherDuck — any non-empty value works.
+          MOTHERDUCK_TOKEN: unused-in-ci
+
+      # Run app tests separately: app/, extraction/ and orchestration/ each have a
+      # `tests` package, and pytest's import mode can't load three same-named
+      # packages in one invocation (it also avoids an app/config vs extraction/config
+      # module-name clash).
+      - name: Pytest (app)
+        run: pytest app/ -v
+        env:
           MOTHERDUCK_TOKEN: unused-in-ci
 
   dbt-build:

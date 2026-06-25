@@ -66,8 +66,12 @@ def _sanitize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def query(sql: str, **params) -> pd.DataFrame:
-    """Execute a SQL string and return a DataFrame. Supports {param} placeholders."""
+    """
+    Execute a SQL string and return a DataFrame.
+
+    Values are bound as DuckDB named parameters ($name) — never string-formatted
+    into the SQL — so user-driven filters can't break or inject into the query.
+    """
     conn = get_connection()
-    if params:
-        sql = sql.format(**params)
-    return _sanitize_dtypes(conn.execute(sql).df())
+    result = conn.execute(sql, params) if params else conn.execute(sql)
+    return _sanitize_dtypes(result.df())
