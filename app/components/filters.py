@@ -19,11 +19,13 @@ def operation_filter(default: str = "sale") -> str:
     )
 
 
-def municipality_filter(municipalities: list[str]) -> str:
+def municipality_filter(municipalities: list[str], default: str = "valència") -> str:
     options = ["all"] + sorted(municipalities)
+    idx = options.index(default) if default in options else 0
     return st.selectbox(
         "City",
         options=options,
+        index=idx,
         format_func=lambda k: "All cities" if k == "all" else k.title(),
     )
 

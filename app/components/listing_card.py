@@ -4,6 +4,7 @@ Listing card component — renders a single listing as a styled Streamlit card.
 from __future__ import annotations
 
 from config import DEAL_TIER_COLORS, DEAL_TIER_LABELS
+import pandas as pd
 import streamlit as st
 
 
@@ -11,7 +12,8 @@ def listing_card(row: dict) -> None:
     tier   = row.get("deal_tier", "fair")
     color  = DEAL_TIER_COLORS.get(tier, "#94a3b8")
     label  = DEAL_TIER_LABELS.get(tier, tier)
-    rooms  = f"{int(row['rooms'])} bed · " if row.get("rooms") else ""
+    rooms_val = row.get("rooms")
+    rooms  = f"{int(rooms_val)} bed · " if pd.notna(rooms_val) else ""
     size   = f"{row['size_sqm']:.0f} sqm"
     hood   = (row.get("neighborhood") or "").title()
     dist   = (row.get("district") or "").title()

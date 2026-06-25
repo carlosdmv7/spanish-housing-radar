@@ -3,10 +3,10 @@
 # or in the Streamlit Community Cloud "Secrets" UI.
 
 [theme]
-primaryColor = "#2563eb"
+primaryColor = "#3b82f6"
 backgroundColor = "#0e1117"
-secondaryBackgroundColor = "#1a1f2b"
-textColor = "#fafafa"
+secondaryBackgroundColor = "#161b26"
+textColor = "#e7ecf3"
 font = "sans serif"
 
 [server]

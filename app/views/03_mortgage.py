@@ -21,14 +21,17 @@ from config import (
     MORTGAGE_DEFAULT_RATE_FIXED,
     MORTGAGE_DEFAULT_RATE_VARIABLE,
     MORTGAGE_DEFAULT_YEARS,
-    PAGE_ICON,
 )
 import pandas as pd
 import streamlit as st
+from styles import page_hero
 
-st.set_page_config(page_title="Mortgage · SHR", page_icon=PAGE_ICON, layout="wide")
-st.title("🏠 Mortgage Calculator")
-st.caption("Simulate fixed and variable mortgages with French amortisation. All calculations are indicative.")
+page_hero(
+    "🧮",
+    "Mortgage Calculator",
+    "Compare fixed vs variable mortgages with a full French amortisation "
+    "schedule and a stress scenario. All figures are indicative.",
+)
 
 # ── Inputs ────────────────────────────────────────────────────────────────────
 col_in, col_out = st.columns([1, 2])
@@ -85,14 +88,15 @@ with col_out:
     r1, r2, r3 = st.columns(3)
 
     def scenario_col(col, label: str, result, highlight: bool = False):
-        border = "2px solid #2563eb" if highlight else "1px solid #e2e8f0"
+        border = "2px solid #3b82f6" if highlight else "1px solid rgba(148,163,184,0.18)"
+        bg = "rgba(59,130,246,0.10)" if highlight else "#161b26"
         col.markdown(
-            f"<div style='border:{border};border-radius:8px;padding:16px'>"
+            f"<div style='border:{border};background:{bg};border-radius:12px;padding:16px'>"
             f"<div style='font-weight:700;margin-bottom:8px'>{label}</div>"
             f"<div style='font-size:1.6rem;font-weight:800'>€{result.monthly_payment:,.0f}"
-            f"<span style='font-size:1rem;font-weight:400'>/month</span></div>"
-            f"<div style='color:#64748b;font-size:0.85rem;margin-top:4px'>Total paid: €{result.total_paid:,.0f}</div>"
-            f"<div style='color:#ef4444;font-size:0.85rem'>Interest: €{result.total_interest:,.0f}</div>"
+            f"<span style='font-size:1rem;font-weight:400;color:#94a3b8'>/month</span></div>"
+            f"<div style='color:#94a3b8;font-size:0.85rem;margin-top:4px'>Total paid: €{result.total_paid:,.0f}</div>"
+            f"<div style='color:#f87171;font-size:0.85rem'>Interest: €{result.total_interest:,.0f}</div>"
             f"</div>",
             unsafe_allow_html=True,
         )

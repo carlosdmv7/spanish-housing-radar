@@ -48,4 +48,4 @@ AFFORDABILITY_RATIO_MAX:         float = 35.0
 # ── UI ────────────────────────────────────────────────────────────────────────
 PAGE_TITLE = "Spanish Housing Radar"
 PAGE_ICON  = "🏠"
-ACCENT     = "#2563eb"
+ACCENT     = "#3b82f6"

@@ -26,6 +26,39 @@ def bar_ppsqm_by_neighborhood(df: pd.DataFrame, title: str = "€/sqm by neighbo
     return fig
 
 
+def bar_ppsqm_with_range(df: pd.DataFrame, top_n: int = 18) -> go.Figure:
+    """
+    Horizontal bar of median €/sqm per neighbourhood, with a p25–p75 whisker so
+    the reader sees both the typical price and how much it varies. Replaces the
+    old stacked-base bar, which was hard to read.
+    """
+    d = df.sort_values("median_ppsqm", ascending=True).tail(top_n)
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=d["median_ppsqm"],
+        y=d["neighborhood"].str.title(),
+        orientation="h",
+        marker_color=ACCENT,
+        error_x={
+            "type": "data",
+            "symmetric": False,
+            "array": d["p75_ppsqm"] - d["median_ppsqm"],
+            "arrayminus": d["median_ppsqm"] - d["p25_ppsqm"],
+            "color": "rgba(148,163,184,0.55)",
+            "thickness": 1.4,
+        },
+        hovertemplate="<b>%{y}</b><br>Median €%{x:,.0f}/sqm<extra></extra>",
+    ))
+    fig.update_layout(
+        title="Median €/sqm by neighbourhood (whisker = P25–P75 spread)",
+        xaxis_title="€/sqm",
+        yaxis_title="",
+        margin={"l": 0, "r": 0, "t": 40, "b": 0},
+        height=max(360, 22 * len(d)),
+    )
+    return fig
+
+
 def box_ppsqm_distribution(df: pd.DataFrame) -> go.Figure:
     fig = px.box(
         df,
@@ -59,13 +92,21 @@ def scatter_size_vs_price(df: pd.DataFrame) -> go.Figure:
         x="size_sqm",
         y="price_eur",
         color="deal_tier",
+        category_orders={"deal_tier": list(DEAL_TIER_COLORS.keys())},
         color_discrete_map=DEAL_TIER_COLORS,
         hover_data=["neighborhood", "rooms", "price_per_sqm"],
-        title="Size vs Price",
-        labels={"size_sqm": "sqm", "price_eur": "Price (€)"},
-        opacity=0.7,
+        labels={
+            "size_sqm": "Size (sqm)",
+            "price_eur": "Price (€)",
+            "deal_tier": "Deal tier",
+        },
+        opacity=0.75,
     )
-    fig.update_layout(margin={"l":0, "r":0, "t":40, "b":0})
+    fig.update_traces(marker={"size": 9, "line": {"width": 0.5, "color": "rgba(0,0,0,0.25)"}})
+    fig.update_layout(
+        margin={"l": 0, "r": 0, "t": 10, "b": 0},
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.0, "x": 0},
+    )
     return fig
 
 

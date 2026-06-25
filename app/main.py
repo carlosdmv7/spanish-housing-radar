@@ -1,10 +1,13 @@
 """
-Spanish Housing Radar — main entry point.
-Configures page layout and shows a landing summary.
+Spanish Housing Radar — entry point & navigation router.
+
+Uses st.navigation (Streamlit ≥ 1.36) so the sidebar shows grouped, icon-led
+pages instead of the raw `NN_filename` auto-listing. set_page_config lives ONLY
+here; the individual view scripts must not call it.
 """
 from config import PAGE_ICON, PAGE_TITLE
-from connection import query
 import streamlit as st
+from styles import inject_css
 
 st.set_page_config(
     page_title=PAGE_TITLE,
@@ -12,45 +15,23 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+inject_css()
 
-st.title(f"{PAGE_ICON} {PAGE_TITLE}")
-st.caption("Spanish real estate market analysis · Data from Idealista")
+home = st.Page("views/home.py", title="Home", icon="🏠", default=True)
+opportunities = st.Page("views/01_opportunities.py", title="Opportunities", icon="🔍")
+market = st.Page("views/02_market.py", title="Market", icon="📊")
+mortgage = st.Page("views/03_mortgage.py", title="Mortgage", icon="🧮")
+affordability = st.Page("views/04_affordability.py", title="Affordability", icon="💰")
 
-st.markdown("---")
+nav = st.navigation(
+    {
+        "Overview": [home],
+        "Explore the market": [opportunities, market],
+        "Can I afford it?": [mortgage, affordability],
+    }
+)
 
-# ── Quick stats ───────────────────────────────────────────────────────────────
-try:
-    stats = query("""
-        SELECT
-            COUNT(DISTINCT listing_pk)    AS total_listings,
-            COUNT(DISTINCT municipality)  AS cities,
-            COUNT(DISTINCT neighborhood)  AS neighborhoods,
-            MIN(_loaded_at::date)         AS first_run,
-            MAX(_loaded_at::date)         AS last_run
-        FROM spanish_housing_radar.main_silver.int_listings_current
-    """)
+with st.sidebar:
+    st.caption("Spanish Housing Radar · data from Idealista")
 
-    row = stats.iloc[0]
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Active listings",  f"{int(row['total_listings']):,}")
-    c2.metric("Cities",           int(row['cities']))
-    c3.metric("Neighborhoods",    int(row['neighborhoods']))
-    c4.metric("First snapshot",   str(row['first_run']))
-    c5.metric("Latest snapshot",  str(row['last_run']))
-
-except Exception as e:
-    st.warning(f"Could not load stats: {e}")
-
-st.markdown("---")
-st.markdown("""
-### How to use this app
-
-| Page | What you'll find |
-|---|---|
-| 🔍 **Opportunities** | Listings ranked by opportunity score — cheapest vs their neighborhood appear first. |
-| 📊 **Market** | €/sqm by neighborhood, price distribution, historical trends. |
-| 🏠 **Mortgage** | Fixed vs variable simulator with full French amortisation schedule. |
-| 💰 **Affordability** | How much do you need to earn to buy in each neighborhood? Buy vs rent comparison. |
-
-Use the left sidebar to navigate.
-""")
+nav.run()
