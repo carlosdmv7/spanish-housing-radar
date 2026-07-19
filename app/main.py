@@ -5,6 +5,11 @@ Uses st.navigation (Streamlit ≥ 1.36) so the sidebar shows grouped, icon-led
 pages instead of the raw `NN_filename` auto-listing. set_page_config lives ONLY
 here; the individual view scripts must not call it.
 """
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent))
+
 from config import PAGE_ICON, PAGE_TITLE
 import streamlit as st
 from styles import inject_css
@@ -18,10 +23,10 @@ st.set_page_config(
 inject_css()
 
 home = st.Page("views/home.py", title="Home", icon="🏠", default=True)
-opportunities = st.Page("views/01_opportunities.py", title="Opportunities", icon="🔍")
-market = st.Page("views/02_market.py", title="Market", icon="📊")
-mortgage = st.Page("views/03_mortgage.py", title="Mortgage", icon="🧮")
-affordability = st.Page("views/04_affordability.py", title="Affordability", icon="💰")
+opportunities = st.Page("views/01_opportunities.py", title="Opportunities", icon="🔍", url_path="opportunities")
+market = st.Page("views/02_market.py", title="Market", icon="📊", url_path="market")
+mortgage = st.Page("views/03_mortgage.py", title="Mortgage", icon="🧮", url_path="mortgage")
+affordability = st.Page("views/04_affordability.py", title="Affordability", icon="💰", url_path="affordability")
 
 nav = st.navigation(
     {

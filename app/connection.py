@@ -71,7 +71,15 @@ def query(sql: str, **params) -> pd.DataFrame:
 
     Values are bound as DuckDB named parameters ($name) — never string-formatted
     into the SQL — so user-driven filters can't break or inject into the query.
+
+    Runs on a per-call cursor(): the cached connection is shared across every
+    Streamlit session (thread), and DuckDB connections are NOT thread-safe —
+    two overlapping sessions querying the shared connection can crash the whole
+    server. cursor() is DuckDB's documented cheap per-thread handle.
     """
-    conn = get_connection()
-    result = conn.execute(sql, params) if params else conn.execute(sql)
-    return _sanitize_dtypes(result.df())
+    cur = get_connection().cursor()
+    try:
+        result = cur.execute(sql, params) if params else cur.execute(sql)
+        return _sanitize_dtypes(result.df())
+    finally:
+        cur.close()

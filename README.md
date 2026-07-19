@@ -22,8 +22,16 @@ interactive Streamlit app — surfacing deals priced below their neighbourhood's
 >
 > _Daily ingestion is currently paused (API credits) — the app serves the last full snapshot._
 
-<!-- TODO: replace with a real screenshot / GIF of the Opportunities page once data volume is up -->
-<!-- ![Opportunities page](docs/opportunities.png) -->
+![Opportunities — listings scored against their local market](docs/img/opportunities.png)
+
+<details>
+<summary>📸 More screenshots — Market, Mortgage, Affordability</summary>
+
+![Market overview](docs/img/market.png)
+![Mortgage simulator](docs/img/mortgage.png)
+![Affordability index](docs/img/affordability.png)
+
+</details>
 
 ---
 

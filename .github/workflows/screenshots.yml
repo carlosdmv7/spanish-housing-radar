@@ -1,0 +1,54 @@
+name: Capture screenshots
+
+# Manual utility: boots the Streamlit app against MotherDuck on the runner,
+# screenshots every page with Playwright, and commits the PNGs to the branch it
+# was dispatched on (docs/img/). Used to refresh the README visuals — the local
+# WSL dev box lacks the browser system libraries.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt playwright
+          playwright install chromium --with-deps
+
+      - name: Start Streamlit
+        run: |
+          nohup streamlit run app/main.py \
+            --server.headless true --server.port 8501 \
+            --server.fileWatcherType none \
+            > streamlit.log 2>&1 &
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+
+      - name: Capture pages
+        run: python scripts/capture_screenshots.py
+
+      # The app runs backgrounded — if it dies mid-capture this is the only
+      # place its stacktrace shows up.
+      - name: Dump app log on failure
+        if: failure()
+        run: tail -100 streamlit.log || true
+
+      - name: Commit screenshots to this branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/img/*.png
+          git diff --cached --quiet && echo "no changes" && exit 0
+          git commit -m "docs: refresh app screenshots (automated capture)"
+          git push

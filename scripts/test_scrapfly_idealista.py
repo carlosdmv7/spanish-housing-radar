@@ -1,8 +1,8 @@
 # scrpts/test_scrapfly_idealista.py
 from __future__ import annotations
 
-import sys
 from pathlib import Path
+import sys
 
 # Ensure project root is on PYTHONPATH when running as a script
 sys.path.insert(0, str(Path(__file__).parent.parent))
