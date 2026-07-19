@@ -46,15 +46,18 @@ try:
         )
 
     # ── Coverage by city (Valencia is the focus market) ───────────────────────
+    # Title-casing happens in pandas: INITCAP isn't available in every DuckDB
+    # build (it broke on the CI runner), .str.title() is portable everywhere.
     cov = query("""
         SELECT
-            INITCAP(municipality)                               AS city,
+            municipality                                        AS city,
             COUNT(*) FILTER (WHERE operation_type = 'sale')     AS for_sale,
             COUNT(*) FILTER (WHERE operation_type = 'rent')     AS for_rent
         FROM spanish_housing_radar.main_silver.int_listings_current
         GROUP BY 1
         ORDER BY (for_sale + for_rent) DESC
     """)
+    cov["city"] = cov["city"].str.title()
     section("Coverage by city")
     st.dataframe(
         cov.rename(columns={"city": "City", "for_sale": "For sale", "for_rent": "For rent"}),
