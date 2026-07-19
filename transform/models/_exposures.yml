@@ -1,0 +1,22 @@
+version: 2
+
+exposures:
+  - name: housing_radar_app
+    label: Spanish Housing Radar (Streamlit)
+    type: dashboard
+    maturity: medium
+    # TODO(carlos): replace with the app's public streamlit.app URL
+    url: https://github.com/carlosdmv7/spanish-housing-radar
+    description: >
+      Public Streamlit app: opportunity search (scored listings + map), market
+      benchmarks per neighbourhood, mortgage simulator and affordability index.
+      Anything these models expose is part of the app's de-facto API — see the
+      enforced contract on rpt_opportunities.
+    depends_on:
+      - ref('rpt_opportunities')
+      - ref('int_neighborhood_stats')
+      - ref('int_listings_history')
+      - ref('int_listings_current')
+    owner:
+      name: Carlos DMV
+      email: carlosdmv7@gmail.com

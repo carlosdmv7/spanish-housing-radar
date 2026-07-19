@@ -1,0 +1,16 @@
+# Keep the image lean and secrets out of the build context.
+.env
+.env.*
+.git/
+.github/
+.venv/
+.streamlit/
+app/
+**/__pycache__/
+**/.pytest_cache/
+transform/target/
+transform/dbt_packages/
+transform/logs/
+*.md
+data/
+notebooks/

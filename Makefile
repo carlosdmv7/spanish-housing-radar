@@ -111,7 +111,16 @@ format: ## Format with black
 
 .PHONY: pytest
 pytest: ## Run Python unit tests
-	$(CURDIR)/.venv/bin/pytest extraction/ -v
+	$(CURDIR)/.venv/bin/pytest extraction/ orchestration/ -v
+	$(CURDIR)/.venv/bin/pytest app/ -v
+
+.PHONY: docker-build
+docker-build: ## Build the pipeline Docker image
+	docker build -t housing-radar .
+
+.PHONY: docker-run
+docker-run: ## Run the full pipeline in Docker (needs .env)
+	docker run --rm --env-file .env housing-radar
 
 # ── Help ───────────────────────────────────────────────────────────────────────
 .PHONY: help

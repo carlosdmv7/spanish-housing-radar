@@ -53,10 +53,61 @@ models:
       Reporting view over fct_listings_scored — the table the Streamlit app reads.
       Same grain (one row per listing_pk); low-confidence rows are surfaced (not
       hidden) so the UI can flag them rather than silently dropping listings.
+      The enforced contract freezes the schema the app depends on: renaming or
+      retyping a column here fails the build instead of breaking the live app.
+    config:
+      contract:
+        enforced: true
     columns:
       - name: listing_pk
+        data_type: varchar
         tests: [unique, not_null]
+      - name: source_name
+        data_type: varchar
+      - name: url
+        data_type: varchar
+      - name: municipality
+        data_type: varchar
+      - name: district
+        data_type: varchar
+      - name: neighborhood
+        data_type: varchar
+      - name: neighborhood_is_canonical
+        data_type: boolean
+      - name: operation_type
+        data_type: varchar
+      - name: property_type
+        data_type: varchar
+      - name: price_eur
+        data_type: double
+      - name: size_sqm
+        data_type: double
+      - name: rooms
+        data_type: integer
+      - name: price_per_sqm
+        data_type: double
+      - name: neighborhood_median_ppsqm
+        data_type: double
+      - name: ppsqm_vs_median
+        data_type: double
+      - name: ppsqm_z_score
+        data_type: double
+      - name: opportunity_score
+        data_type: double
+      - name: deal_tier
+        data_type: varchar
       - name: benchmark_level
+        data_type: varchar
         tests:
           - accepted_values:
               values: [neighbourhood, district, city]
+      - name: benchmark_comp_count
+        data_type: bigint
+      - name: low_confidence_flag
+        data_type: boolean
+      - name: lat
+        data_type: double
+      - name: lon
+        data_type: double
+      - name: _loaded_at
+        data_type: timestamp with time zone

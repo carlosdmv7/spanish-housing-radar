@@ -45,6 +45,17 @@ jobs:
         env:
           MOTHERDUCK_TOKEN: unused-in-ci
 
+  docker-build:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # No push, no registry — this job only proves the pipeline image builds
+      # from a clean context (catches missing files in COPY, broken deps, etc.).
+      - name: Build image
+        run: docker build -t housing-radar:ci .
+
   dbt-build:
     name: dbt build (CI schema)
     runs-on: ubuntu-latest

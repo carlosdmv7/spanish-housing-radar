@@ -6,16 +6,19 @@ dbt project on a cloud warehouse, and serves an **Opportunity Score (0–100)** 
 interactive Streamlit app — surfacing deals priced below their neighbourhood's market rate.
 
 <p align="center">
+  <a href="https://github.com/carlosdmv7/spanish-housing-radar/actions/workflows/ci.yml">
+    <img alt="CI" src="https://github.com/carlosdmv7/spanish-housing-radar/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Python"     src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white">
   <img alt="dbt"        src="https://img.shields.io/badge/dbt-1.9-FF694B?logo=dbt&logoColor=white">
   <img alt="DuckDB"     src="https://img.shields.io/badge/MotherDuck-DuckDB-FFF000?logo=duckdb&logoColor=black">
   <img alt="Streamlit"  src="https://img.shields.io/badge/Streamlit-1.44-FF4B4B?logo=streamlit&logoColor=white">
   <img alt="Prefect"    src="https://img.shields.io/badge/Prefect-orchestration-024DFD?logo=prefect&logoColor=white">
+  <img alt="Docker"     src="https://img.shields.io/badge/Docker-pipeline-2496ED?logo=docker&logoColor=white">
   <img alt="License"    src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
-> **🔗 Live demo:** _coming soon — deploying to Streamlit Community Cloud_
-> **📊 dbt docs (lineage):** _coming soon — publishing to GitHub Pages_
+> **📊 dbt docs (lineage & tests):** https://carlosdmv7.github.io/spanish-housing-radar/
+> **🔗 Live demo:** _Streamlit Community Cloud (link on request — ingestion currently paused to save API credits)_
 
 <!-- TODO: replace with a real screenshot / GIF of the Opportunities page once data volume is up -->
 <!-- ![Opportunities page](docs/opportunities.png) -->
@@ -172,6 +175,13 @@ make app                                # Streamlit on :8501
 make pipeline-prefect                   # same extract → dbt build, run as a Prefect flow
 ```
 
+**Or with Docker** (no local Python needed):
+
+```bash
+make docker-build                       # build the pipeline image
+make docker-run                         # extract → dbt build inside the container
+```
+
 Full command list: `make help`.
 
 ---
@@ -185,18 +195,21 @@ Full command list: `make help`.
       meaningful even where a barrio is sparse
 - [x] **Offline geocoding** of Valencia barrios (seed of canonical names + centroids) → the map works
 - [x] `int_listings_unioned` as the multi-source spine with cross-source dedup wired in
-- [ ] **Dockerise** the pipeline for one-command reproducibility
-- [ ] Publish **`dbt docs`** (navigable lineage) to GitHub Pages
+- [x] **Dockerised** pipeline (`make docker-build && make docker-run`) — image build verified in CI
+- [x] **`dbt docs` on GitHub Pages** — lineage graph, column docs and tests, auto-published on merge
+- [x] **dbt contract** enforced on `rpt_opportunities` (the app's de-facto API) + **exposure** for the Streamlit dashboard
+- [x] Barrio centroids for **Valencia, Madrid, Barcelona, Sevilla, Málaga** (~170 canonical barrios + aliases)
 - [ ] Ingest **Fotocasa** (`raw.fotocasa_listings`) — staging + union are ready, only the source feed is missing
-- [ ] Extend barrio centroids beyond Valencia (Madrid / Barcelona)
-- [ ] dbt **contracts** + **exposures** linking models to app pages
+- [ ] Barrio centroids for Zaragoza / Valladolid / Bilbao
 
 ## Known limitations
 
 1. **Data volume is still growing.** Most listings currently benchmark against the **city** grain
    (`benchmark_level`); barrios flip to local benchmarks as they accumulate ≥ 8 comparables. The fix
    is sustained scraping + daily runs, not lowering the threshold.
-2. **Geocoding covers Valencia only.** Other cities have no centroids yet, so they don't plot on the map.
+2. **Geocoding is barrio-centroid level** (Valencia, Madrid, Barcelona, Sevilla, Málaga) — listings
+   plot at their neighbourhood's centroid, not their exact address (search-card scraping doesn't
+   expose per-listing coordinates). Zaragoza/Valladolid/Bilbao have no centroids yet.
 3. **Fotocasa** scraper and staging exist but `raw.fotocasa_listings` isn't fed yet.
 4. **Price-evolution** charts need several days of accumulated snapshots to be meaningful.
 

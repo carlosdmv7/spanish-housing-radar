@@ -1,0 +1,30 @@
+version: 2
+
+seeds:
+  - name: barrios_es
+    description: >
+      Canonical barrio names + approximate centroids for Valencia, Madrid,
+      Barcelona, Sevilla and Málaga. `alias` is the exact lowercased string the
+      scraper produces; `neighborhood`/`district` are the canonical names it
+      collapses to. Joined in int_listings_unioned to clean the neighbourhood
+      grain and geocode listings without coordinates.
+    tests:
+      # The unioned model joins on (municipality, alias) — a duplicate here
+      # would fan out listings and break snapshot_pk uniqueness downstream.
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [municipality, alias]
+    columns:
+      - name: alias
+        tests: [not_null]
+      - name: municipality
+        tests: [not_null]
+      - name: neighborhood
+        tests: [not_null]
+      - name: lat
+        tests:
+          - not_null
+          - dbt_utils.accepted_range: {min_value: 35, max_value: 44}
+      - name: lon
+        tests:
+          - not_null
+          - dbt_utils.accepted_range: {min_value: -10, max_value: 5}
