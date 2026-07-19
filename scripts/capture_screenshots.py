@@ -53,9 +53,26 @@ def main() -> None:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1.5)
-        for url_path, name, settle in PAGES:
-            page.goto(f"{args.base_url}/{url_path}", wait_until="networkidle", timeout=90_000)
+
+        def goto_and_settle(url: str, settle: int) -> None:
+            page.goto(url, wait_until="networkidle", timeout=90_000)
+            # Streamlit shows a status widget ("RUNNING…") while the script
+            # executes; wait for it to detach so we never shoot a half-loaded
+            # page (the first MotherDuck query can take >10s cold).
+            try:
+                page.wait_for_selector(
+                    '[data-testid="stStatusWidget"]', state="detached", timeout=90_000
+                )
+            except Exception:
+                pass  # widget may never have appeared on an instant page
             time.sleep(settle)  # let plotly/pydeck finish painting
+
+        # Warm-up: first load opens the MotherDuck connection (slow, cold);
+        # every capture after this hits the cached connection + cached queries.
+        goto_and_settle(args.base_url, 2)
+
+        for url_path, name, settle in PAGES:
+            goto_and_settle(f"{args.base_url}/{url_path}", settle)
             page.screenshot(path=OUT_DIR / f"{name}.png")
             print(f"captured {name}.png")
         browser.close()
