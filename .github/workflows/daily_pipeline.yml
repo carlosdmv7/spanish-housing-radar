@@ -1,10 +1,13 @@
 name: Daily pipeline
 
 on:
-  schedule:
-    # 05:00 UTC every day — past Spanish business hours, ahead of a morning check-in
-    - cron: "0 5 * * *"
-  workflow_dispatch: {}
+  # Daily cron is disabled while the project is parked / out of Scrapfly credits,
+  # so it doesn't burn API quota or write stale data to prod. Re-enable by
+  # uncommenting the schedule below AND running `gh workflow enable "Daily pipeline"`.
+  # schedule:
+  #   # 05:00 UTC every day — past Spanish business hours, ahead of a morning check-in
+  #   - cron: "0 5 * * *"
+  workflow_dispatch: {}  # still runnable on demand from the Actions tab
 
 jobs:
   run-pipeline:
