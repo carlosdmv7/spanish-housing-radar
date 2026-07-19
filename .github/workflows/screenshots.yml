@@ -6,6 +6,9 @@ name: Capture screenshots
 # WSL dev box lacks the browser system libraries.
 on:
   workflow_dispatch: {}
+  # TEMP: lets the workflow register+run before it exists on main; removed pre-merge.
+  push:
+    branches: [feat/readme-screenshots]
 
 permissions:
   contents: write
