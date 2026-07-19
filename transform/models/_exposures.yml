@@ -5,8 +5,7 @@ exposures:
     label: Spanish Housing Radar (Streamlit)
     type: dashboard
     maturity: medium
-    # TODO(carlos): replace with the app's public streamlit.app URL
-    url: https://github.com/carlosdmv7/spanish-housing-radar
+    url: https://spanish-housing-radar-carlosdmv7.streamlit.app
     description: >
       Public Streamlit app: opportunity search (scored listings + map), market
       benchmarks per neighbourhood, mortgage simulator and affordability index.

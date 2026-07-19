@@ -17,8 +17,10 @@ interactive Streamlit app — surfacing deals priced below their neighbourhood's
   <img alt="License"    src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
+> **🔗 Live demo:** https://spanish-housing-radar-carlosdmv7.streamlit.app/
 > **📊 dbt docs (lineage & tests):** https://carlosdmv7.github.io/spanish-housing-radar/
-> **🔗 Live demo:** _Streamlit Community Cloud (link on request — ingestion currently paused to save API credits)_
+>
+> _Daily ingestion is currently paused (API credits) — the app serves the last full snapshot._
 
 <!-- TODO: replace with a real screenshot / GIF of the Opportunities page once data volume is up -->
 <!-- ![Opportunities page](docs/opportunities.png) -->
