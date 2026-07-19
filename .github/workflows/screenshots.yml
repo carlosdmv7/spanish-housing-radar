@@ -30,12 +30,22 @@ jobs:
           playwright install chromium --with-deps
 
       - name: Start Streamlit
-        run: streamlit run app/main.py --server.headless true --server.port 8501 &
+        run: |
+          nohup streamlit run app/main.py \
+            --server.headless true --server.port 8501 \
+            --server.fileWatcherType none \
+            > streamlit.log 2>&1 &
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
 
       - name: Capture pages
         run: python scripts/capture_screenshots.py
+
+      # The app runs backgrounded — if it dies mid-capture this is the only
+      # place its stacktrace shows up.
+      - name: Dump app log on failure
+        if: failure()
+        run: tail -100 streamlit.log || true
 
       - name: Commit screenshots to this branch
         run: |

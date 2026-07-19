@@ -11,6 +11,7 @@ workflow, which has the browser system deps the local WSL setup lacks.
 from __future__ import annotations
 
 import argparse
+import contextlib
 from pathlib import Path
 import sys
 import time
@@ -55,16 +56,23 @@ def main() -> None:
         page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1.5)
 
         def goto_and_settle(url: str, settle: int) -> None:
-            page.goto(url, wait_until="networkidle", timeout=90_000)
+            # One retry: if the server hiccups (connection refused mid-session),
+            # wait for it to come back healthy and try again before giving up.
+            for attempt in (1, 2):
+                try:
+                    page.goto(url, wait_until="networkidle", timeout=90_000)
+                    break
+                except Exception:
+                    if attempt == 2:
+                        raise
+                    wait_for_app(args.base_url, timeout_s=60)
             # Streamlit shows a status widget ("RUNNING…") while the script
             # executes; wait for it to detach so we never shoot a half-loaded
             # page (the first MotherDuck query can take >10s cold).
-            try:
+            with contextlib.suppress(Exception):  # widget may never appear on an instant page
                 page.wait_for_selector(
                     '[data-testid="stStatusWidget"]', state="detached", timeout=90_000
                 )
-            except Exception:
-                pass  # widget may never have appeared on an instant page
             time.sleep(settle)  # let plotly/pydeck finish painting
 
         # Warm-up: first load opens the MotherDuck connection (slow, cold);
