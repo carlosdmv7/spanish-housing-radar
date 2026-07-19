@@ -1,0 +1,25 @@
+name: Keep app awake
+
+# Streamlit Community Cloud puts apps to sleep after a period without traffic,
+# greeting visitors (recruiters!) with a wake-up screen instead of the app.
+# This ping counts as traffic and keeps it warm. Costs nothing — no Scrapfly,
+# no MotherDuck writes; it only loads the app's front page.
+#
+# Note: GitHub auto-disables scheduled workflows after ~60 days without repo
+# activity — re-enable from the Actions tab if the repo goes quiet that long.
+on:
+  schedule:
+    - cron: "23 */6 * * *"   # every 6 hours (odd minute to dodge cron rush)
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the live app
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" -L --max-time 60 \
+            "https://spanish-housing-radar-carlosdmv7.streamlit.app/")
+          echo "App responded with HTTP $code"
+          # 2xx/3xx are fine; alert loudly on 4xx/5xx so a broken deploy is noticed.
+          [ "$code" -lt 400 ]

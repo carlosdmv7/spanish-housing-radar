@@ -1,18 +1,17 @@
 from __future__ import annotations
 
+from pathlib import Path
 import re
 import sys
-from pathlib import Path
 from urllib.parse import urljoin
 
-import pandas as pd
 from bs4 import BeautifulSoup
+import pandas as pd
 
 # Ensure project root is on PYTHONPATH
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from extraction.config import IDEALISTA_BASE_URL, IDEALISTA_SELECTORS
-
 
 HTML_PATH = Path("data/debug/idealista_search_madrid_sale.html")
 
