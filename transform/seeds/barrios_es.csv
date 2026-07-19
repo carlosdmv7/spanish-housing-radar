@@ -1,0 +1,172 @@
+alias,municipality,neighborhood,district,lat,lon
+russafa,valència,russafa,eixample,39.4585,-0.3735
+ruzafa,valència,russafa,eixample,39.4585,-0.3735
+sant francesc,valència,sant francesc,ciutat vella,39.4699,-0.3763
+el mercat,valència,el mercat,ciutat vella,39.4738,-0.3800
+mercat,valència,el mercat,ciutat vella,39.4738,-0.3800
+el carme,valència,el carme,ciutat vella,39.4775,-0.3790
+el carmen,valència,el carme,ciutat vella,39.4775,-0.3790
+el pilar,valència,el pilar,ciutat vella,39.4710,-0.3820
+la seu,valència,la seu,ciutat vella,39.4757,-0.3753
+la xerea,valència,la xerea,ciutat vella,39.4730,-0.3700
+exposició,valència,exposició,el pla del real,39.4790,-0.3640
+exposicio,valència,exposició,el pla del real,39.4790,-0.3640
+mestalla,valència,mestalla,el pla del real,39.4750,-0.3580
+jaume roig,valència,jaume roig,el pla del real,39.4790,-0.3620
+ciutat universitària,valència,ciutat universitària,el pla del real,39.4800,-0.3530
+arrancapins,valència,arrancapins,extramurs,39.4640,-0.3870
+el botànic,valència,el botànic,extramurs,39.4760,-0.3870
+el botanic,valència,el botànic,extramurs,39.4760,-0.3870
+la roqueta,valència,la roqueta,extramurs,39.4660,-0.3810
+la petxina,valència,la petxina,extramurs,39.4720,-0.3900
+gran via,valència,gran via,extramurs,39.4640,-0.3760
+gran vía,valència,gran via,extramurs,39.4640,-0.3760
+la raiosa,valència,la raiosa,jesús,39.4560,-0.3850
+patraix,valència,patraix,patraix,39.4570,-0.3960
+nou moles,valència,nou moles,l'olivereta,39.4690,-0.4000
+benicalap,valència,benicalap,benicalap,39.4940,-0.4030
+nou benicalap,valència,nou benicalap,benicalap,39.4970,-0.4000
+campanar,valència,campanar,campanar,39.4850,-0.3950
+nou campanar,valència,nou campanar,campanar,39.4880,-0.3950
+sant pau,valència,sant pau,campanar,39.4830,-0.3990
+penya-roja,valència,penya-roja,camins al grau,39.4640,-0.3470
+penya roja,valència,penya-roja,camins al grau,39.4640,-0.3470
+albors,valència,albors,camins al grau,39.4690,-0.3520
+aiora,valència,aiora,camins al grau,39.4660,-0.3450
+ayora,valència,aiora,camins al grau,39.4660,-0.3450
+ciutat de les arts i de les ciencies,valència,ciutat de les arts,quatre carreres,39.4540,-0.3500
+ciutat de les arts i de les ciències,valència,ciutat de les arts,quatre carreres,39.4540,-0.3500
+en corts,valència,en corts,quatre carreres,39.4520,-0.3700
+malilla,valència,malilla,quatre carreres,39.4490,-0.3770
+el cabanyal-el canyamelar,valència,el cabanyal,poblats marítims,39.4660,-0.3270
+el cabanyal,valència,el cabanyal,poblats marítims,39.4660,-0.3270
+el grau,valència,el grau,poblats marítims,39.4620,-0.3320
+benimaclet,valència,benimaclet,benimaclet,39.4880,-0.3560
+camí de vera,valència,camí de vera,benimaclet,39.4830,-0.3650
+cami de vera,valència,camí de vera,benimaclet,39.4830,-0.3650
+l'amistat,valència,l'amistat,algirós,39.4720,-0.3500
+la carrasca,valència,la carrasca,algirós,39.4750,-0.3470
+tres forques,valència,tres forques,l'olivereta,39.4690,-0.4040
+castellana,madrid,castellana,salamanca,40.4400,-3.6880
+recoletos,madrid,recoletos,salamanca,40.4230,-3.6890
+goya,madrid,goya,salamanca,40.4250,-3.6740
+lista,madrid,lista,salamanca,40.4300,-3.6780
+guindalera,madrid,guindalera,salamanca,40.4380,-3.6690
+fuente del berro,madrid,fuente del berro,salamanca,40.4210,-3.6640
+sol,madrid,sol,centro,40.4169,-3.7035
+palacio,madrid,palacio,centro,40.4150,-3.7140
+malasaña-universidad,madrid,malasaña,centro,40.4260,-3.7040
+chueca-justicia,madrid,chueca-justicia,centro,40.4230,-3.6970
+lavapiés-embajadores,madrid,lavapiés-embajadores,centro,40.4090,-3.7010
+arapiles,madrid,arapiles,chamberí,40.4330,-3.7100
+almagro,madrid,almagro,chamberí,40.4320,-3.6940
+trafalgar,madrid,trafalgar,chamberí,40.4320,-3.7010
+gaztambide,madrid,gaztambide,chamberí,40.4350,-3.7130
+magallanes,madrid,trafalgar,chamberí,40.4330,-3.7040
+santa engracia,madrid,almagro,chamberí,40.4380,-3.6980
+nuevos ministerios-ríos rosas,madrid,ríos rosas,chamberí,40.4420,-3.6980
+prosperidad,madrid,prosperidad,chamartín,40.4440,-3.6720
+bernabéu-hispanoamérica,madrid,hispanoamérica,chamartín,40.4500,-3.6870
+castilla,madrid,castilla,chamartín,40.4660,-3.6890
+cuzco-castillejos,madrid,castillejos,tetuán,40.4590,-3.6930
+cuatro caminos,madrid,cuatro caminos,tetuán,40.4470,-3.7030
+berruguete,madrid,berruguete,tetuán,40.4600,-3.7040
+argüelles,madrid,argüelles,moncloa-aravaca,40.4300,-3.7170
+ciudad universitaria,madrid,ciudad universitaria,moncloa-aravaca,40.4440,-3.7280
+aravaca,madrid,aravaca,moncloa-aravaca,40.4520,-3.7870
+estrella,madrid,estrella,retiro,40.4130,-3.6650
+ibiza,madrid,ibiza,retiro,40.4180,-3.6740
+niño jesús,madrid,niño jesús,retiro,40.4100,-3.6710
+chopera,madrid,chopera,arganzuela,40.3950,-3.6990
+palos de la frontera,madrid,palos de la frontera,arganzuela,40.4020,-3.6950
+acacias,madrid,acacias,arganzuela,40.4020,-3.7070
+imperial,madrid,imperial,arganzuela,40.4070,-3.7180
+puerta del ángel,madrid,puerta del ángel,latina,40.4110,-3.7320
+lucero,madrid,lucero,latina,40.4030,-3.7420
+águilas,madrid,águilas,latina,40.3830,-3.7620
+opañel,madrid,opañel,carabanchel,40.3880,-3.7280
+vista alegre,madrid,vista alegre,carabanchel,40.3900,-3.7420
+moscardó,madrid,moscardó,usera,40.3890,-3.7070
+san fermín,madrid,san fermín,usera,40.3760,-3.6930
+costillares,madrid,costillares,ciudad lineal,40.4600,-3.6650
+san juan bautista,madrid,san juan bautista,ciudad lineal,40.4470,-3.6540
+conde orgaz-piovera,madrid,piovera,hortaleza,40.4560,-3.6440
+virgen del cortijo - manoteras,madrid,manoteras,hortaleza,40.4790,-3.6640
+sanchinarro,madrid,sanchinarro,hortaleza,40.4940,-3.6620
+pinar del rey,madrid,pinar del rey,hortaleza,40.4700,-3.6420
+palomas,madrid,palomas,hortaleza,40.4530,-3.6280
+alameda de osuna,madrid,alameda de osuna,barajas,40.4570,-3.5870
+la dreta de l'eixample,barcelona,la dreta de l'eixample,eixample,41.3950,2.1650
+l'antiga esquerra de l'eixample,barcelona,l'antiga esquerra de l'eixample,eixample,41.3880,2.1560
+la sagrada família,barcelona,la sagrada família,eixample,41.4040,2.1740
+sant antoni,barcelona,sant antoni,eixample,41.3780,2.1600
+el fort pienc,barcelona,el fort pienc,eixample,41.3950,2.1820
+gran via de les corts catalanes,barcelona,la dreta de l'eixample,eixample,41.3880,2.1620
+sant pere - santa caterina i la ribera,barcelona,sant pere - santa caterina i la ribera,ciutat vella,41.3860,2.1790
+el raval,barcelona,el raval,ciutat vella,41.3790,2.1680
+el gòtic,barcelona,el gòtic,ciutat vella,41.3830,2.1770
+via laietana,barcelona,el gòtic,ciutat vella,41.3850,2.1790
+la barceloneta,barcelona,la barceloneta,ciutat vella,41.3800,2.1890
+sant gervasi - galvany,barcelona,sant gervasi - galvany,sarrià-sant gervasi,41.3970,2.1440
+sant gervasi - la bonanova,barcelona,sant gervasi - la bonanova,sarrià-sant gervasi,41.4060,2.1300
+sarrià,barcelona,sarrià,sarrià-sant gervasi,41.3990,2.1210
+el putxet i el farró,barcelona,el putxet i el farró,sarrià-sant gervasi,41.4070,2.1400
+vallvidrera - el tibidabo i les planes,barcelona,vallvidrera,sarrià-sant gervasi,41.4180,2.1010
+via augusta,barcelona,sant gervasi - galvany,sarrià-sant gervasi,41.4000,2.1420
+el poble sec - parc de montjuïc,barcelona,el poble-sec,sants-montjuïc,41.3720,2.1620
+la font de la guatlla,barcelona,la font de la guatlla,sants-montjuïc,41.3690,2.1470
+el baix guinardó,barcelona,el baix guinardó,horta-guinardó,41.4100,2.1700
+el carmel,barcelona,el carmel,horta-guinardó,41.4210,2.1560
+la teixonera,barcelona,la teixonera,horta-guinardó,41.4240,2.1470
+el camp d'en grassot i gràcia nova,barcelona,el camp d'en grassot i gràcia nova,gràcia,41.4050,2.1660
+vila de gràcia,barcelona,vila de gràcia,gràcia,41.4030,2.1560
+les corts,barcelona,les corts,les corts,41.3850,2.1330
+pedralbes,barcelona,pedralbes,les corts,41.3900,2.1120
+el poblenou,barcelona,el poblenou,sant martí,41.4000,2.2010
+diagonal mar i el front marítim del poblenou,barcelona,diagonal mar,sant martí,41.4080,2.2160
+la vila olímpica del poblenou,barcelona,la vila olímpica,sant martí,41.3900,2.1970
+arenal - museo - tetuán,sevilla,arenal - museo,casco antiguo,37.3880,-5.9980
+santa cruz - alfalfa,sevilla,santa cruz - alfalfa,casco antiguo,37.3860,-5.9900
+puerta carmona-puerta osario-amador de los ríos,sevilla,puerta carmona - puerta osario,casco antiguo,37.3900,-5.9840
+feria,sevilla,feria,casco antiguo,37.3990,-5.9920
+encarnación-las setas,sevilla,encarnación,casco antiguo,37.3930,-5.9910
+san vicente,sevilla,san vicente,casco antiguo,37.3940,-5.9990
+buhaira - huerta del rey,sevilla,buhaira,nervión,37.3810,-5.9750
+nervión,sevilla,nervión,nervión,37.3830,-5.9700
+luis montoto - santa justa,sevilla,luis montoto,san pablo - santa justa,37.3890,-5.9720
+arroyo - santa justa,sevilla,arroyo,san pablo - santa justa,37.3960,-5.9700
+doctor fedriani,sevilla,doctor fedriani,macarena,37.4070,-5.9840
+cerro del águila,sevilla,cerro del águila,cerro - amate,37.3730,-5.9560
+tiro de línea,sevilla,tiro de línea,sur,37.3660,-5.9770
+la plata,sevilla,la plata,cerro - amate,37.3700,-5.9600
+el porvenir,sevilla,el porvenir,sur,37.3720,-5.9840
+bami - pineda,sevilla,bami,bellavista - la palmera,37.3540,-5.9800
+los bermejales,sevilla,los bermejales,bellavista - la palmera,37.3480,-5.9770
+reina mercedes - heliópolis,sevilla,heliópolis,bellavista - la palmera,37.3560,-5.9750
+bellavista,sevilla,bellavista,bellavista - la palmera,37.3250,-5.9670
+centro histórico,málaga,centro histórico,centro,36.7210,-4.4210
+alameda de colón,málaga,alameda de colón,centro,36.7160,-4.4260
+perchel sur - el bulto,málaga,perchel sur,centro,36.7110,-4.4330
+la goleta - san felipe neri,málaga,la goleta,centro,36.7260,-4.4200
+ensanche centro - soho,málaga,soho,centro,36.7160,-4.4230
+la trinidad,málaga,la trinidad,centro,36.7250,-4.4300
+malagueta - monte sancha,málaga,la malagueta,este,36.7180,-4.4090
+limonar,málaga,limonar,este,36.7230,-4.3980
+pedregalejo - morlaco,málaga,pedregalejo,este,36.7220,-4.3770
+el palo,málaga,el palo,este,36.7230,-4.3570
+el candado,málaga,el candado,este,36.7180,-4.3450
+cerrado de calderón - hacienda paredes,málaga,cerrado de calderón,este,36.7270,-4.3820
+pinares de san antón,málaga,pinares de san antón,este,36.7300,-4.3700
+pacífico,málaga,pacífico,carretera de cádiz,36.6900,-4.4520
+huelin,málaga,huelin,carretera de cádiz,36.7000,-4.4430
+el torcal,málaga,el torcal,carretera de cádiz,36.6870,-4.4560
+guadalmar,málaga,guadalmar,churriana,36.6620,-4.4700
+el consul - el romeral,málaga,el cónsul,teatinos,36.7180,-4.4780
+el atabal,málaga,el atabal,puerto de la torre,36.7350,-4.4700
+carranque - haza cuevas,málaga,carranque,cruz de humilladero,36.7180,-4.4470
+cruz del humilladero - los tilos,málaga,cruz del humilladero,cruz de humilladero,36.7130,-4.4500
+la florida - parque norte,málaga,la florida,bailén-miraflores,36.7330,-4.4270
+alameda de capuchinos,málaga,capuchinos,bailén-miraflores,36.7300,-4.4220
+cristo de la epidemia,málaga,cristo de la epidemia,bailén-miraflores,36.7280,-4.4160
+el ejido,málaga,el ejido,centro,36.7270,-4.4180
+campanillas,málaga,campanillas,campanillas,36.7280,-4.5570

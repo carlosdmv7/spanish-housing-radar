@@ -1,0 +1,78 @@
+name: dbt docs
+
+# Publishes the dbt documentation site (lineage graph, model/column docs, tests)
+# to GitHub Pages: https://carlosdmv7.github.io/spanish-housing-radar/
+on:
+  push:
+    branches: [main]
+    paths: ["transform/**", ".github/workflows/dbt_docs.yml"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-docs:
+    name: Generate dbt docs
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: transform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # Only the dbt stack — the full requirements.txt (Streamlit, Prefect, …)
+      # isn't needed to compile docs.
+      - name: Install dbt
+        run: pip install dbt-core==1.9.5 dbt-duckdb==1.10.1 duckdb==1.5.2
+
+      - name: dbt deps
+        run: dbt deps
+
+      # Reads prod catalog metadata (read-only) so docs reflect the live schemas.
+      - name: dbt docs generate
+        run: dbt docs generate --target prod
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+          DBT_PROFILES_DIR: .
+
+      # Only the four files the static docs site needs — never the whole target/
+      # (compiled SQL there can embed resolved profile strings).
+      - name: Assemble site
+        run: |
+          mkdir -p ../_site
+          cp target/index.html target/manifest.json target/catalog.json ../_site/
+          [ -f target/graph_summary.json ] && cp target/graph_summary.json ../_site/ || true
+
+      - name: Check no secrets leaked into the site
+        run: |
+          if grep -rq "motherduck_token=[^{$]" ../_site --include="*.json" --include="*.html"; then
+            echo "::error::Resolved MotherDuck token found in docs artifacts — aborting deploy"
+            exit 1
+          fi
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build-docs
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

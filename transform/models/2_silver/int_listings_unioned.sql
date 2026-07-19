@@ -20,11 +20,12 @@ all_sources as (
     -- select * from fotocasa
 ),
 
--- Canonical Valencia barrio names + approximate centroids. Used to (a) collapse
--- spelling variants (russafa/ruzafa) so a real barrio reaches the comparable
--- threshold, and (b) geocode listings whose scraped lat/lon are null.
+-- Canonical barrio names + approximate centroids (Valencia, Madrid, Barcelona,
+-- Sevilla, Málaga). Used to (a) collapse spelling variants (russafa/ruzafa) so a
+-- real barrio reaches the comparable threshold, and (b) geocode listings whose
+-- scraped lat/lon are null.
 barrios as (
-    select * from {{ ref('valencia_barrios') }}
+    select * from {{ ref('barrios_es') }}
 ),
 
 normalised as (

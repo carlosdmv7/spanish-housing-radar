@@ -22,7 +22,7 @@ vars:
 seeds:
   spanish_housing_radar:
     +schema: silver
-    valencia_barrios:
+    barrios_es:
       +column_types:
         lat: double
         lon: double
