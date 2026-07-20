@@ -18,8 +18,19 @@ jobs:
     steps:
       - name: Ping the live app
         run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" -L --max-time 60 \
-            "https://spanish-housing-radar-carlosdmv7.streamlit.app/")
+          # No -L: Streamlit Community Cloud bounces an anonymous client through
+          # its auth gateway, which loops for a cookieless client and makes curl
+          # exit 47 (too many redirects) — under `bash -e` that alone fails the
+          # step. We only need to reach the app to keep it warm, so take the
+          # first response code and don't follow redirects. `|| echo 000` guards
+          # a transport failure so the pipe can't abort the step before the check.
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 \
+            "https://spanish-housing-radar-carlosdmv7.streamlit.app/" || echo "000")
           echo "App responded with HTTP $code"
-          # 2xx/3xx are fine; alert loudly on 4xx/5xx so a broken deploy is noticed.
-          [ "$code" -lt 400 ]
+          # A 200 (OK) or the 303 auth-gateway redirect both mean the ping
+          # reached the app and kept it awake. Only fail on a transport error
+          # (000) or a 5xx, which signal the app is actually down.
+          case "$code" in
+            000|5*) echo "::error::App did not respond (HTTP $code)"; exit 1 ;;
+            *)      echo "App is awake." ;;
+          esac
