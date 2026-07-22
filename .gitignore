@@ -13,10 +13,13 @@ build/
 .ruff_cache/
 
 # ── dbt ───────────────────────────────────────────────────────────────────────
-transform/profiles.yml          # contains token — use .env instead
+# per-developer dbt config — copied from profiles.yml.example by `make install`
+transform/profiles.yml
 transform/target/
 transform/dbt_packages/
 transform/logs/
+# dbt writes here when invoked from repo root
+logs/
 
 # ── Streamlit ─────────────────────────────────────────────────────────────────
 .streamlit/secrets.toml

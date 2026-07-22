@@ -1,0 +1,25 @@
+# Copy to transform/profiles.yml (done automatically by `make install`).
+# The token is read from the environment (.env), never stored here — so this
+# template is safe to commit and the real profiles.yml stays git-ignored.
+spanish_housing_radar:
+  target: dev
+  outputs:
+    # Local development. NOTE: dev/prod have no `schema:`, so with the default
+    # duckdb schema they both write to main_bronze/silver/gold — the same tables
+    # the live app reads. Use the `ci` target below to validate changes safely.
+    dev:
+      type: duckdb
+      path: "md:spanish_housing_radar?motherduck_token={{ env_var('MOTHERDUCK_TOKEN') }}"
+      threads: 4
+    prod:
+      type: duckdb
+      path: "md:spanish_housing_radar?motherduck_token={{ env_var('MOTHERDUCK_TOKEN') }}"
+      threads: 8
+    # Isolated validation sandbox → schemas ci_bronze / ci_silver / ci_gold.
+    # Build here, inspect, then: DROP SCHEMA ci_bronze/ci_silver/ci_gold CASCADE.
+    # Never touches the main_* schemas the live app reads.
+    ci:
+      type: duckdb
+      path: "md:spanish_housing_radar?motherduck_token={{ env_var('MOTHERDUCK_TOKEN') }}"
+      schema: ci
+      threads: 4
