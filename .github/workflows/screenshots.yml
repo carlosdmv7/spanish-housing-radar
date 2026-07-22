@@ -16,19 +16,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
-          cache: pip
+          enable-cache: true
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt playwright
-          playwright install chromium --with-deps
+          uv sync --frozen
+          uv pip install playwright        # utility-only, not a project dependency
+          uv run playwright install chromium --with-deps
 
       - name: Start Streamlit
         run: |
-          nohup streamlit run app/main.py \
+          nohup uv run streamlit run app/main.py \
             --server.headless true --server.port 8501 \
             --server.fileWatcherType none \
             > streamlit.log 2>&1 &
@@ -36,7 +37,7 @@ jobs:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
 
       - name: Capture pages
-        run: python scripts/capture_screenshots.py
+        run: uv run python scripts/capture_screenshots.py
 
       # The app runs backgrounded — if it dies mid-capture this is the only
       # place its stacktrace shows up.

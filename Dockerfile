@@ -16,16 +16,22 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends gcc git \
     && rm -rf /var/lib/apt/lists/*
 
+# uv: fast, lockfile-reproducible dependency installs.
+RUN pip install --no-cache-dir uv==0.11.12
+
 WORKDIR /pipeline
 
-# Layer-cache dependencies separately from source.
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Layer-cache dependencies separately from source: sync from the lockfile only
+# (no dev group, no project install — package = false in pyproject).
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev
+
+# Put the uv-managed venv on PATH so `python` / `dbt` resolve without `uv run`.
+ENV PATH="/pipeline/.venv/bin:$PATH"
 
 COPY extraction/ extraction/
 COPY orchestration/ orchestration/
 COPY transform/ transform/
-COPY pyproject.toml .
 
 # dbt packages are resolved at build time so runs are fully offline-reproducible.
 RUN dbt deps --project-dir transform

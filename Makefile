@@ -1,11 +1,10 @@
 # Spanish Housing Radar — Makefile
-# WSL Ubuntu: activate venv first with `source .venv/bin/activate`
-# or just run `make install` which sets everything up.
+# Dependencies are managed with uv (https://docs.astral.sh/uv/).
+# `make install` runs `uv sync`, which creates .venv from uv.lock.
 
 # Use absolute paths so `cd transform && $(DBT)` works correctly
-# $(CURDIR) = project root, evaluated once at parse time
+# $(CURDIR) = project root, evaluated once at parse time. uv sync populates .venv.
 PYTHON    := $(CURDIR)/.venv/bin/python
-PIP       := $(CURDIR)/.venv/bin/pip
 STREAMLIT := $(CURDIR)/.venv/bin/streamlit
 DBT       := $(CURDIR)/.venv/bin/dbt
 
@@ -18,16 +17,16 @@ endif
 
 # ── Setup ──────────────────────────────────────────────────────────────────────
 .PHONY: install
-install: ## Create .venv, install all dependencies, copy config templates
-	python3 -m venv .venv
-	$(PIP) install --upgrade pip
-	$(PIP) install -r requirements.txt
+install: ## Sync the uv-managed venv (from uv.lock) + copy config templates
+	uv sync
 	@test -f .env          || cp .env.example .env          && echo "  created .env"
 	@test -f transform/profiles.yml || cp transform/profiles.yml.example transform/profiles.yml && echo "  created transform/profiles.yml"
 	@echo ""
 	@echo "✅  Done! Next steps:"
 	@echo "   1. Edit .env → add MOTHERDUCK_TOKEN and SCRAPFLY_API_KEY"
 	@echo "   2. make dbt-deps"
+	@echo ""
+	@echo "   (No uv yet?  curl -LsSf https://astral.sh/uv/install.sh | sh)"
 
 .PHONY: dbt-deps
 dbt-deps: ## Install dbt packages (run once after install)

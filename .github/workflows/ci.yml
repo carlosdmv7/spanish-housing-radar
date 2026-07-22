@@ -18,19 +18,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
-          cache: pip
+          enable-cache: true
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: uv sync --frozen
 
       - name: Ruff lint
-        run: ruff check extraction/ app/ orchestration/
+        run: uv run ruff check extraction/ app/ orchestration/
 
       - name: Pytest (extraction + orchestration)
-        run: pytest extraction/ orchestration/ -v
+        run: uv run pytest extraction/ orchestration/ -v
         env:
           # extraction/config.py requires this at import time even though
           # these tests never touch MotherDuck — any non-empty value works.
@@ -41,7 +41,7 @@ jobs:
       # packages in one invocation (it also avoids an app/config vs extraction/config
       # module-name clash).
       - name: Pytest (app)
-        run: pytest app/ -v
+        run: uv run pytest app/ -v
         env:
           MOTHERDUCK_TOKEN: unused-in-ci
 
@@ -60,22 +60,19 @@ jobs:
     name: dbt build (CI schema)
     runs-on: ubuntu-latest
     needs: lint-and-test
-    defaults:
-      run:
-        working-directory: transform
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
-          cache: pip
+          enable-cache: true
 
       - name: Install dependencies
-        run: pip install -r ../requirements.txt
+        run: uv sync --frozen
 
       - name: dbt deps
-        run: dbt deps
+        run: uv run dbt deps --project-dir transform
 
       # CI writes to ci_bronze / ci_silver / ci_gold, never main_* — a broken
       # PR can never overwrite the tables the live Streamlit app reads from.
@@ -96,6 +93,6 @@ jobs:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
 
       - name: dbt build
-        run: dbt build --target ci --profiles-dir "$RUNNER_TEMP/dbt"
+        run: uv run dbt build --project-dir transform --target ci --profiles-dir "$RUNNER_TEMP/dbt"
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
