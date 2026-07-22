@@ -10,6 +10,7 @@ from components.charts import bar_ppsqm_with_range, line_price_history
 from components.filters import municipality_filter, operation_filter
 from config import PROPERTY_TYPE_LABELS
 from connection import query
+import pandas as pd
 import streamlit as st
 from styles import page_hero, section
 
@@ -67,6 +68,50 @@ c4.metric("Priciest area", df.loc[df["median_ppsqm"].idxmax(), "neighborhood"].t
           help=f"€{df['median_ppsqm'].max():,.0f}/sqm")
 
 st.markdown("")
+
+# ── Official market context (INE house-price index) ───────────────────────────
+# Grounds the scraped ASKING prices against the official, transaction-based index.
+@st.cache_data(ttl=3600)
+def load_market_context(muni):
+    return query(
+        "SELECT * FROM spanish_housing_radar.main_gold.rpt_market_context "
+        "WHERE ($m = 'all' OR municipality = $m)",
+        m=muni,
+    )
+
+
+try:
+    ctx = load_market_context(muni)
+    ctx = ctx[ctx["hpi_yoy_general"].notna()]
+    if not ctx.empty:
+        section("Official market context · INE house-price index")
+        st.caption(
+            "Transaction-based reality check (INE IPV, latest quarter). Scraped "
+            "prices above are *asking* prices; this is where the market actually is."
+        )
+        row = ctx.iloc[0] if muni != "all" else None
+        if row is not None:
+            region = str(row["region"]).title()
+            k1, k2, k3 = st.columns(3)
+            k1.metric(f"{region} · index (2015=100)", f"{row['hpi_index_general']:.1f}")
+            k2.metric("YoY · all housing", f"{row['hpi_yoy_general']:+.1f}%")
+            sh = row["hpi_yoy_second_hand"]
+            k3.metric("YoY · second-hand", f"{sh:+.1f}%" if pd.notna(sh) else "—")
+            st.caption(f"Reference quarter: {row['latest_period']}")
+        else:
+            ctx["region"] = ctx["region"].str.title()
+            st.dataframe(
+                ctx[["municipality", "region", "hpi_yoy_general", "hpi_yoy_second_hand"]]
+                .rename(columns={
+                    "municipality": "City", "region": "Region",
+                    "hpi_yoy_general": "YoY % (all)",
+                    "hpi_yoy_second_hand": "YoY % (2nd hand)",
+                }),
+                use_container_width=True, hide_index=True,
+            )
+        st.markdown("")
+except Exception as exc:  # market context is a nice-to-have, never block the page
+    st.caption(f"Market context unavailable: {exc}")
 
 # ── Ranked €/sqm chart ────────────────────────────────────────────────────────
 section("Price per m² by neighbourhood")

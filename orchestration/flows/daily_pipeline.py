@@ -41,6 +41,15 @@ def _run(cmd: list[str], cwd: Path, extra_env: dict[str, str] | None = None) -> 
         raise RuntimeError(f"Command failed (exit {result.returncode}): {' '.join(cmd)}")
 
 
+@task(name="ingest-ine", retries=2, retry_delay_seconds=[15, 45], log_prints=True)
+def ingest_ine() -> None:
+    """Fetch the official INE house-price index into raw.ine_hpi (free, no credits)."""
+    _run(
+        [PYTHON, "-m", "extraction.run_ine"],
+        cwd=PROJECT_ROOT,
+    )
+
+
 @task(name="extract-all-sources", retries=2, retry_delay_seconds=[15, 45], log_prints=True)
 def extract_all() -> None:
     """Scrape every configured source × city × operation into raw.*."""
@@ -63,9 +72,34 @@ def dbt_build(target: str = "prod") -> None:
 
 
 @flow(name="spanish-housing-radar-daily")
-def daily_pipeline(dbt_target: str = "prod") -> None:
-    """Nightly pipeline: scrape fresh listings, then rebuild the medallion."""
-    extract_all()
+def daily_pipeline(dbt_target: str = "prod", scrape: bool | None = None) -> None:
+    """
+    Refresh pipeline: ingest official market data (always, free), scrape fresh
+    listings (only when Scrapfly credits are available), then rebuild the medallion.
+
+    `scrape` defaults to the SCRAPFLY_ENABLED env var. This is what un-parks the
+    project: even with the listing scraper switched off, the free INE feed + dbt
+    build keep the warehouse and the live app fresh instead of frozen.
+    """
+    logger = get_run_logger()
+
+    # INE is a nice-to-have context feed — never let it block the rebuild.
+    try:
+        ingest_ine()
+    except Exception as exc:
+        logger.warning("INE ingestion failed (continuing to dbt build): %s", exc)
+
+    if scrape is None:
+        scrape = os.getenv("SCRAPFLY_ENABLED", "false").lower() == "true"
+
+    if scrape:
+        extract_all()
+    else:
+        logger.info(
+            "Scrapfly disabled (SCRAPFLY_ENABLED != true) — skipping listing scrape. "
+            "Refreshing INE market context + rebuilding dbt only."
+        )
+
     dbt_build(target=dbt_target)
 
 

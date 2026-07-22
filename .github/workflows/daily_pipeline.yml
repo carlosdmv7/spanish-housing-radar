@@ -1,13 +1,15 @@
 name: Daily pipeline
 
 on:
-  # Daily cron is disabled while the project is parked / out of Scrapfly credits,
-  # so it doesn't burn API quota or write stale data to prod. Re-enable by
-  # uncommenting the schedule below AND running `gh workflow enable "Daily pipeline"`.
-  # schedule:
-  #   # 05:00 UTC every day — past Spanish business hours, ahead of a morning check-in
-  #   - cron: "0 5 * * *"
-  workflow_dispatch: {}  # still runnable on demand from the Actions tab
+  # Weekly cron keeps the FREE feeds fresh (INE market context + dbt rebuild)
+  # without burning Scrapfly credits: the flow scrapes listings only when
+  # SCRAPFLY_ENABLED is 'true' (repo variable), otherwise it refreshes INE + dbt
+  # only. Still inert until enabled at the GitHub level:
+  #   gh workflow enable "Daily pipeline"
+  # Switch to a daily cron ("0 5 * * *") once active listing scraping resumes.
+  schedule:
+    - cron: "0 5 * * 1"   # 05:00 UTC every Monday
+  workflow_dispatch: {}   # still runnable on demand from the Actions tab
 
 jobs:
   run-pipeline:
@@ -35,7 +37,9 @@ jobs:
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
           SCRAPFLY_API_KEY: ${{ secrets.SCRAPFLY_API_KEY }}
-          SCRAPFLY_ENABLED: "true"
+          # Listing scrape runs only when this repo variable is 'true' (set it once
+          # Scrapfly credits are back). Until then the run refreshes INE + dbt only.
+          SCRAPFLY_ENABLED: ${{ vars.SCRAPFLY_ENABLED || 'false' }}
           # Reports this flow run to Prefect Cloud instead of spinning up an
           # ephemeral local server — gives a persistent UI/history across runs.
           PREFECT_API_KEY: ${{ secrets.PREFECT_API_KEY }}

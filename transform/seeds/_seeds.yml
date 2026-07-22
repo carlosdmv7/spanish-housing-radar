@@ -28,3 +28,17 @@ seeds:
         tests:
           - not_null
           - dbt_utils.accepted_range: {min_value: -10, max_value: 5}
+
+  - name: ccaa_by_municipality
+    description: >
+      Maps each scraped municipality to its autonomous community, using the exact
+      (lowercased) INE region label. Bridges the grain gap between barrio-level
+      listings and CCAA-level INE house-price index in int_market_context.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [municipality]
+    columns:
+      - name: municipality
+        tests: [not_null, unique]
+      - name: ine_region
+        tests: [not_null]

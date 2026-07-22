@@ -48,6 +48,15 @@ models:
               min_value: -3
               max_value: 3
 
+  - name: rpt_market_context
+    description: >
+      Official INE house-price index resolved to each served municipality (via the
+      ccaa_by_municipality bridge). One row per municipality; the app reads it to
+      show official market direction next to asking-price benchmarks.
+    columns:
+      - name: municipality
+        tests: [unique, not_null]
+
   - name: rpt_opportunities
     description: >
       Reporting view over fct_listings_scored — the table the Streamlit app reads.
@@ -105,6 +114,32 @@ models:
         data_type: bigint
       - name: low_confidence_flag
         data_type: boolean
+      - name: first_seen_date
+        data_type: date
+        description: First date this listing was ever observed (from snapshot history).
+      - name: days_on_market
+        data_type: bigint
+        description: Days between first and last observation — a behavioural deal signal.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+      - name: n_price_changes
+        data_type: bigint
+        description: Number of price movements observed across snapshots.
+      - name: price_change_pct
+        data_type: double
+        description: Cumulative % change between the first and latest observed price.
+      - name: price_dropped
+        data_type: boolean
+        description: True if the latest price is below the first observed price.
+      - name: seller_motivation
+        data_type: varchar
+        description: Composite low/medium/high signal from days-on-market + price cuts.
+        tests:
+          - not_null
+          - accepted_values:
+              values: [low, medium, high]
       - name: lat
         data_type: double
       - name: lon

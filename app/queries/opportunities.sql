@@ -23,6 +23,11 @@ SELECT
     benchmark_level,
     benchmark_comp_count,
     low_confidence_flag,
+    days_on_market,
+    n_price_changes,
+    price_change_pct,
+    price_dropped,
+    seller_motivation,
     lat,
     lon,
     _loaded_at::date AS scraped_date
