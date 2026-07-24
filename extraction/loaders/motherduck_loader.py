@@ -14,7 +14,8 @@ import logging
 import duckdb
 import pandas as pd
 
-from extraction.config import MOTHERDUCK_DSN, RAW_TABLE_MAP
+from extraction.config import INE_HPI_RAW_TABLE, MOTHERDUCK_DSN, RAW_TABLE_MAP
+from extraction.schemas.ine_records import IneHpiRecord
 from extraction.schemas.raw_listings import RawListing
 
 logger = logging.getLogger(__name__)
@@ -116,6 +117,58 @@ class MotherDuckLoader:
         self._conn.unregister("df")
 
         logger.info("[loader] ✓  %d rows → %s", len(df), table)
+        return len(df)
+
+    # ── INE house-price index ─────────────────────────────────────────────────
+
+    _CREATE_INE_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS {table} (
+        series_cod   VARCHAR      NOT NULL,
+        region       VARCHAR      NOT NULL,
+        housing_type VARCHAR      NOT NULL,
+        metric       VARCHAR      NOT NULL,
+        period_date  DATE         NOT NULL,
+        year         INTEGER      NOT NULL,
+        value        DOUBLE       NOT NULL,
+        _loaded_at   TIMESTAMPTZ  NOT NULL,
+        _run_id      VARCHAR      NOT NULL,
+        PRIMARY KEY (series_cod, period_date)
+    );
+    """
+
+    _UPSERT_INE_SQL = """
+    INSERT OR REPLACE INTO {table}
+        SELECT series_cod, region, housing_type, metric,
+               period_date, year, value, _loaded_at, _run_id
+        FROM df;
+    """
+
+    def load_ine_hpi(self, records: list[IneHpiRecord]) -> int:
+        """Upsert INE IPV records into raw.ine_hpi. Idempotent on (series, quarter)."""
+        if not records:
+            logger.warning("[loader] No INE records — nothing to write.")
+            return 0
+
+        now = datetime.now(tz=UTC)
+        df = pd.DataFrame([
+            {**r.model_dump(), "_loaded_at": now, "_run_id": self.run_id}
+            for r in records
+        ])
+
+        if self.dry_run:
+            logger.info("[loader][DRY RUN] Would write %d rows → %s", len(df), INE_HPI_RAW_TABLE)
+            print(df.head(5).to_string(index=False))
+            return 0
+
+        if self._conn is None:
+            raise RuntimeError("Loader not initialised — use as a context manager.")
+
+        self._conn.register("df", df)
+        self._conn.execute(self._CREATE_INE_TABLE_SQL.format(table=INE_HPI_RAW_TABLE))
+        self._conn.execute(self._UPSERT_INE_SQL.format(table=INE_HPI_RAW_TABLE))
+        self._conn.unregister("df")
+
+        logger.info("[loader] ✓  %d rows → %s", len(df), INE_HPI_RAW_TABLE)
         return len(df)
 
     def _to_dataframe(self, listings: list[RawListing]) -> pd.DataFrame:

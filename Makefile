@@ -56,6 +56,14 @@ extract-all-cities: ## One source, all cities (make extract-all-cities SOURCE=fo
 extract-all: ## Full run: all sources × all cities × sale + rent
 	$(PYTHON) extraction/run_extraction.py --all
 
+.PHONY: ingest-ine
+ingest-ine: ## Fetch the official INE house-price index → raw.ine_hpi (free, no credits)
+	$(PYTHON) -m extraction.run_ine
+
+.PHONY: ingest-ine-dry
+ingest-ine-dry: ## Dry-run the INE feed — fetch + validate, no MotherDuck writes
+	$(PYTHON) -m extraction.run_ine --dry-run
+
 # ── dbt ────────────────────────────────────────────────────────────────────────
 .PHONY: transform
 transform: ## Full dbt run: bronze → silver → gold

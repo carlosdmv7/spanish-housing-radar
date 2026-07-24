@@ -38,3 +38,21 @@ sources:
         columns:
           - name: source_id
           - name: _run_id
+
+      - name: ine_hpi
+        description: >
+          Official INE house-price index (IPV) by autonomous community, quarterly
+          (base 2015=100). Free Tempus3 API feed — grounds scraped asking prices
+          against transaction-based reality. One row per series × quarter.
+        columns:
+          - name: series_cod
+            tests: [not_null]
+          - name: region
+            tests: [not_null]
+          - name: metric
+            tests:
+              - not_null
+              - accepted_values:
+                  values: [index, qoq, yoy, ytd]
+          - name: value
+            tests: [not_null]

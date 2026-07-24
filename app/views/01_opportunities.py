@@ -54,6 +54,12 @@ with st.sidebar:
         value=False,
         help="Hides listings whose neighbourhood has too few comparable flats for a reliable score.",
     )
+    motivated_only = st.toggle(
+        "Only motivated sellers",
+        value=False,
+        help="Keeps listings long on the market or with price cuts — a stronger "
+             "signal of a negotiable deal. Fills in as snapshot history accumulates.",
+    )
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 sql = (Path(__file__).parent.parent / "queries" / "opportunities.sql").read_text()
@@ -69,6 +75,8 @@ df = load_opportunities(op, prop, muni, min_p, max_p)
 df = df[df["opportunity_score"] >= min_score]
 if hide_low_conf:
     df = df[~df["low_confidence_flag"].astype(bool)]
+if motivated_only:
+    df = df[df["seller_motivation"].isin(["medium", "high"])]
 
 if df.empty:
     st.warning("No results match the current filters. Try widening the price range or score.")
@@ -81,7 +89,12 @@ c1, c2, c3, c4 = st.columns(4)
 c1.metric("Listings", f"{len(df):,}")
 c2.metric("Median price", f"{df['price_eur'].median():,.0f} {unit}")
 c3.metric("Median €/sqm", f"€{df['price_per_sqm'].median():,.0f}")
+motivated = int(df["seller_motivation"].isin(["medium", "high"]).sum())
 c4.metric("🟢 Great deals", great, help="Listings scoring ≥ 75 — clearly below the area median.")
+st.caption(
+    f"🔥 {motivated:,} listing(s) show a motivated-seller signal "
+    "(long on market or price cuts). Grows as daily snapshots accumulate."
+)
 
 st.markdown("")
 tab_list, tab_explore, tab_map = st.tabs(["🏷️ Best deals", "📈 Explore", "🗺️ Map"])
@@ -106,7 +119,9 @@ with tab_list:
         cols = [
             "neighborhood", "district", "price_eur", "size_sqm", "rooms",
             "price_per_sqm", "neighborhood_median_ppsqm", "ppsqm_vs_median",
-            "opportunity_score", "deal_tier", "benchmark_level", "low_confidence_flag",
+            "opportunity_score", "deal_tier", "benchmark_level",
+            "days_on_market", "n_price_changes", "price_change_pct", "seller_motivation",
+            "low_confidence_flag",
         ]
         st.dataframe(
             df[cols].rename(columns={
@@ -121,6 +136,10 @@ with tab_list:
                 "opportunity_score": "Score",
                 "deal_tier": "Tier",
                 "benchmark_level": "Scored vs",
+                "days_on_market": "Days listed",
+                "n_price_changes": "Price cuts",
+                "price_change_pct": "Δ price %",
+                "seller_motivation": "Seller",
                 "low_confidence_flag": "⚠️ Low data",
             }),
             use_container_width=True,

@@ -58,6 +58,31 @@ models:
       - name: snapshot_pk
         tests: [unique, not_null]
 
+  - name: int_listing_lifecycle
+    description: >
+      Behavioural signals per listing, derived from the snapshot history:
+      days-on-market, number of price changes and cumulative price change %.
+      Grain: one row per listing_pk. A stronger "negotiable deal" signal than
+      static €/m² cheapness; thin until several snapshots accumulate per listing.
+    columns:
+      - name: listing_pk
+        tests: [unique, not_null]
+      - name: n_snapshots
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 1
+      - name: days_on_market
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+      - name: n_price_changes
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+      - name: price_dropped
+        tests: [not_null]
+
   - name: int_neighborhood_stats
     description: >
       Pre-aggregated price benchmarks by neighborhood × operation × property_type.
@@ -76,6 +101,28 @@ models:
         tests:
           - dbt_utils.accepted_range:
               min_value: 1
+
+  - name: int_market_context
+    description: >
+      Latest-quarter INE house-price index per region × housing_type, with index
+      level, YoY and QoQ variation pivoted into columns. The official market
+      reality shown alongside scraped asking prices.
+      Grain: one row per (region, housing_type).
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [region, housing_type]
+    columns:
+      - name: region
+        tests: [not_null]
+      - name: housing_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: [general, new, second_hand]
+      - name: hpi_index
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
 
   - name: dim_neighborhoods
     description: >

@@ -24,6 +24,20 @@ def listing_card(row: dict) -> None:
         with col1:
             st.markdown(f"**{rooms}{size}** · {loc}")
             st.caption(f"{row['source_name'].capitalize()} · {row.get('scraped_date', '')}")
+
+            # Behavioural signal — only shown when the history actually supports it
+            dom = row.get("days_on_market") or 0
+            cuts = row.get("n_price_changes") or 0
+            if row.get("seller_motivation") in ("medium", "high"):
+                bits = []
+                if dom >= 21:
+                    bits.append(f"{int(dom)} days listed")
+                if cuts >= 1:
+                    pct = row.get("price_change_pct") or 0
+                    bits.append(f"{int(cuts)} price cut{'s' if cuts > 1 else ''} ({pct:+.0f}%)")
+                if bits:
+                    st.caption("🔥 Motivated seller · " + " · ".join(bits))
+
             if row.get("low_confidence_flag"):
                 st.caption("⚠️ Few comparable listings in this neighborhood — score may be unreliable")
         with col2:

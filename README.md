@@ -21,7 +21,10 @@ interactive Streamlit app — surfacing deals priced below their neighbourhood's
 > **🔗 Live demo:** https://spanish-housing-radar-carlosdmv7.streamlit.app/
 > **📊 dbt docs (lineage & tests):** https://carlosdmv7.github.io/spanish-housing-radar/
 >
-> _Daily ingestion is currently paused (API credits) — the app serves the last full snapshot._
+> _Listing scraping is paused (Scrapfly credits), but the pipeline is **not** frozen: a
+> free, keyless **INE house-price-index** feed refreshes the warehouse on a weekly cron,
+> so the app keeps showing current official market context. Listing scraping resumes by
+> flipping one repo variable (`SCRAPFLY_ENABLED=true`) when credits return._
 
 ![Opportunities — listings scored against their local market](docs/img/opportunities.png)
 
@@ -56,11 +59,13 @@ flowchart LR
     subgraph SRC["Sources"]
         I["Idealista"]
         F["Fotocasa<br/><i>(scraper ready)</i>"]
+        N["INE IPV<br/>official price index"]
     end
 
     subgraph EXTRACT["Extraction · Python"]
         SC["Scrapfly<br/>anti-bot proxy"]
         PY["Typer CLI scrapers<br/>Pydantic validation"]
+        NE["INE Tempus3 client<br/>(free · no credits)"]
     end
 
     subgraph WH["MotherDuck · DuckDB (cloud)"]
@@ -74,7 +79,9 @@ flowchart LR
 
     I --> SC --> PY
     F -.-> SC
+    N --> NE
     PY -->|"INSERT OR REPLACE<br/>(idempotent upsert)"| RAW
+    NE -->|"idempotent upsert"| RAW
     RAW --> BRONZE --> SILVER --> GOLD --> APP
 
     ORCH["⏱️ Prefect<br/>daily schedule + retries"]
@@ -89,6 +96,7 @@ flowchart LR
 | Layer | Tech | Role |
 |---|---|---|
 | **Ingestion** | Python · BeautifulSoup · Scrapfly · Pydantic · Typer | Robust scraping behind an anti-bot proxy; schema-validated; idempotent loads |
+| **Market context** | INE Tempus3 JSON API | Free, keyless feed of the official house-price index (IPV) — grounds asking prices against transaction-based reality; runs even while scraping is parked |
 | **Warehouse** | MotherDuck (DuckDB in the cloud) | Cheap, serverless, zero-ops analytical store |
 | **Transformation** | dbt Core (Medallion: bronze → silver → gold) | Tested, documented, lineage-tracked SQL models |
 | **Orchestration** | Prefect | `extract → dbt build` flow with task-level retries + structured logging, triggered daily by a GitHub Actions cron (`.github/workflows/daily_pipeline.yml`) |
@@ -182,6 +190,7 @@ make install        # uv sync (creates .venv from the lockfile) + config templat
 make dbt-deps        # install dbt packages (once)
 
 make extract CITY=valencia OP=sale     # ~1 Scrapfly credit (render_js=false)
+make ingest-ine                         # free: official INE house-price index → raw.ine_hpi
 make transform                          # dbt run: bronze → silver → gold
 make dbt-test                           # data-quality tests
 make app                                # Streamlit on :8501
@@ -213,6 +222,12 @@ Full command list: `make help`.
 - [x] **`dbt docs` on GitHub Pages** — lineage graph, column docs and tests, auto-published on merge
 - [x] **dbt contract** enforced on `rpt_opportunities` (the app's de-facto API) + **exposure** for the Streamlit dashboard
 - [x] Barrio centroids for **Valencia, Madrid, Barcelona, Sevilla, Málaga** (~170 canonical barrios + aliases)
+- [x] **Behavioural deal signals** — `int_listing_lifecycle` derives days-on-market,
+      price-cut count and cumulative price change from the snapshot history, surfaced as a
+      "motivated seller" filter/badge (a stronger negotiability signal than €/m² alone)
+- [x] **Official market context** — free INE house-price-index (IPV) feed (`raw.ine_hpi` →
+      `int_market_context` → `rpt_market_context`), grounding scraped asking prices against
+      transaction-based reality and keeping the app fresh with zero scraping credits
 - [ ] Ingest **Fotocasa** (`raw.fotocasa_listings`) — staging + union are ready, only the source feed is missing
 - [ ] Barrio centroids for Zaragoza / Valladolid / Bilbao
 
@@ -225,7 +240,13 @@ Full command list: `make help`.
    plot at their neighbourhood's centroid, not their exact address (search-card scraping doesn't
    expose per-listing coordinates). Zaragoza/Valladolid/Bilbao have no centroids yet.
 3. **Fotocasa** scraper and staging exist but `raw.fotocasa_listings` isn't fed yet.
-4. **Price-evolution** charts need several days of accumulated snapshots to be meaningful.
+4. **Price-evolution charts and behavioural signals** (`int_listing_lifecycle`: days-on-market,
+   price cuts) need several accumulated snapshots to be meaningful. The models are correct from
+   day one — a listing seen once reads as "no signal yet" (0), not a fabricated one — and light
+   up as the weekly pipeline runs.
+5. **INE context is autonomous-community grain**, not per-listing. The IPV is an official
+   *regional* transaction-price index (quarterly), so it grounds *market direction* honestly;
+   it is deliberately not presented as a per-flat "fair price" (that would be an AVM — future work).
 
 ---
 

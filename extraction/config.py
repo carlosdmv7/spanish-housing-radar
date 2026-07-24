@@ -180,3 +180,17 @@ RAW_TABLE_MAP: dict[str, str] = {
     "idealista": "raw.idealista_listings",
     "fotocasa":  "raw.fotocasa_listings",
 }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# INE — Índice de Precios de Vivienda (official market context)
+# ══════════════════════════════════════════════════════════════════════════════
+# Public Tempus3 JSON API — no key, no proxy, no credits. Grounds the scraped
+# ASKING prices against the official, transaction-based house-price index (IPV)
+# so the app can show where the real market is heading, per autonomous community.
+# Table 25171 = IPV by CCAA, quarterly (base 2015 = 100).
+INE_BASE_URL: str = os.getenv("INE_BASE_URL", "https://servicios.ine.es/wstempus/js/ES")
+INE_HPI_TABLE_ID: str = os.getenv("INE_HPI_TABLE_ID", "25171")
+INE_HPI_N_PERIODS: int = int(os.getenv("INE_HPI_N_PERIODS", "16"))  # ~4 years of quarters
+INE_HPI_RAW_TABLE: str = "raw.ine_hpi"
+INE_TIMEOUT_SECONDS: int = int(os.getenv("INE_TIMEOUT_SECONDS", "30"))
