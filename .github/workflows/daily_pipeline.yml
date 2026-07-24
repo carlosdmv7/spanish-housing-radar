@@ -16,22 +16,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
-          cache: pip
+          enable-cache: true
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: uv sync --frozen
 
       - name: dbt deps
-        run: dbt deps
-        working-directory: transform
+        run: uv run dbt deps --project-dir transform
 
       # daily_pipeline.py pins DBT_PROFILES_DIR to transform/ itself before
       # invoking dbt, so it isn't needed here.
       - name: Run daily pipeline (extract → dbt build)
-        run: python -m orchestration.flows.daily_pipeline
+        run: uv run python -m orchestration.flows.daily_pipeline
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
           SCRAPFLY_API_KEY: ${{ secrets.SCRAPFLY_API_KEY }}

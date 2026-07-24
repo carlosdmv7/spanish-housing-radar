@@ -27,22 +27,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
-          cache: pip
+          enable-cache: true
 
-      # Only the dbt stack — the full requirements.txt (Streamlit, Prefect, …)
-      # isn't needed to compile docs.
-      - name: Install dbt
-        run: pip install dbt-core==1.9.5 dbt-duckdb==1.10.1 duckdb==1.5.2
+      # uv resolves from the lockfile; --no-dev skips lint/test tools (not needed
+      # to compile docs). Runs from transform/, uv finds the root project + .venv.
+      - name: Install dependencies
+        run: uv sync --frozen --no-dev
 
       - name: dbt deps
-        run: dbt deps
+        run: uv run dbt deps
 
       # Reads prod catalog metadata (read-only) so docs reflect the live schemas.
       - name: dbt docs generate
-        run: dbt docs generate --target prod
+        run: uv run dbt docs generate --target prod
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
           DBT_PROFILES_DIR: .

@@ -9,6 +9,7 @@ interactive Streamlit app — surfacing deals priced below their neighbourhood's
   <a href="https://github.com/carlosdmv7/spanish-housing-radar/actions/workflows/ci.yml">
     <img alt="CI" src="https://github.com/carlosdmv7/spanish-housing-radar/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Python"     src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white">
+  <img alt="uv"         src="https://img.shields.io/badge/deps-uv-DE5FE9?logo=uv&logoColor=white">
   <img alt="dbt"        src="https://img.shields.io/badge/dbt-1.9-FF694B?logo=dbt&logoColor=white">
   <img alt="DuckDB"     src="https://img.shields.io/badge/MotherDuck-DuckDB-FFF000?logo=duckdb&logoColor=black">
   <img alt="Streamlit"  src="https://img.shields.io/badge/Streamlit-1.44-FF4B4B?logo=streamlit&logoColor=white">
@@ -172,8 +173,11 @@ loudly when an assumption breaks. See [`transform/models/`](transform/models/).
 
 ## Run it locally
 
+Dependencies are managed with [**uv**](https://docs.astral.sh/uv/) (`pyproject.toml` +
+`uv.lock`). Install it once with `curl -LsSf https://astral.sh/uv/install.sh | sh`, then:
+
 ```bash
-make install        # venv + deps + config templates
+make install        # uv sync (creates .venv from the lockfile) + config templates
 # edit .env  → MOTHERDUCK_TOKEN, SCRAPFLY_API_KEY
 make dbt-deps        # install dbt packages (once)
 
