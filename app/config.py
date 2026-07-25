@@ -4,22 +4,30 @@ Single source of truth — import from here, never hardcode elsewhere.
 """
 from __future__ import annotations
 
+from theme import AMBER_500, INK_MUTED, RUST_500, RUST_900, TEAL_500, TEAL_700
+
 # ── Deal tier ─────────────────────────────────────────────────────────────────
+# The five tiers are an ordered diverging axis, so they take the brand's
+# diverging ramp: teal = below benchmark, rust = above. Never a green→red scale.
 DEAL_TIER_COLORS: dict[str, str] = {
-    "great_deal":      "#22c55e",
-    "good_deal":       "#84cc16",
-    "fair":            "#f59e0b",
-    "overpriced":      "#f97316",
-    "very_overpriced": "#ef4444",
+    "great_deal":      TEAL_700,
+    "good_deal":       TEAL_500,
+    "fair":            AMBER_500,
+    "overpriced":      RUST_500,
+    "very_overpriced": RUST_900,
 }
 
+# No coloured-circle emoji: they would assert a green/red palette the charts and
+# map deliberately don't use, and the two would disagree on screen.
 DEAL_TIER_LABELS: dict[str, str] = {
-    "great_deal":      "🟢 Great deal",
-    "good_deal":       "🟡 Good deal",
-    "fair":            "⚪ Fair price",
-    "overpriced":      "🟠 Overpriced",
-    "very_overpriced": "🔴 Very overpriced",
+    "great_deal":      "Great deal",
+    "good_deal":       "Good deal",
+    "fair":            "Fair price",
+    "overpriced":      "Overpriced",
+    "very_overpriced": "Very overpriced",
 }
+
+DEAL_TIER_FALLBACK_COLOR = INK_MUTED
 
 # ── Property type ─────────────────────────────────────────────────────────────
 PROPERTY_TYPE_LABELS: dict[str, str] = {
@@ -47,5 +55,4 @@ AFFORDABILITY_RATIO_MAX:         float = 35.0
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 PAGE_TITLE = "Spanish Housing Radar"
-PAGE_ICON  = "🏠"
-ACCENT     = "#3b82f6"
+PAGE_ICON  = "🏘️"

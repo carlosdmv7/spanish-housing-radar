@@ -149,7 +149,7 @@ def altair_chart(chart: alt.TopLevelMixin, **kwargs) -> None:
     must pass `theme=None`. Routing through this helper means no call site can
     forget and silently render in Streamlit blue.
     """
-    kwargs.setdefault("use_container_width", True)
+    kwargs.setdefault("width", "stretch")
     st.altair_chart(chart, theme=None, **kwargs)
 
 
@@ -201,6 +201,18 @@ def _strip_markdown(items: Sequence[StripItem]) -> str:
         for item in items
     ]
     return ":small[" + "  ·  ".join(parts) + "]"
+
+
+def page_hero(icon: str, title: str, subtitle: str) -> None:
+    """Page title and one-line framing. Native heading, no card markup."""
+    st.title(f"{icon} {title}", anchor=False)
+    st.markdown(_mark(subtitle, INK_MUTED))
+    st.markdown("")
+
+
+def section(label: str) -> None:
+    """Quiet uppercase label that breaks a page into scannable blocks."""
+    st.markdown(f":small[**{_mark(label.upper(), INK_MUTED)}**]")
 
 
 def render_header(freshness: Sequence[StripItem] = ()) -> None:

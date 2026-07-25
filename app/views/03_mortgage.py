@@ -1,13 +1,12 @@
 """
-Page 3 — Mortgage Calculator
-Fixed vs variable, French amortisation schedule, affordability check.
+Mortgage — fixed vs variable, French amortisation schedule, affordability check.
 """
 from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from components.charts import line_amortisation, waterfall_mortgage
+from components.charts import bar_amortisation, bar_mortgage_cost
 from components.mortgage import (
     compute_mortgage,
     compute_variable_mortgage,
@@ -24,40 +23,41 @@ from config import (
 )
 import pandas as pd
 import streamlit as st
-from styles import page_hero
+from theme import RUST_700, TEAL_700, altair_chart, page_hero, section
 
 page_hero(
     "🧮",
     "Mortgage Calculator",
-    "Compare fixed vs variable mortgages with a full French amortisation "
-    "schedule and a stress scenario. All figures are indicative.",
+    "Compare fixed against variable with a full French amortisation schedule and a "
+    "rate-rise stress scenario. Indicative maths, not an offer.",
 )
 
-# ── Inputs ────────────────────────────────────────────────────────────────────
 col_in, col_out = st.columns([1, 2])
 
+# ── Inputs ────────────────────────────────────────────────────────────────────
 with col_in:
-    st.markdown("#### Property")
+    section("Property")
     property_price = st.number_input(
         "Property price (€)", min_value=50_000, max_value=5_000_000,
         value=350_000, step=5_000, format="%d",
     )
-    ltv = st.slider("LTV — % financed", min_value=50, max_value=100, value=int(MORTGAGE_DEFAULT_LTV))
+    ltv = st.slider("LTV — % financed", min_value=50, max_value=100,
+                    value=int(MORTGAGE_DEFAULT_LTV))
     down_payment = property_price * (1 - ltv / 100)
-    principal    = property_price * ltv / 100
+    principal = property_price * ltv / 100
 
-    st.info(f"**Down payment:** €{down_payment:,.0f}  ·  **Loan:** €{principal:,.0f}")
+    d1, d2 = st.columns(2)
+    d1.metric("Down payment", f"€{down_payment:,.0f}")
+    d2.metric("Loan", f"€{principal:,.0f}")
 
-    st.markdown("#### Terms")
+    section("Terms")
     years = st.slider("Term (years)", 5, 40, MORTGAGE_DEFAULT_YEARS)
-
-    st.markdown("#### Fixed rate")
     fixed_rate = st.number_input(
         "Fixed rate (%)", min_value=0.1, max_value=15.0,
         value=MORTGAGE_DEFAULT_RATE_FIXED, step=0.05, format="%.2f",
     )
 
-    st.markdown("#### Variable rate")
+    section("Variable rate")
     euribor = st.number_input(
         "Euribor 12m (%)", min_value=-2.0, max_value=10.0,
         value=EURIBOR_CURRENT, step=0.05, format="%.2f",
@@ -67,84 +67,73 @@ with col_in:
         value=MORTGAGE_DEFAULT_RATE_VARIABLE, step=0.05, format="%.2f",
     )
     stress = st.number_input(
-        "Stress scenario Euribor +(%)", min_value=0.0, max_value=5.0,
+        "Stress scenario · Euribor +(%)", min_value=0.0, max_value=5.0,
         value=1.0, step=0.25, format="%.2f",
     )
 
-    st.markdown("#### Personal affordability")
+    section("Your income")
     net_income = st.number_input(
         "Monthly net income (€)", min_value=500, max_value=20_000,
         value=2_000, step=100, format="%d",
     )
 
 # ── Compute ───────────────────────────────────────────────────────────────────
-fixed                = compute_mortgage(principal, fixed_rate, years)
+fixed = compute_mortgage(principal, fixed_rate, years)
 var_base, var_stress = compute_variable_mortgage(principal, spread, euribor, years, stress)
 
 # ── Results ───────────────────────────────────────────────────────────────────
 with col_out:
-    st.markdown("#### Scenario comparison")
+    section("Scenario comparison")
+    scenarios = [
+        (f"Fixed · {fixed_rate:.2f}%", fixed),
+        (f"Variable · {euribor + spread:.2f}%", var_base),
+        (f"Stressed · {euribor + spread + stress:.2f}%", var_stress),
+    ]
+    for col, (label, result) in zip(st.columns(3), scenarios, strict=True):
+        with col.container(border=True):
+            st.markdown(f"**{label}**")
+            st.metric("Monthly payment", f"€{result.monthly_payment:,.0f}",
+                      label_visibility="collapsed")
+            st.markdown(
+                f":small[Total paid €{result.total_paid:,.0f}  ·  "
+                f"of which interest €{result.total_interest:,.0f}]"
+            )
 
-    r1, r2, r3 = st.columns(3)
-
-    def scenario_col(col, label: str, result, highlight: bool = False):
-        border = "2px solid #3b82f6" if highlight else "1px solid rgba(148,163,184,0.18)"
-        bg = "rgba(59,130,246,0.10)" if highlight else "#161b26"
-        col.markdown(
-            f"<div style='border:{border};background:{bg};border-radius:12px;padding:16px'>"
-            f"<div style='font-weight:700;margin-bottom:8px'>{label}</div>"
-            f"<div style='font-size:1.6rem;font-weight:800'>€{result.monthly_payment:,.0f}"
-            f"<span style='font-size:1rem;font-weight:400;color:#94a3b8'>/month</span></div>"
-            f"<div style='color:#94a3b8;font-size:0.85rem;margin-top:4px'>Total paid: €{result.total_paid:,.0f}</div>"
-            f"<div style='color:#f87171;font-size:0.85rem'>Interest: €{result.total_interest:,.0f}</div>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-
-    scenario_col(r1, f"🔒 Fixed {fixed_rate:.2f}%",                fixed,      highlight=True)
-    scenario_col(r2, f"📈 Variable {euribor+spread:.2f}%",         var_base)
-    scenario_col(r3, f"⚠️ Stress {euribor+spread+stress:.2f}%",   var_stress)
-
-    st.markdown("---")
-
-    # Affordability check
-    st.markdown("#### Affordability check")
-    max_ratio   = AFFORDABILITY_RATIO_MAX
-    max_payment = net_income * max_ratio / 100
-
-    def affordability_badge(result, label):
-        pct   = result.monthly_payment / net_income * 100
-        ok    = pct <= max_ratio
-        color = "#22c55e" if ok else "#ef4444"
-        icon  = "✅" if ok else "❌"
+    section("Affordability check")
+    max_ratio = AFFORDABILITY_RATIO_MAX
+    for label, result in scenarios:
+        pct = result.monthly_payment / net_income * 100
+        within = pct <= max_ratio
+        colour = TEAL_700 if within else RUST_700
+        verdict = "within the guideline" if within else "over the guideline"
         st.markdown(
-            f"{icon} **{label}**: monthly payment **€{result.monthly_payment:,.0f}** = "
-            f"<span style='color:{color};font-weight:700'>{pct:.1f}% of your income</span> "
-            f"(recommended max: {max_ratio:.0f}%)",
-            unsafe_allow_html=True,
+            f"**{label}** · €{result.monthly_payment:,.0f}/month = "
+            f":color[{pct:.1f}% of your net income]{{foreground=\"{colour}\"}} "
+            f"— {verdict} of {max_ratio:.0f}%."
         )
 
-    affordability_badge(fixed,      f"Fixed {fixed_rate:.2f}%")
-    affordability_badge(var_base,   f"Variable base {euribor+spread:.2f}%")
-    affordability_badge(var_stress, f"Variable stress {euribor+spread+stress:.2f}%")
-
-    max_loan   = max_affordable_loan(net_income, max_ratio, fixed_rate, years)
+    max_loan = max_affordable_loan(net_income, max_ratio, fixed_rate, years)
     min_income = required_income(principal, fixed_rate, years, max_ratio)
     st.info(
-        f"With €{net_income:,}/month you can afford a loan of up to **€{max_loan:,.0f}** "
-        f"(fixed {fixed_rate:.2f}%, {years} years).  \n"
-        f"For a loan of €{principal:,.0f} you need at least **€{min_income:,.0f}/month net**."
+        f"On €{net_income:,}/month you can service a loan of about "
+        f"**€{max_loan:,.0f}** at {fixed_rate:.2f}% over {years} years. The "
+        f"€{principal:,.0f} loan above needs at least **€{min_income:,.0f}/month net**."
     )
 
-    st.markdown("---")
+    st.markdown("")
+    altair_chart(bar_mortgage_cost(fixed))
+    altair_chart(bar_amortisation(fixed.schedule))
 
-    col_wf, col_am = st.columns(2)
-    with col_wf:
-        st.plotly_chart(waterfall_mortgage(fixed), use_container_width=True)
-    with col_am:
-        st.plotly_chart(line_amortisation(fixed.schedule), use_container_width=True)
-
-    with st.expander("📋 Full amortisation schedule (fixed rate)"):
-        schedule_df = pd.DataFrame(fixed.schedule)
-        schedule_df.columns = ["Month", "Year", "Payment (€)", "Interest (€)", "Principal (€)", "Balance (€)"]
-        st.dataframe(schedule_df, use_container_width=True, hide_index=True)
+    with st.expander("Full amortisation schedule (fixed rate)"):
+        schedule = pd.DataFrame(fixed.schedule)
+        st.dataframe(
+            schedule, width="stretch", hide_index=True,
+            column_config={
+                "month": st.column_config.NumberColumn("Month", format="%d"),
+                "year": st.column_config.NumberColumn("Year", format="%d"),
+                "payment": st.column_config.NumberColumn("Payment", format="€%,.2f"),
+                "interest": st.column_config.NumberColumn("Interest", format="€%,.2f"),
+                "amortisation": st.column_config.NumberColumn("Principal", format="€%,.2f"),
+                "balance": st.column_config.NumberColumn("Balance", format="€%,.0f"),
+            },
+        )
