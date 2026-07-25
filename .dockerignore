@@ -12,5 +12,8 @@ transform/target/
 transform/dbt_packages/
 transform/logs/
 *.md
+# ...but pyproject.toml declares `readme = "README.md"`, so the build context
+# must keep it or `COPY pyproject.toml uv.lock README.md ./` fails to resolve.
+!README.md
 data/
 notebooks/
