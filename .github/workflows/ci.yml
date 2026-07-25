@@ -74,7 +74,11 @@ jobs:
       - name: dbt deps
         run: uv run dbt deps --project-dir transform
 
-      # Write prod profile (not CI schema) so freshness checks the real warehouse.
+      # Freshness must run against the real warehouse, not the ci_* sandbox —
+      # a source table's staleness is a property of production. Read-only, so
+      # pointing at prod here can't damage what the live app reads. Mirrors the
+      # `prod` target in transform/profiles.yml (no schema: sources declare
+      # `schema: raw` themselves).
       - name: Write prod profile
         run: |
           mkdir -p "$RUNNER_TEMP/dbt"
@@ -85,15 +89,14 @@ jobs:
               prod:
                 type: duckdb
                 path: "md:spanish_housing_radar?motherduck_token=${MOTHERDUCK_TOKEN}"
-                schema: main_raw
                 threads: 4
           EOF
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
 
-      # Check real source freshness against prod warehouse. This fails CI if
-      # ine_hpi (the only production-critical feed) hasn't been updated in >10d.
-      # idealista_listings will warn but not fail, since scraping is paused.
+      # Fails the build when ine_hpi — the one feed that is actively maintained —
+      # goes >10 days stale, which is the signal the weekly cron has died.
+      # idealista_listings warns without failing: scraping is paused on purpose.
       - name: Check source freshness
         run: uv run dbt source freshness --project-dir transform --target prod --profiles-dir "$RUNNER_TEMP/dbt"
         env:
