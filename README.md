@@ -12,7 +12,7 @@ interactive Streamlit app — surfacing deals priced below their neighbourhood's
   <img alt="uv"         src="https://img.shields.io/badge/deps-uv-DE5FE9?logo=uv&logoColor=white">
   <img alt="dbt"        src="https://img.shields.io/badge/dbt-1.9-FF694B?logo=dbt&logoColor=white">
   <img alt="DuckDB"     src="https://img.shields.io/badge/MotherDuck-DuckDB-FFF000?logo=duckdb&logoColor=black">
-  <img alt="Streamlit"  src="https://img.shields.io/badge/Streamlit-1.44-FF4B4B?logo=streamlit&logoColor=white">
+  <img alt="Streamlit"  src="https://img.shields.io/badge/Streamlit-1.60-FF4B4B?logo=streamlit&logoColor=white">
   <img alt="Prefect"    src="https://img.shields.io/badge/Prefect-orchestration-024DFD?logo=prefect&logoColor=white">
   <img alt="Docker"     src="https://img.shields.io/badge/Docker-pipeline-2496ED?logo=docker&logoColor=white">
   <img alt="License"    src="https://img.shields.io/badge/license-MIT-green">
@@ -20,22 +20,26 @@ interactive Streamlit app — surfacing deals priced below their neighbourhood's
 
 > **🔗 Live demo:** https://spanish-housing-radar-carlosdmv7.streamlit.app/
 > **📊 dbt docs (lineage & tests):** https://carlosdmv7.github.io/spanish-housing-radar/
->
-> _Listing scraping is paused (Scrapfly credits), but the pipeline is **not** frozen: a
-> free, keyless **INE house-price-index** feed refreshes the warehouse on a weekly cron,
-> so the app keeps showing current official market context. Listing scraping resumes by
-> flipping one repo variable (`SCRAPFLY_ENABLED=true`) when credits return._
 
 ![Opportunities — listings scored against their local market](docs/img/opportunities.png)
 
 <details>
-<summary>📸 More screenshots — Market, Mortgage, Affordability</summary>
+<summary>📸 More screenshots — Market, Mortgage, Affordability, How it works</summary>
 
 ![Market overview](docs/img/market.png)
 ![Mortgage simulator](docs/img/mortgage.png)
 ![Affordability index](docs/img/affordability.png)
+![How it works & data quality](docs/img/how_it_works.png)
 
 </details>
+
+> **ℹ️ On the data:** listing scraping is paused (Scrapfly credits), but the pipeline is
+> **not** frozen: a free, keyless **INE house-price-index** feed refreshes the warehouse on
+> a weekly cron, so the app keeps showing current official market context. Listing scraping
+> resumes by flipping one repo variable (`SCRAPFLY_ENABLED=true`) when credits return.
+> Every page carries a freshness header with the live figures, and the
+> **[How it works & data quality](https://spanish-housing-radar-carlosdmv7.streamlit.app/how-it-works)**
+> page states what this data can and cannot tell you.
 
 ---
 
@@ -75,7 +79,7 @@ flowchart LR
         GOLD["facts + reports<br/>(3_gold)"]
     end
 
-    APP["Streamlit app<br/>4 pages"]
+    APP["Streamlit app<br/>5 pages"]
 
     I --> SC --> PY
     F -.-> SC
@@ -101,7 +105,7 @@ flowchart LR
 | **Transformation** | dbt Core (Medallion: bronze → silver → gold) | Tested, documented, lineage-tracked SQL models |
 | **Orchestration** | Prefect | `extract → dbt build` flow with task-level retries + structured logging, triggered daily by a GitHub Actions cron (`.github/workflows/daily_pipeline.yml`) |
 | **CI/CD** | GitHub Actions | Ruff + pytest + `dbt build` against an isolated `ci_*` schema on every PR (`.github/workflows/ci.yml`) |
-| **Serving** | Streamlit · Plotly · pydeck | 4-page interactive analytical app |
+| **Serving** | Streamlit · Altair · pydeck | 5-page interactive analytical app; charts inherit one brand theme, no CSS injection |
 
 ---
 
@@ -156,6 +160,12 @@ loudly when an assumption breaks. See [`transform/models/`](transform/models/).
 | **Market** | What's the €/m² benchmark by neighbourhood, and how is it evolving? |
 | **Mortgage** | Fixed vs variable French-amortisation simulator. |
 | **Affordability** | What income does each neighbourhood require? Buy-vs-rent comparison. |
+| **How it works** | Where the numbers come from, how the score is computed, and what this data cannot tell you. |
+
+Every page carries a **freshness header** — last ingest, row counts, share of scores computed at
+barrio grain, dbt test results — so a visitor sees the data's condition before reading any figure.
+Colour comes only from native theme keys and a registered Altair theme; there is no CSS injection
+anywhere, so a Streamlit upgrade can't silently break the look.
 
 ---
 
@@ -176,6 +186,13 @@ loudly when an assumption breaks. See [`transform/models/`](transform/models/).
   look complete while quietly lying about coverage. Flagging is the honest default.
 - **Snapshot history as a first-class table.** `int_listings_history` keeps every observation so
   price-evolution is real (accumulated daily) rather than reconstructed.
+- **Per-table source freshness, not one global threshold.** The INE feed is production-critical and
+  fails CI after 10 days of staleness; the paused listings table warns without failing, because its
+  staleness is a recorded decision rather than a fault. One global threshold would have forced a
+  choice between a permanently red build and no freshness gate at all.
+
+Each of these is written up as an **[Architecture Decision Record](docs/adr/)** — the context, the
+call, and the consequences I now have to live with, including the ones that constrain the app's UI.
 
 ---
 
@@ -228,6 +245,9 @@ Full command list: `make help`.
 - [x] **Official market context** — free INE house-price-index (IPV) feed (`raw.ine_hpi` →
       `int_market_context` → `rpt_market_context`), grounding scraped asking prices against
       transaction-based reality and keeping the app fresh with zero scraping credits
+- [x] **Data-trust surface** — freshness header on every page, per-listing score provenance
+      (benchmark grain + comparable count shown wherever a score is), a "How it works & data
+      quality" page, and `dbt source freshness` gating CI per source table
 - [ ] Ingest **Fotocasa** (`raw.fotocasa_listings`) — staging + union are ready, only the source feed is missing
 - [ ] Barrio centroids for Zaragoza / Valladolid / Bilbao
 
@@ -250,5 +270,5 @@ Full command list: `make help`.
 
 ---
 
-<sub>Built by <a href="https://www.linkedin.com/in/carlos-demanuel">Carlos De Manuel</a> ·
+<sub>Built by <a href="https://www.linkedin.com/in/carlos-de-manuel">Carlos De Manuel</a> ·
 Analytics / Data Engineering portfolio · MIT License</sub>
