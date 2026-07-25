@@ -83,7 +83,18 @@ transform-test: transform dbt-test ## dbt run + dbt test
 .PHONY: transform-full-refresh
 transform-full-refresh: ## Full dbt run with full-refresh (rebuilds all incrementals from scratch)
 	cd transform && $(DBT) run --full-refresh
-	
+
+# DBT_PROFILES_DIR=. forces dbt to read transform/profiles.yml (cwd), overriding
+# any DBT_PROFILES_DIR=./transform leaked from a sourced .env — which only makes
+# sense when run from the repo root, and breaks these cd-into-transform recipes.
+.PHONY: deploy-prod
+deploy-prod: ## Full dbt BUILD (seed+run+test) to PROD — rebuilds the live app's main_* tables
+	cd transform && DBT_PROFILES_DIR=. $(DBT) build --target prod
+
+.PHONY: validate-ci
+validate-ci: ## Full dbt BUILD to the isolated ci_* sandbox (safe; DROP SCHEMA ci_* after)
+	cd transform && DBT_PROFILES_DIR=. $(DBT) build --target ci
+
 # ── App ────────────────────────────────────────────────────────────────────────
 .PHONY: app
 app: ## Launch Streamlit on :8501 (or press F5 in VSCode)
