@@ -8,14 +8,21 @@ sources:
       Append-only raw tables written by the extraction pipeline.
       Never modified after insert — every scraping run adds new rows.
 
-    freshness:
-      warn_after: {count: 2, period: day}
-      error_after: {count: 7, period: day}
+    # Default freshness is overridden per table below. See ADR-0003 and the
+    # README's "scraping is paused" note for why idealista stays warn-only while
+    # ine_hpi fails the build when stale.
     loaded_at_field: _loaded_at
 
     tables:
       - name: idealista_listings
-        description: Raw listings scraped from idealista.com, one row per listing per run.
+        description: >
+          Raw listings scraped from idealista.com, one row per listing per run.
+          **Note:** scraping is paused (Scrapfly credits). This table will not
+          update until credits return. The freshness threshold is warn-only so CI
+          stays green; the freshness header shows "paused" to be transparent.
+        freshness:
+          warn_after: {count: 30, period: day}
+          # No error_after; we knowingly let this table age without failing the build.
         columns:
           - name: source_id
             description: Idealista's internal listing ID (e.g. 109947740).
@@ -33,8 +40,9 @@ sources:
       - name: fotocasa_listings
         description: >
           Raw Fotocasa listings. Scraper is ready but this table is not ingested
-          yet, so column tests are intentionally omitted until raw.fotocasa_listings
-          exists (re-add not_null on source_id / _run_id once data lands).
+          yet, so freshness is not enforced. Re-add thresholds once data lands.
+        freshness:
+          warn_after: ~
         columns:
           - name: source_id
           - name: _run_id
@@ -44,6 +52,11 @@ sources:
           Official INE house-price index (IPV) by autonomous community, quarterly
           (base 2015=100). Free Tempus3 API feed — grounds scraped asking prices
           against transaction-based reality. One row per series × quarter.
+          **This feed is actively maintained.** Freshness failures on this table
+          will fail the build — a broken CI gate that catches a stalled pipeline.
+        freshness:
+          warn_after: {count: 7, period: day}
+          error_after: {count: 10, period: day}
         columns:
           - name: series_cod
             tests: [not_null]

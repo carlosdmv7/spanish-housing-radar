@@ -56,6 +56,49 @@ jobs:
       - name: Build image
         run: docker build -t housing-radar:ci .
 
+  dbt-freshness:
+    name: dbt source freshness
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: dbt deps
+        run: uv run dbt deps --project-dir transform
+
+      # Write prod profile (not CI schema) so freshness checks the real warehouse.
+      - name: Write prod profile
+        run: |
+          mkdir -p "$RUNNER_TEMP/dbt"
+          cat > "$RUNNER_TEMP/dbt/profiles.yml" <<EOF
+          spanish_housing_radar:
+            target: prod
+            outputs:
+              prod:
+                type: duckdb
+                path: "md:spanish_housing_radar?motherduck_token=${MOTHERDUCK_TOKEN}"
+                schema: main_raw
+                threads: 4
+          EOF
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+
+      # Check real source freshness against prod warehouse. This fails CI if
+      # ine_hpi (the only production-critical feed) hasn't been updated in >10d.
+      # idealista_listings will warn but not fail, since scraping is paused.
+      - name: Check source freshness
+        run: uv run dbt source freshness --project-dir transform --target prod --profiles-dir "$RUNNER_TEMP/dbt"
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+
   dbt-build:
     name: dbt build (CI schema)
     runs-on: ubuntu-latest
