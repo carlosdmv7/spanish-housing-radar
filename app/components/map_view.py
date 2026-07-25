@@ -82,7 +82,10 @@ def listings_map(df: pd.DataFrame) -> None:
                 pitch=0,
             ),
             tooltip={"text": "{tooltip_text}"},
-            map_style="mapbox://styles/mapbox/light-v11",
+            # Carto's basemap needs no API key. The previous `mapbox://` style
+            # required a Mapbox token the deployed app has no way to supply, so
+            # the basemap could silently fail to load and leave dots on a void.
+            map_style=pdk.map_styles.CARTO_LIGHT,
         )
     )
 
