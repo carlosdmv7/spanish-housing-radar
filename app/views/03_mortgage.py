@@ -20,6 +20,7 @@ from config import (
     MORTGAGE_DEFAULT_RATE_FIXED,
     MORTGAGE_DEFAULT_RATE_VARIABLE,
     MORTGAGE_DEFAULT_YEARS,
+    MORTGAGE_SOURCE_NOTE,
 )
 import pandas as pd
 import streamlit as st
@@ -31,6 +32,11 @@ page_hero(
     "Compare fixed against variable with a full French amortisation schedule and a "
     "rate-rise stress scenario. Indicative maths, not an offer.",
 )
+
+# Every prefilled rate on this page is a published figure with a citation, and
+# the visitor sees that before the first payment number — same contract as the
+# freshness header: state the data's provenance ahead of any figure drawn from it.
+st.caption(MORTGAGE_SOURCE_NOTE)
 
 col_in, col_out = st.columns([1, 2])
 

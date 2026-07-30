@@ -10,6 +10,7 @@ from components.charts import bar_buy_vs_rent, bar_required_income, bar_years_of
 from components.mortgage import compute_mortgage, max_affordable_loan, required_income
 from config import (
     AFFORDABILITY_RATIO_MAX,
+    AFFORDABILITY_SOURCE_NOTE,
     MORTGAGE_DEFAULT_RATE_FIXED,
     MORTGAGE_DEFAULT_YEARS,
     VALENCIA_AVG_NET_SALARY_MONTHLY,
@@ -25,12 +26,17 @@ page_hero(
     "flat costs, and whether buying beats renting the same street.",
 )
 
+# The verdict "this barrio is out of reach" is only as trustworthy as the income
+# and rate it was computed from, so both are cited before any verdict is shown.
+st.caption(AFFORDABILITY_SOURCE_NOTE)
+
 with st.sidebar:
     st.header("Parameters")
     net_income = st.number_input(
         "Monthly net income (€)", min_value=500, max_value=20_000,
         value=int(VALENCIA_AVG_NET_SALARY_MONTHLY), step=100, format="%d",
-        help="Defaults to the average net salary in Valencia.",
+        help="Defaults to the Comunitat Valenciana average, derived from INE's 2024 "
+             "salary survey — see the note under the page title.",
     )
     ltv = st.slider("LTV (%)", 50, 100, 80)
     rate = st.number_input(
