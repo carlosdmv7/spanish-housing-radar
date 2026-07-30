@@ -184,6 +184,10 @@ anywhere, so a Streamlit upgrade can't silently break the look.
   breadth of comparables matters more than per-listing depth.
 - **Low-confidence data is shown, not hidden.** Dropping sparse neighbourhoods would make the app
   look complete while quietly lying about coverage. Flagging is the honest default.
+- **A benchmark with no dispersion scores neutral, not extreme.** When a cell holds a single
+  comparable the standard deviation is 0, and letting the clamp absorb that would snap the z-score
+  to −3 → **score 100 → "great deal"** — the pipeline's most confident verdict from its least
+  evidence. The z-score is coalesced to 0 (score 50) instead.
 - **Snapshot history as a first-class table.** `int_listings_history` keeps every observation so
   price-evolution is real (accumulated daily) rather than reconstructed.
 - **Per-table source freshness, not one global threshold.** The INE feed is production-critical and
@@ -191,8 +195,20 @@ anywhere, so a Streamlit upgrade can't silently break the look.
   staleness is a recorded decision rather than a fault. One global threshold would have forced a
   choice between a permanently red build and no freshness gate at all.
 
+### Key decisions (ADRs)
+
 Each of these is written up as an **[Architecture Decision Record](docs/adr/)** — the context, the
-call, and the consequences I now have to live with, including the ones that constrain the app's UI.
+call, the consequences I now have to live with (including the ones that constrain the app's UI),
+and the alternatives I rejected and why.
+
+| ADR | Decision | The cost I accepted |
+|---|---|---|
+| [0001](docs/adr/0001-search-card-scraping.md) | Scrape **search cards**, not detail pages | ~1 Scrapfly credit vs 25–29 — but **no per-listing coordinates**, so the map plots barrio centroids |
+| [0002](docs/adr/0002-warehouse-motherduck-medallion.md) | MotherDuck (DuckDB) warehouse with a dbt medallion | Free and zero-ops at this scale; free-tier limits are a real ceiling |
+| [0003](docs/adr/0003-idempotent-upserts.md) | Idempotent upserts keyed on `(source_name, source_id)` | Retry-safe, but a re-scrape overwrites the prior observation — history has to live in silver |
+| [0004](docs/adr/0004-hierarchical-benchmark-grain.md) | Hierarchical benchmark grain: neighbourhood → district → city, `min_comps_for_benchmark = 8` | Grain is **per row**, so `benchmark_level` is a visible gold column the app must always show — a score without its grain isn't interpretable |
+| [0005](docs/adr/0005-show-low-confidence-rows.md) | Show low-confidence rows, flagged, rather than dropping them | Some visible scores are genuinely weak; disclosure becomes a presentation responsibility |
+| [0006](docs/adr/0006-zero-dispersion-neutral-zscore.md) | Zero dispersion → **neutral z-score (0)**, not a ±3 snap | A one-comparable benchmark would otherwise fabricate a `great_deal`; the cost is that a score of 50 is ambiguous without its comparable count |
 
 ---
 
