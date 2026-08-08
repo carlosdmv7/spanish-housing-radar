@@ -23,6 +23,34 @@ codeFont = "IBM Plex Mono:https://fonts.googleapis.com/css2?family=IBM+Plex+Mono
 # Portfolio display headings are 700; body is 400.
 baseFontWeight = 400
 
+# ── Type scale ────────────────────────────────────────────────────────────────
+# Streamlit's default headings run larger and lighter than the portfolio's, so
+# matching the families alone still leaves the two properties looking unrelated.
+# These are h1..h6, read off styles.css: `.case-hero h1` tops out at 2.9rem and
+# `.section-title` at 2.6rem — but those are landing-page headings with a whole
+# viewport to themselves, and an app page title sits above dense controls, so h1
+# takes the bottom of that range rather than the top. h3 is `.project h3`
+# (1.32rem) and `.exp-role` (1.28rem) almost exactly.
+#
+# Weights follow the same stylesheet: 700 for the display headings, 600 for the
+# smaller emphasis levels. Nothing here is invented — every number has a line in
+# styles.css behind it.
+#
+# Not reachable natively: the portfolio's negative letter-spacing on display
+# headings (-0.02em to -0.035em). Streamlit exposes no tracking key, and the one
+# way to apply it is CSS injection, which this app does not do. Headings are
+# therefore very slightly looser than the portfolio's. That is the honest cost of
+# the no-injection rule, recorded here so the gap reads as a decision.
+headingFontSizes = ["2.25rem", "1.6rem", "1.3rem", "1.1rem", "1rem", "0.875rem"]
+headingFontWeights = [700, 700, 700, 600, 600, 600]
+
+# The portfolio's own headline figure is `.impact-num`: display font, 1.4rem,
+# weight 700 — restrained, because the label around it carries the meaning.
+# Streamlit's default metric value is 2.25rem, which on a page of six metrics
+# reads as a scoreboard. This brings it back to the portfolio's register.
+metricValueFontSize = "1.75rem"
+metricValueFontWeight = 700
+
 # ── Core surfaces and ink ─────────────────────────────────────────────────────
 backgroundColor = "#FDFAF4"           # --surface
 secondaryBackgroundColor = "#F5EFE3"  # --surface-2 (cards, wells)
