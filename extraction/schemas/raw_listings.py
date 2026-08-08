@@ -32,6 +32,12 @@ class RawListing(BaseModel):
     raw_municipality: str
     raw_district: str | None = None
     raw_neighborhood: str | None = None
+    # The portal's own listing title, kept verbatim. The three fields above are
+    # the output of a text heuristic run over it; storing the input is what makes
+    # a later parser fix applicable to rows already in the warehouse. Optional so
+    # a source that has no title (Fotocasa parses structured fields) still
+    # validates.
+    raw_title: str | None = None
 
     @field_validator("raw_operation_type")
     @classmethod

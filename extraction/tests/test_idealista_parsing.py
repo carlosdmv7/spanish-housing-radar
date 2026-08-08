@@ -1,4 +1,6 @@
 """Unit tests for IdealistaScraper's pure parsing helpers — no network involved."""
+import pytest
+
 from extraction.scrapers.idealista import IdealistaScraper
 
 scraper = IdealistaScraper(province="madrid")
@@ -48,6 +50,83 @@ class TestParseLocation:
         assert muni == "madrid"
         assert district is None
         assert hood is None
+
+
+class TestParseLocationProductionRegressions:
+    """
+    Every case here is a real title reconstructed from a value this parser
+    actually wrote into the warehouse. Before the fix, 8 of 12 sampled titles
+    produced a street name, a house number or a property type in the
+    `neighborhood` column -- where the scoring model then used it as a benchmark
+    grouping key indistinguishable from a real barrio.
+    """
+
+    @pytest.mark.parametrize("title,expected_hood", [
+        # Street types the original keyword list missed entirely.
+        ("Piso en gran vía de Ramón y Cajal, La Roqueta, Valencia", "la roqueta"),
+        ("Piso en passatge de Ripalda, Sant Francesc, Valencia", "sant francesc"),
+        ("Ático en rambla de Catalunya, Eixample, Barcelona", "eixample"),
+        ("Piso en CL Lasala, Manuel, Zaragoza", "manuel"),
+        ("Piso en avinguda del Port, Aiora, Valencia", "aiora"),
+        ("Piso en ctra. de Madrid, Delicias, Zaragoza", "delicias"),
+    ])
+    def test_street_forms_never_become_neighbourhoods(self, title, expected_hood):
+        _, _, hood = scraper._parse_location(title, fallback="?")
+        assert hood == expected_hood
+
+    @pytest.mark.parametrize("title,expected_hood", [
+        # Multi-word property types: the old `^\S+\s+en\s+` stripped one word, so
+        # "chalet adosado en russafa" was stored verbatim as a neighbourhood.
+        ("Chalet adosado en Russafa, Valencia", "russafa"),
+        ("Casa en Miralbueno, Zaragoza", "miralbueno"),
+        ("Dúplex en calle del Doctor Monserrat, El Botànic, Valencia", "el botànic"),
+        ("Ático dúplex en Nou Moles, Valencia", "nou moles"),
+    ])
+    def test_property_type_prefixes_are_stripped(self, title, expected_hood):
+        _, _, hood = scraper._parse_location(title, fallback="?")
+        assert hood == expected_hood
+
+    @pytest.mark.parametrize("title", [
+        "Piso en carretera d'Escrivà, 29, Valencia",
+        "Piso en pasaje Virgen de Consolación, 12, Sevilla",
+    ])
+    def test_house_numbers_never_become_areas(self, title):
+        muni, district, hood = scraper._parse_location(title, fallback="?")
+        # The warehouse held districts literally named "29" and "12".
+        assert district not in {"29", "12"}
+        assert hood not in {"29", "12"}
+        assert muni in {"valencia", "sevilla"}
+
+    def test_a_number_between_street_and_barrio_is_dropped(self):
+        _, _, hood = scraper._parse_location(
+            "Piso en venta en calle de Sueca, 34, Russafa, Valencia", fallback="?"
+        )
+        assert hood == "russafa"
+
+    def test_a_real_barrio_starting_with_a_number_survives(self):
+        # Madrid's "12 de Octubre" must not be mistaken for a portal number.
+        _, district, hood = scraper._parse_location(
+            "Piso en venta en 12 de Octubre, Retiro, Madrid", fallback="?"
+        )
+        assert hood == "12 de octubre"
+        assert district == "retiro"
+
+    def test_an_unmarked_street_name_still_defeats_the_heuristic(self):
+        """
+        The residual failure, pinned deliberately rather than hidden.
+
+        "Sierra de Bejar" is a street in Valladolid carrying no street keyword,
+        so it is indistinguishable from a place name by text alone and lands in
+        `neighborhood` while the real barrio is pushed to `district`. No keyword
+        list can fix this -- it is why location is canonicalised against the
+        `barrios_es` seed downstream instead of being trusted from the title.
+        """
+        _, district, hood = scraper._parse_location(
+            "Chalet adosado en Sierra de Bejar, Covaresa - Parque Alameda, Valladolid",
+            fallback="?",
+        )
+        assert hood == "sierra de bejar"          # not a barrio; the seed rejects it
+        assert district == "covaresa - parque alameda"  # the real barrio
 
 
 class TestExtractSize:

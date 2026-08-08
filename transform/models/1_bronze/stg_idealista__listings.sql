@@ -35,6 +35,9 @@ cleaned as (
         lower(trim(raw_municipality))                        as municipality,
         lower(trim(raw_district))                            as district,
         lower(trim(raw_neighborhood))                        as neighborhood,
+        -- Carried through untouched so silver can re-derive location from the
+        -- source text rather than trusting the extraction-time parse.
+        raw_title                                            as listing_title,
 
         -- Data quality flags (detectar basura antes de silver)
         raw_price_eur is null or raw_price_eur <= 0          as dq_bad_price,

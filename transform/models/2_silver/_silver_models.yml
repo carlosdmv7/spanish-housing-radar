@@ -21,6 +21,20 @@ models:
           - accepted_values:
               values: [apartment, house, other]
       - name: neighborhood_is_canonical
+        description: >
+          True when the barrios_es seed confirms this name is a real barrio.
+          False means unconfirmed, NOT disproven — the seed covers Madrid,
+          València, Barcelona, Málaga and Sevilla and knows nothing of Bilbao,
+          Valladolid or Zaragoza. Use it for displayed confidence, never as a
+          benchmark gate; `neighborhood_is_benchmarkable` is the gate.
+        tests: [not_null]
+      - name: neighborhood_is_benchmarkable
+        description: >
+          True when this name may form a barrio-grain benchmark: either the seed
+          confirmed it, or the seed does not cover this city and the name
+          survived the `is_not_an_area` scrub. Strictly weaker than
+          `_is_canonical`, so a gap in reference data cannot disqualify a real
+          barrio.
         tests: [not_null]
       - name: price_per_sqm
         tests:

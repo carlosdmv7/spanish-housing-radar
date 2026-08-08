@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from components.charts import bar_deal_tiers, scatter_size_vs_price
 from components.filters import (
+    load_municipalities,
     municipality_filter,
     operation_filter,
     price_range_filter,
@@ -31,15 +32,6 @@ page_hero(
     "Every listing is scored 0–100 against comparable flats — its own barrio when "
     "there are enough, otherwise its district or city. Higher means better deal.",
 )
-
-
-@st.cache_data(ttl=3600)
-def load_municipalities() -> list[str]:
-    df = query(
-        "SELECT DISTINCT municipality "
-        "FROM spanish_housing_radar.main_silver.int_listings_current ORDER BY 1"
-    )
-    return df["municipality"].tolist()
 
 
 try:
