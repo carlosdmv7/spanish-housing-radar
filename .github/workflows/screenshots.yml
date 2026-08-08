@@ -16,10 +16,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # prune-cache: false because the post-job prune has failed this workflow
+      # twice with `uv failed with exit code 2` *after* the screenshots were
+      # captured and pushed successfully. A red tick on a job that did its work
+      # is worse than a cold cache: it cost one wrong diagnosis already. This
+      # workflow runs by hand a few times a year, so the cache saves seconds.
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          prune-cache: false
 
       - name: Install dependencies
         run: |
@@ -52,4 +58,7 @@ jobs:
           git add docs/img/*.png
           git diff --cached --quiet && echo "no changes" && exit 0
           git commit -m "docs: refresh app screenshots (automated capture)"
-          git push
+          # A commit can land on this branch while the capture runs (it takes
+          # ~8 minutes). Rebase rather than lose the screenshots to a race.
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
