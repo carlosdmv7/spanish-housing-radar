@@ -8,6 +8,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from connection import query
+import pandas as pd
 import streamlit as st
 from theme import page_hero, section
 
@@ -38,7 +39,11 @@ try:
     # being truncated to "2026-06-26…" — and the least useful, since the number a
     # visitor actually wants from a freshness figure is how *old* it is. The age
     # answers that in three characters; the date itself stays one hover away.
-    last_run = row["last_run"]
+    # `::date` in the SQL does not survive the round trip: DuckDB hands pandas a
+    # datetime64 column, so this arrives as a Timestamp and subtracting a
+    # date.today() from it raises. Normalise on the Python side rather than trust
+    # the cast.
+    last_run = pd.to_datetime(row["last_run"]).date() if pd.notna(row["last_run"]) else None
     age_days = (date.today() - last_run).days if last_run is not None else None
     c4.metric(
         "Last ingest",
