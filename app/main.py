@@ -25,15 +25,22 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-home = st.Page("views/home.py", title="Home", icon="🏘️", default=True)
-opportunities = st.Page("views/01_opportunities.py", title="Opportunities", icon="🔍",
-                        url_path="opportunities")
-market = st.Page("views/02_market.py", title="Market", icon="📊", url_path="market")
-mortgage = st.Page("views/03_mortgage.py", title="Mortgage", icon="🧮", url_path="mortgage")
-affordability = st.Page("views/04_affordability.py", title="Affordability", icon="💰",
-                        url_path="affordability")
-how_it_works = st.Page("views/05_how_it_works.py", title="How it works", icon="🔬",
-                       url_path="how-it-works")
+# Material Symbols, not emoji. Streamlit renders `:material/x:` as a 24px glyph
+# in `currentColor`, so these pick up the sidebar's petrol ink — the same
+# treatment as the portfolio's inline `<svg class="icon" fill="currentColor">`.
+# Emoji cannot do that: they arrive with the font vendor's own colours baked in,
+# which is how five unrelated palettes ended up in a brand that has one.
+home = st.Page("views/home.py", title="Home", icon=":material/home:", default=True)
+opportunities = st.Page("views/01_opportunities.py", title="Opportunities",
+                        icon=":material/search:", url_path="opportunities")
+market = st.Page("views/02_market.py", title="Market",
+                 icon=":material/bar_chart:", url_path="market")
+mortgage = st.Page("views/03_mortgage.py", title="Mortgage",
+                   icon=":material/calculate:", url_path="mortgage")
+affordability = st.Page("views/04_affordability.py", title="Affordability",
+                        icon=":material/savings:", url_path="affordability")
+how_it_works = st.Page("views/05_how_it_works.py", title="How it works",
+                       icon=":material/science:", url_path="how-it-works")
 
 nav = st.navigation(
     {

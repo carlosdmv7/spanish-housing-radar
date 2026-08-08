@@ -21,7 +21,6 @@ DBT_DOCS_URL = "https://carlosdmv7.github.io/spanish-housing-radar/"
 REPO_URL = "https://github.com/carlosdmv7/spanish-housing-radar"
 
 page_hero(
-    "🔬",
     "How it works & data quality",
     "Where the numbers come from, how the opportunity score is computed, and the "
     "questions this data honestly cannot answer.",

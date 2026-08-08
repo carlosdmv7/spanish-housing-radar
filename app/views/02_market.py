@@ -15,7 +15,6 @@ import streamlit as st
 from theme import altair_chart, page_hero, section
 
 page_hero(
-    "📊",
     "Market Overview",
     "The benchmark every opportunity score is measured against: €/m² by "
     "neighbourhood, how wide the spread is, and where prices are heading.",

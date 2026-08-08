@@ -27,7 +27,6 @@ from theme import altair_chart, page_hero, section
 TOP_N_DEFAULT = 10
 
 page_hero(
-    "🔍",
     "Opportunities",
     "Every listing is scored 0–100 against comparable flats — its own barrio when "
     "there are enough, otherwise its district or city. Higher means better deal.",

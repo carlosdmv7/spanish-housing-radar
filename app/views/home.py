@@ -11,7 +11,6 @@ import streamlit as st
 from theme import page_hero, section
 
 page_hero(
-    "🏘️",
     "Spanish Housing Radar",
     "Spanish portals tell you a flat's price, never whether it's a good one. This "
     "scores every listing against comparable flats in its own barrio, so a cheap flat "
@@ -75,11 +74,11 @@ section("Where to go")
 st.markdown("""
 | Page | What you'll find |
 |---|---|
-| 🔍 **Opportunities** | Listings ranked by opportunity score, each showing the benchmark it was scored against. |
-| 📊 **Market** | €/m² benchmarks per neighbourhood, price spread, official INE market context. |
-| 🧮 **Mortgage** | Fixed vs variable simulator with a full French amortisation schedule. |
-| 💰 **Affordability** | The income each neighbourhood demands, plus buy-vs-rent. |
-| 🔬 **How it works** | The pipeline, the score's arithmetic, and what this data can't tell you. |
+| :material/search: **Opportunities** | Listings ranked by opportunity score, each showing the benchmark it was scored against. |
+| :material/bar_chart: **Market** | €/m² benchmarks per neighbourhood, price spread, official INE market context. |
+| :material/calculate: **Mortgage** | Fixed vs variable simulator with a full French amortisation schedule. |
+| :material/savings: **Affordability** | The income each neighbourhood demands, plus buy-vs-rent. |
+| :material/science: **How it works** | The pipeline, the score's arithmetic, and what this data can't tell you. |
 """)
 st.markdown(
     ":small[Coverage is deepest in **Valencia**, which is why it's the default city "

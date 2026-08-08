@@ -20,7 +20,6 @@ import streamlit as st
 from theme import altair_chart, page_hero, section
 
 page_hero(
-    "💰",
     "Affordability Index",
     "What you need to earn to buy in each neighbourhood, how many years of salary a "
     "flat costs, and whether buying beats renting the same street.",

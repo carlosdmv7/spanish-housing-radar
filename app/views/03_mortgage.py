@@ -27,7 +27,6 @@ import streamlit as st
 from theme import RUST_700, TEAL_700, altair_chart, page_hero, section
 
 page_hero(
-    "🧮",
     "Mortgage Calculator",
     "Compare fixed against variable with a full French amortisation schedule and a "
     "rate-rise stress scenario. Indicative maths, not an offer.",

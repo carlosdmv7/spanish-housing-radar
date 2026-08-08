@@ -114,7 +114,9 @@ def listing_card(row: dict) -> None:
 
         note = confidence_note(row)
         if note:
-            st.markdown(f":small[:color[⚠]{{foreground=\"{RUST_700}\"}} {note}]")
+            st.markdown(
+                f":small[:color[:material/warning:]{{foreground=\"{RUST_700}\"}} {note}]"
+            )
 
         # Behavioural signal — only shown when the snapshot history supports it.
         if row.get("seller_motivation") in ("medium", "high"):

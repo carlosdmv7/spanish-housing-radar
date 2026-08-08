@@ -219,9 +219,19 @@ def _strip_markdown(items: Sequence[StripItem]) -> str:
     return ":small[" + "  ·  ".join(parts) + "]"
 
 
-def page_hero(icon: str, title: str, subtitle: str) -> None:
-    """Page title and one-line framing. Native heading, no card markup."""
-    st.title(f"{icon} {title}", anchor=False)
+def page_hero(title: str, subtitle: str) -> None:
+    """
+    Page title and one-line framing. Native heading, no card markup.
+
+    No icon argument, deliberately. The portfolio's own `h1`/`h2` carry text and
+    nothing else — its icons live in cards and links, never in headings — so a
+    pictogram in front of a page title is a divergence, not a decoration. Where
+    this app does want an icon it uses `:material/...:`, which renders a 24px
+    monochrome glyph in `currentColor`: the same thing the portfolio ships as
+    inline SVG, and unlike an emoji it inherits the brand ink instead of
+    importing a vendor's colour palette.
+    """
+    st.title(title, anchor=False)
     st.markdown(_mark(subtitle, INK_MUTED))
     st.markdown("")
 

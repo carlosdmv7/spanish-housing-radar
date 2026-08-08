@@ -4,6 +4,8 @@ Single source of truth — import from here, never hardcode elsewhere.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from theme import AMBER_500, INK_MUTED, RUST_500, RUST_900, TEAL_500, TEAL_700
 
 # ── Deal tier ─────────────────────────────────────────────────────────────────
@@ -133,4 +135,8 @@ AFFORDABILITY_SOURCE_NOTE = (
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 PAGE_TITLE = "Spanish Housing Radar"
-PAGE_ICON  = "🏘️"
+# The portfolio's own favicon, copied in rather than an emoji house: the browser
+# tab is the one piece of chrome a visitor sees before the page paints, and it
+# should show the same mark as carlosdmv7.github.io. Kept in sync by hand — it
+# is 8 KB and changes about once a year.
+PAGE_ICON  = str(Path(__file__).parent / "assets" / "favicon.png")
