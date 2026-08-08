@@ -39,3 +39,29 @@ app per listing. Where a benchmark has no price dispersion (a single comparable 
   city-grain dominance is sustained scraping.
 - 8 is a judgement call, not a derived optimum, and it is one `vars` edit to
   revisit.
+
+## Alternatives rejected
+- **One fixed grain for everything.** City-wide is always well-populated and
+  always answers the wrong question ("cheap for Valencia" is not "cheap for this
+  street"). Barrio-only is the right question and unanswerable across most of the
+  country. The fallback exists because the correct grain is a property of the
+  *listing's own data density*, not of the project.
+- **Barrio-only, dropping listings with too few comparables.** Rejected on the
+  grounds ADR 0005 develops: the dropped rows do not stop existing, and an app
+  that silently omits them claims a coverage it does not have.
+- **Shrinkage toward the city median (empirical-Bayes style) instead of a hard
+  cutoff.** Statistically the better answer, and honestly the one a larger team
+  should build: it degrades smoothly rather than stepping at n=8, and it has no
+  arbitrary threshold. Rejected here because the resulting score is not
+  explainable to a visitor — "scored against 6 flats in your barrio, pulled 40%
+  toward the city median" cannot be put next to a number on a card, and this
+  product's whole claim is that its verdicts are auditable. A discrete
+  `benchmark_level` can be shown; a shrinkage weight cannot.
+- **k-nearest comparables by distance rather than by administrative boundary.**
+  The right shape for a benchmark, and blocked upstream: ADR 0001 buys coverage
+  at the cost of per-listing coordinates, so the finest location available *is*
+  the barrio. This becomes possible only if detail-page scraping ever does.
+- **A lower threshold than 8 to raise the barrio-grain share.** Rejected
+  explicitly, and worth stating because it is the tempting metric fix: the number
+  is a statistical floor, not a coverage dial. Lowering it manufactures
+  confidence rather than earning it.

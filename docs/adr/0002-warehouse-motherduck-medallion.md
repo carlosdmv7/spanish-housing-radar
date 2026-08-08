@@ -30,3 +30,23 @@ a broken PR can never overwrite what the live app reads.
   `pd.NA` breaks chart serialisation, so the app downcasts centrally on read.
 - Free-tier limits are a real ceiling; sustained daily scraping would eventually
   force a paid tier or a warehouse move.
+
+## Alternatives rejected
+- **Snowflake / BigQuery / Redshift.** All three clear the bar technically and
+  all three are what the job market asks for, which was a real argument for
+  choosing one. Rejected because at thousands of rows they add cost, credentials
+  and cold-start latency for no analytical benefit — and because the dbt project
+  is warehouse-agnostic, so the modelling work that *is* the transferable skill
+  transfers with a profile swap. Nothing is being avoided here except a bill.
+- **Local DuckDB file committed to the repo.** Free, simple, no network. Rejected
+  because the deployed Streamlit app and the CI job would each read a different
+  frozen copy, and the file would either be stale or turn every pipeline run into
+  a binary diff in git history.
+- **Postgres (Supabase/Neon free tier).** A real shared database, and a defensible
+  choice. Rejected because dbt-postgres at this volume gains nothing over DuckDB
+  while giving up DuckDB's columnar scan speed on the wide aggregations the app
+  runs on every page load, and because it adds a connection-pool problem to a
+  single-process Streamlit app.
+- **An API tier between the app and the warehouse.** Correct for a multi-tenant
+  product, premature here. It would exist only to hide a `SELECT` behind HTTP,
+  and the app's queries are already confined to the gold contract.

@@ -35,3 +35,24 @@ fallback, so the aggregate weakness is visible before any listing is opened.
 - `low_confidence_flag` marks only the *thin* city grain. A city grain with ≥ 8
   comparables is not flagged by the model, so the app additionally discloses any
   fallback from neighbourhood grain as reduced confidence.
+
+## Alternatives rejected
+- **Filter low-confidence rows out of the app.** The version that looks
+  finished. Rejected because the missing rows are invisible by construction: a
+  visitor cannot audit an absence, so the app would be making a coverage claim it
+  cannot support and the visitor cannot check. This is the specific failure the
+  project is a rebuttal to.
+- **Filter them out by default, with an opt-in to show them.** The same
+  dishonesty with an escape hatch most people never open. Defaults are the
+  product; a caveat reachable only by the already-suspicious is not disclosure.
+  The filter exists, defaulted to off, which is the same mechanism pointed the
+  other way.
+- **Show every row but grey out or de-emphasise the weak ones.** Rejected
+  because it communicates "less important" when the truth is "less certain" —
+  a cheap flat scored on a thin benchmark may be the most interesting row on the
+  page, and it is the *score* that deserves the caveat, not the listing. The
+  grain and comparable count sit next to the number instead.
+- **Suppress the score, keep the listing.** Honest, and briefly tempting. But
+  a blank where a score should be tells the visitor nothing about how blank it
+  is, and it discards a real if weak signal. A city-grain score answers a weaker
+  question; the fix is to state the question, not to refuse to answer.

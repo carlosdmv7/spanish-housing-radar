@@ -30,3 +30,24 @@ row carries `_run_id` and `_loaded_at` for provenance.
   `source_id`, two different flats collapse into one row; no test currently
   guards that, and it would show up as a price discontinuity in the history.
 - `_run_id` makes it possible to attribute a bad batch to a specific run.
+
+## Alternatives rejected
+- **Plain `INSERT` plus a downstream dedup step.** Keeps raw as a strict append
+  log, which has real appeal. Rejected because it makes correctness depend on
+  every consumer remembering to deduplicate: the day one aggregation forgets, a
+  retried run silently doubles a barrio's listing count and every median it
+  feeds. Idempotency belongs at the write, where it is enforced once.
+- **`INSERT ... ON CONFLICT DO NOTHING`.** Retry-safe and non-destructive — the
+  first observation wins. Rejected because it inverts the freshness the pipeline
+  exists to provide: a re-scrape carrying a price cut would be discarded in favour
+  of the stale row. Last write wins is the correct rule for a table whose job is
+  to hold the current state of a listing.
+- **Truncate-and-reload each run.** Trivially idempotent. Rejected because a run
+  scrapes a slice, not the universe: reloading would delete every listing the
+  current search filters happen not to cover, and the warehouse would shrink to
+  whatever the last run looked at.
+- **A surrogate hash of the listing's contents as the key.** Would make a
+  changed price a new row, giving history for free. Rejected because it makes
+  "the same flat" unaddressable — nothing could update or reference a listing —
+  and it moves history into raw, where ADR 0003's own consequence argues it does
+  not belong. History is accumulated deliberately in silver instead.
