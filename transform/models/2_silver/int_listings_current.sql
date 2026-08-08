@@ -36,6 +36,7 @@ select
     district,
     neighborhood,
     neighborhood_is_canonical,
+    neighborhood_is_benchmarkable,
     scraped_date,
     _loaded_at,
     _run_id

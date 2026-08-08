@@ -38,6 +38,14 @@ CREATE TABLE IF NOT EXISTS {table} (
     raw_municipality    VARCHAR        NOT NULL,
     raw_district        VARCHAR,
     raw_neighborhood    VARCHAR,
+    -- The listing title exactly as the portal wrote it. The municipality /
+    -- district / neighborhood columns above are the output of a text heuristic,
+    -- and a heuristic that discards its own input cannot be corrected: when the
+    -- parser was found to be putting street names and house numbers in
+    -- raw_neighborhood, there was no way to re-derive the 646 existing rows
+    -- short of re-scraping them. Keeping the source text makes the parse
+    -- reproducible and every future parser fix retroactive.
+    raw_title           VARCHAR,
     _loaded_at          TIMESTAMPTZ    NOT NULL,
     _run_id             VARCHAR        NOT NULL,
     PRIMARY KEY (source_name, source_id)
@@ -51,7 +59,7 @@ INSERT OR REPLACE INTO {table}
         raw_price_eur, raw_operation_type,
         raw_size_sqm, raw_rooms, raw_bathrooms,
         raw_property_type, raw_lat, raw_lon,
-        raw_municipality, raw_district, raw_neighborhood,
+        raw_municipality, raw_district, raw_neighborhood, raw_title,
         _loaded_at, _run_id
     FROM df;
 """

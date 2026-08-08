@@ -138,6 +138,10 @@ class IdealistaScraper(AbstractScraper):
                 "raw_municipality":   muni,
                 "raw_district":       district,
                 "raw_neighborhood":   hood,
+                # The three fields above are what `_parse_location` made of this
+                # string. Keeping the string itself is what lets a later parser
+                # fix be applied to rows already in the warehouse.
+                "raw_title":          title,
             }
         except Exception as exc:
             logger.debug("[idealista] Card parse error: %s", exc, exc_info=True)
@@ -199,11 +203,49 @@ class IdealistaScraper(AbstractScraper):
             return "studio"
         return "apartment"
 
+    # Every way Idealista titles name a *street* rather than an area. The list is
+    # long because it was short: the first version missed `gran vía`, `carretera`,
+    # `passatge`, `pasaje`, `rambla` and the `cl`/`ctra` abbreviations, and every
+    # omission put a street name in the neighbourhood column of the warehouse —
+    # where it became a benchmark grouping key indistinguishable from a real
+    # barrio. Catalan and Valencian forms are here because half the coverage is
+    # València and Barcelona.
     _STREET_KEYWORDS = re.compile(
-        r"\b(calle|avenida|av\.?|paseo|plaza|carrer|passeig|ronda|"
-        r"glorieta|traves[ií]a|camino|cami|c/)\b",
+        r"\b("
+        r"calle|c/|cl|carrer|"
+        r"avenida|avinguda|avda?\.?|av\.?|"
+        r"paseo|passeig|pº|"
+        r"plaza|pla[çc]a|pza\.?|pl\.?|"
+        r"gran\s+v[íi]a|"
+        r"carretera|ctra\.?|"
+        r"passatge|pasaje|"
+        r"rambla|"
+        r"ronda|glorieta|traves[ií]a|travessera|"
+        r"camino|cam[íi]|"
+        r"callej[óo]n|cuesta|bajada|subida|costanilla|corredera|"
+        r"bulevar|boulevard|"
+        r"muelle|moll|"
+        r"poligono|pol[íi]gono"
+        r")\b",
         re.IGNORECASE,
     )
+
+    # Property-type words Idealista puts in front of the location, e.g.
+    # "Chalet adosado en Russafa". The original code stripped a single word
+    # before " en ", so one-word types worked and "chalet adosado en …" survived
+    # whole — which is why the warehouse holds a barrio literally called
+    # "chalet adosado en russafa".
+    _TYPE_PREFIX = re.compile(
+        r"^(?:piso|pisos|apartamento|casa|casas|chalet|adosado|pareado|"
+        r"unifamiliar|villa|finca|[áa]tico|d[úu]plex|estudio|studio|loft|"
+        r"penthouse|bajo|planta|inmueble|vivienda|obra\s+nueva)\b",
+        re.IGNORECASE,
+    )
+
+    # A bare house number: "34", "7 -5", "5 nb", "12 bis". Deliberately capped at
+    # three trailing characters so a genuine barrio such as Madrid's
+    # "12 de Octubre" is not mistaken for a portal number.
+    _HOUSE_NUMBER = re.compile(r"^\d+\s*[-–]?\s*\w{0,3}$")
 
     @classmethod
     def _parse_location(cls, title: str, fallback: str) -> tuple[str, str | None, str | None]:
@@ -228,12 +270,21 @@ class IdealistaScraper(AbstractScraper):
         loc = m.group(1).strip() if m else title
         parts = [p.strip().lower() for p in loc.split(",") if p.strip()]
 
-        if parts:
-            # strip a leftover "<tipo> en " prefix, e.g. "piso en calle de alcalá" → "calle de alcalá"
-            parts[0] = re.sub(r"^\S+\s+en\s+", "", parts[0])
+        if parts and cls._TYPE_PREFIX.match(parts[0]):
+            # Strip the property-type words up to the first " en ", however many
+            # there are: "chalet adosado en russafa" → "russafa". Gated on a known
+            # type word so a real barrio is never truncated at an inner " en ".
+            parts[0] = re.sub(r"^.*?\ben\s+", "", parts[0], count=1)
 
-        while parts and (cls._STREET_KEYWORDS.search(parts[0]) or parts[0].isdigit()):
+        while parts and (
+            cls._STREET_KEYWORDS.search(parts[0]) or cls._HOUSE_NUMBER.match(parts[0])
+        ):
             parts.pop(0)
+
+        # A house number can also sit between the street and the barrio
+        # ("calle de Sueca, 34, Russafa"), and a trailing one before the city.
+        # Dropping them anywhere is safe: a portal number is never an area.
+        parts = [p for p in parts if not cls._HOUSE_NUMBER.match(p)]
 
         if not parts:
             return fallback, None, None

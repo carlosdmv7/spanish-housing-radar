@@ -18,6 +18,17 @@ with listings as (
 ),
 
 -- ── Benchmark grains ──────────────────────────────────────────────────────────
+-- `neighborhood_is_benchmarkable` gates this grain, and only this grain. Until
+-- now any string sitting in `neighborhood` was a valid grouping key -- including
+-- the street names and portal numbers the extraction heuristic produced, so the
+-- warehouse could and did build "benchmarks" for places called "34". A benchmark
+-- is a claim about a place, and a name that is demonstrably not a place is not
+-- evidence for anything.
+--
+-- The flag is deliberately weaker than `neighborhood_is_canonical`: see
+-- int_listings_unioned for why seed-confirmed and seed-unknown are not the same
+-- thing. Unverified names still reach the app (ADR-0005) -- they simply cannot
+-- become the denominator of anyone's score.
 nbhd_stats as (
     select
         municipality, operation_type, property_type, neighborhood,
@@ -26,6 +37,7 @@ nbhd_stats as (
         stddev_pop(price_per_sqm)         as stddev_ppsqm
     from listings
     where neighborhood is not null
+      and neighborhood_is_benchmarkable
     group by 1, 2, 3, 4
 ),
 
@@ -78,6 +90,10 @@ benched as (
     left join nbhd_stats nb
         on l.municipality = nb.municipality and l.operation_type = nb.operation_type
        and l.property_type = nb.property_type and l.neighborhood = nb.neighborhood
+       -- Belt and braces: nbhd_stats is already filtered, so this cannot change
+       -- the result today. It states the invariant at the join, where a future
+       -- edit to either side would otherwise break it silently.
+       and l.neighborhood_is_benchmarkable
     left join district_stats di
         on l.municipality = di.municipality and l.operation_type = di.operation_type
        and l.property_type = di.property_type and l.district = di.district
