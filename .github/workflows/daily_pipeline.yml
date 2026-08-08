@@ -33,8 +33,18 @@ jobs:
       - name: dbt deps
         run: uv run dbt deps --project-dir transform
 
-      # daily_pipeline.py pins DBT_PROFILES_DIR to transform/ itself before
-      # invoking dbt, so it isn't needed here.
+      # transform/profiles.yml is gitignored -- it is the working copy, and only
+      # the .example template is committed. So the file daily_pipeline.py points
+      # DBT_PROFILES_DIR at simply did not exist on the runner, and every dbt
+      # invocation died with "Could not find profile named
+      # 'spanish_housing_radar'". This workflow was disabled at the GitHub level
+      # in June, before it ever ran, which is why nothing caught it.
+      #
+      # The template reads the token via env_var(), so materialising it is the
+      # whole fix -- and it is the same step `make install` performs locally,
+      # rather than a fourth hand-written copy of the profile in YAML.
+      - name: Materialise the dbt profile
+        run: cp transform/profiles.yml.example transform/profiles.yml
       - name: Run daily pipeline (extract → dbt build)
         run: uv run python -m orchestration.flows.daily_pipeline
         env:
