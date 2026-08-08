@@ -52,8 +52,28 @@ CREATE TABLE IF NOT EXISTS {table} (
 );
 """
 
+# CREATE TABLE IF NOT EXISTS is a no-op against a table that already exists, so
+# it cannot introduce a new column -- raw.idealista_listings was created before
+# raw_title and would have kept its old shape while the insert below started
+# supplying one more value than it had columns. Stating the migration explicitly
+# is the whole fix; ADD COLUMN IF NOT EXISTS makes it safe to run on every load.
+_MIGRATE_TABLE_SQL = """
+ALTER TABLE {table} ADD COLUMN IF NOT EXISTS raw_title VARCHAR;
+"""
+
+# The target columns are named rather than relying on positional order. The
+# alternative silently maps the wrong value into the wrong column the moment the
+# CREATE and the INSERT drift apart, which is exactly what adding raw_title in
+# the middle of the definition would have done.
 _UPSERT_SQL = """
-INSERT OR REPLACE INTO {table}
+INSERT OR REPLACE INTO {table} (
+    source_id, source_name, raw_url,
+    raw_price_eur, raw_operation_type,
+    raw_size_sqm, raw_rooms, raw_bathrooms,
+    raw_property_type, raw_lat, raw_lon,
+    raw_municipality, raw_district, raw_neighborhood, raw_title,
+    _loaded_at, _run_id
+)
     SELECT
         source_id, source_name, raw_url,
         raw_price_eur, raw_operation_type,
@@ -121,6 +141,7 @@ class MotherDuckLoader:
 
         self._conn.register("df", df)
         self._conn.execute(_CREATE_TABLE_SQL.format(table=table))
+        self._conn.execute(_MIGRATE_TABLE_SQL.format(table=table))
         self._conn.execute(_UPSERT_SQL.format(table=table))
         self._conn.unregister("df")
 
@@ -196,6 +217,7 @@ class MotherDuckLoader:
                 "raw_municipality":   listing.raw_municipality,
                 "raw_district":       listing.raw_district,
                 "raw_neighborhood":   listing.raw_neighborhood,
+                "raw_title":          listing.raw_title,
                 "_loaded_at":         datetime.now(tz=UTC),
                 "_run_id":            self.run_id,
             }
