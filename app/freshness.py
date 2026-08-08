@@ -54,6 +54,42 @@ def _load_dbt_test_results() -> dict | None:
         return None
 
 
+@st.cache_resource(ttl=3600)
+def _load_committed_status() -> dict | None:
+    """
+    The pass/total the CI pipeline last committed, or None.
+
+    Unlike `run_results.json` this file *is* checked in, so it is the only test
+    evidence that survives a deploy. It is written by `orchestration/status.py`
+    on every pipeline run, `if: always()`, which is what makes it usable here:
+    a red run overwrites it, so a stale-but-passing figure can't outlive the
+    failure that invalidated it.
+
+    Deliberately no fail/error breakdown — the file records passed and total,
+    and the caller derives "broken" from the gap rather than inventing a
+    per-status split the schema never promised.
+    """
+    path = PROJECT_ROOT / "docs" / "status.json"
+    if not path.exists():
+        return None
+    try:
+        with path.open() as f:
+            data = json.load(f)
+        passed, total = data.get("dbt_tests_passed"), data.get("dbt_tests_total")
+        # The contract's own rule: an unknown figure is null, never 0. Honour it
+        # on the read side too, or "couldn't tell" renders as "0/0 passing".
+        if not isinstance(passed, int) or not isinstance(total, int) or total == 0:
+            return None
+        return {
+            "pass": passed,
+            "total": total,
+            "generated_at": str(data.get("generated_at") or "")[:10],
+            "conclusion": data.get("last_run_conclusion") or "unknown",
+        }
+    except Exception:
+        return None
+
+
 @st.cache_data(ttl=600)
 def get_freshness_strip() -> list[StripItem]:
     """
@@ -148,7 +184,23 @@ def get_freshness_strip() -> list[StripItem]:
 
     # ── dbt tests ──────────────────────────────────────────────────────────
     results = _load_dbt_test_results()
-    if results is None:
+    committed = _load_committed_status() if results is None else None
+    if results is None and committed is not None:
+        # The deployed app's normal path: no local dbt artifact, but the last
+        # pipeline run committed its own verdict. Say which run it was and when,
+        # so the number is attributable rather than merely present.
+        broken = committed["total"] - committed["pass"]
+        conclusion = committed["conclusion"]
+        items.append(StripItem(
+            label="dbt tests",
+            value=f"{committed['pass']}/{committed['total']} passing",
+            tone="good" if broken == 0 and conclusion == "success" else "warn",
+            help="Data-quality tests on sources and models (unique, not_null, "
+                 "accepted_values, accepted_range), as recorded by the pipeline run "
+                 f"of {committed['generated_at'] or 'an unknown date'} "
+                 f"(outcome: {conclusion}). Full results at {DBT_DOCS_URL}.",
+        ))
+    elif results is None:
         items.append(StripItem(
             label="dbt tests",
             value="see docs",

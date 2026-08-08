@@ -10,6 +10,7 @@ promises to whatever consumes the file.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import json
 from unittest.mock import patch
 
@@ -60,6 +61,37 @@ class TestBuildStatus:
     def test_conclusion_is_unknown_outside_ci(self, _tests, _wh, monkeypatch):
         monkeypatch.delenv("RUN_CONCLUSION", raising=False)
         assert status.build_status()["last_run_conclusion"] == "unknown"
+
+
+class TestTimestampFormat:
+    """
+    The freshness contract says ISO 8601 UTC with a trailing `Z`. These pin the
+    two ways that can silently drift: Python's `+00:00`, and a warehouse
+    timestamp arriving in the server's own offset.
+    """
+
+    def test_now_is_utc_with_a_z(self):
+        now = status._utc_now_iso()
+        assert now.endswith("Z")
+        assert "+" not in now and "." not in now  # no offset, no microseconds
+
+    def test_a_non_utc_instant_is_converted_not_relabelled(self):
+        madrid = timezone(timedelta(hours=2))
+        moment = datetime(2026, 7, 22, 22, 11, 33, 31994, tzinfo=madrid)
+        # Same instant, expressed as 20:11:33 UTC — not "22:11:33Z".
+        assert status._as_utc_z(moment) == "2026-07-22T20:11:33Z"
+
+    def test_a_naive_instant_is_assumed_utc(self):
+        # Never the runner's local zone: that would make the output depend on
+        # where CI happened to run.
+        assert status._as_utc_z(datetime(2026, 7, 22, 20, 11, 33)) == "2026-07-22T20:11:33Z"
+
+    @patch.object(status, "read_dbt_test_results", return_value=(89, 89))
+    def test_warehouse_timestamp_reaches_the_file_as_z(self, _tests):
+        madrid = timezone(timedelta(hours=2))
+        moment = datetime(2026, 7, 22, 22, 11, 33, tzinfo=madrid)
+        with patch.object(status, "query_warehouse", return_value=(646, status._as_utc_z(moment))):
+            assert status.build_status()["last_ingest_at"] == "2026-07-22T20:11:33Z"
 
 
 class TestReadDbtTestResults:

@@ -55,8 +55,31 @@ SELECT MAX(_loaded_at) FROM (
 """
 
 
+def _as_utc_z(moment: datetime) -> str:
+    """
+    Format an instant the way the freshness contract specifies: ISO 8601, UTC,
+    trailing `Z`, whole seconds.
+
+    Python's `isoformat()` emits `+00:00`, and a warehouse timestamp arrives in
+    whatever offset the server used (`+02:00` for a Madrid-time ingest). Both
+    are valid ISO 8601 and both parse in a browser, but the contract asks for one
+    shape, and a consumer comparing timestamps as strings — sorting them, or
+    diffing this file across runs — should not see the same instant written two
+    ways. A naive datetime is assumed UTC rather than silently taking the
+    runner's local zone.
+    """
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return (
+        moment.astimezone(UTC)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
 def _utc_now_iso() -> str:
-    return datetime.now(tz=UTC).replace(microsecond=0).isoformat()
+    return _as_utc_z(datetime.now(tz=UTC))
 
 
 def read_dbt_test_results() -> tuple[int | None, int | None]:
@@ -111,7 +134,7 @@ def query_warehouse() -> tuple[int | None, str | None]:
         print(f"Warehouse unreachable ({exc}) — reporting figures as null.")
         return None, None
 
-    return int(rows), last_ingest.isoformat() if last_ingest is not None else None
+    return int(rows), _as_utc_z(last_ingest) if last_ingest is not None else None
 
 
 def build_status() -> dict[str, Any]:
