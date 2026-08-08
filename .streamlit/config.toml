@@ -156,6 +156,14 @@ dataframeBorderColor = "#E4D9C4"
 codeBackgroundColor = "#F5EFE3"
 codeTextColor = "#6E2F10"
 
+[client]
+# Streamlit's default toolbar puts a "Deploy" button in the top-right of every
+# page, including the deployed one, where it is an invitation to deploy an app
+# that is already deployed. "minimal" keeps the useful menu items (rerun, print,
+# settings) and drops the developer chrome, so the first thing a visitor sees in
+# the corner is not a button meant for its author.
+toolbarMode = "minimal"
+
 [server]
 headless = true
 

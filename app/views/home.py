@@ -1,6 +1,7 @@
 """
 Home — what the tool is, what's actually in the warehouse, and where to go next.
 """
+from datetime import date
 from pathlib import Path
 import sys
 
@@ -33,7 +34,17 @@ try:
     c1.metric("Active listings", f"{int(row['total_listings']):,}")
     c2.metric("Cities", int(row["cities"]))
     c3.metric("Neighbourhoods", int(row["neighborhoods"]))
-    c4.metric("Last ingest", str(row["last_run"]))
+    # An ISO date set at metric size is both the widest value in the row — it was
+    # being truncated to "2026-06-26…" — and the least useful, since the number a
+    # visitor actually wants from a freshness figure is how *old* it is. The age
+    # answers that in three characters; the date itself stays one hover away.
+    last_run = row["last_run"]
+    age_days = (date.today() - last_run).days if last_run is not None else None
+    c4.metric(
+        "Last ingest",
+        "—" if age_days is None else f"{age_days}d ago",
+        help=None if last_run is None else f"Most recent load: {last_run}.",
+    )
 
     cov = query("""
         SELECT

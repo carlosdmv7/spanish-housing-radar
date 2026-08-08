@@ -131,14 +131,17 @@ if df.empty:
     st.stop()
 
 # ── Summary metrics ───────────────────────────────────────────────────────────
-unit = "€" if op == "sale" else "€/mo"
+# Rent is quoted per month; a sale price is not. The euro sign stays in front
+# either way — the metric beside this one is "€4,982", and "940,000 €" next to it
+# put the same currency on both sides of the number in one row.
+per = "/mo" if op == "rent" else ""
 great = int((df["deal_tier"] == "great_deal").sum())
 motivated = int(df["seller_motivation"].isin(["medium", "high"]).sum())
 barrio_grain = float((df["benchmark_level"] == "neighbourhood").mean() * 100)
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Listings", f"{len(df):,}")
-c2.metric("Median price", f"{df['price_eur'].median():,.0f} {unit}")
+c2.metric("Median price", f"€{df['price_eur'].median():,.0f}{per}")
 c3.metric("Median €/m²", f"€{df['price_per_sqm'].median():,.0f}")
 c4.metric("Great deals", great, help="Listings scoring ≥ 75 — clearly below their benchmark.")
 st.markdown(
