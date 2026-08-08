@@ -6,7 +6,6 @@ import logging
 import sys
 from typing import TextIO
 
-
 RESET = "\033[0m"
 DIM = "\033[2m"
 COLORS = {

@@ -26,8 +26,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
+      # `shared/` was missing from this list, so its lint debt accumulated
+      # invisibly while every other package stayed green. Listing packages by
+      # hand is how that happens; `.` lints whatever is in the repo, and the
+      # exclusions live in pyproject's [tool.ruff] where they can be read.
       - name: Ruff lint
-        run: uv run ruff check extraction/ app/ orchestration/
+        run: uv run ruff check .
 
       - name: Pytest (extraction + orchestration)
         run: uv run pytest extraction/ orchestration/ -v
