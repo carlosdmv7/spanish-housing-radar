@@ -7,7 +7,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from components.charts import bar_ppsqm_with_range, line_price_history
-from components.filters import municipality_filter, operation_filter
+from components.filters import load_municipalities, municipality_filter, operation_filter
 from config import PROPERTY_TYPE_LABELS
 from connection import query
 import pandas as pd
@@ -19,15 +19,6 @@ page_hero(
     "The benchmark every opportunity score is measured against: €/m² by "
     "neighbourhood, how wide the spread is, and where prices are heading.",
 )
-
-
-@st.cache_data(ttl=3600)
-def load_municipalities():
-    df = query(
-        "SELECT DISTINCT municipality "
-        "FROM spanish_housing_radar.main_silver.int_listings_current ORDER BY 1"
-    )
-    return df["municipality"].tolist()
 
 
 try:

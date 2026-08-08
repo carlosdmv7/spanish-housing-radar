@@ -7,6 +7,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from components.charts import bar_buy_vs_rent, bar_required_income, bar_years_of_salary
+from components.filters import load_municipalities, municipality_filter
 from components.mortgage import compute_mortgage, max_affordable_loan, required_income
 from config import (
     AFFORDABILITY_RATIO_MAX,
@@ -47,11 +48,13 @@ with st.sidebar:
         "Max payment/income ratio (%)", 20, 50, int(AFFORDABILITY_RATIO_MAX),
         help="Spanish lenders rarely go past 35% of net income.",
     )
-    muni = st.selectbox(
-        "City",
-        options=["valència", "madrid", "barcelona", "all"],
-        format_func=lambda k: "All cities" if k == "all" else k.title(),
-    )
+    # This list used to be hardcoded to valència/madrid/barcelona, so the five
+    # other cities in the warehouse -- bilbao, málaga, sevilla, valladolid,
+    # zaragoza -- were simply unreachable from this page. A filter that silently
+    # omits data is the same failure as dropping low-confidence rows: the visitor
+    # cannot see what is missing. Read the list from the warehouse instead, so it
+    # can never drift from what is actually there again.
+    muni = municipality_filter(load_municipalities())
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 aff_sql = (Path(__file__).parent.parent / "queries" / "affordability.sql").read_text()
