@@ -26,8 +26,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
+      # `shared/` was missing from this list, so its lint debt accumulated
+      # invisibly while every other package stayed green. Listing packages by
+      # hand is how that happens; `.` lints whatever is in the repo, and the
+      # exclusions live in pyproject's [tool.ruff] where they can be read.
       - name: Ruff lint
-        run: uv run ruff check extraction/ app/ orchestration/
+        run: uv run ruff check .
 
       - name: Pytest (extraction + orchestration)
         run: uv run pytest extraction/ orchestration/ -v
@@ -55,6 +59,52 @@ jobs:
       # from a clean context (catches missing files in COPY, broken deps, etc.).
       - name: Build image
         run: docker build -t housing-radar:ci .
+
+  dbt-freshness:
+    name: dbt source freshness
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: dbt deps
+        run: uv run dbt deps --project-dir transform
+
+      # Freshness must run against the real warehouse, not the ci_* sandbox —
+      # a source table's staleness is a property of production. Read-only, so
+      # pointing at prod here can't damage what the live app reads. Mirrors the
+      # `prod` target in transform/profiles.yml (no schema: sources declare
+      # `schema: raw` themselves).
+      - name: Write prod profile
+        run: |
+          mkdir -p "$RUNNER_TEMP/dbt"
+          cat > "$RUNNER_TEMP/dbt/profiles.yml" <<EOF
+          spanish_housing_radar:
+            target: prod
+            outputs:
+              prod:
+                type: duckdb
+                path: "md:spanish_housing_radar?motherduck_token=${MOTHERDUCK_TOKEN}"
+                threads: 4
+          EOF
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+
+      # Fails the build when ine_hpi — the one feed that is actively maintained —
+      # goes >10 days stale, which is the signal the weekly cron has died.
+      # idealista_listings warns without failing: scraping is paused on purpose.
+      - name: Check source freshness
+        run: uv run dbt source freshness --project-dir transform --target prod --profiles-dir "$RUNNER_TEMP/dbt"
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
 
   dbt-build:
     name: dbt build (CI schema)

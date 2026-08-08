@@ -1,6 +1,7 @@
 """
-Home — landing page: what the tool is, live data freshness, and where to go.
+Home — what the tool is, what's actually in the warehouse, and where to go next.
 """
+from datetime import date
 from pathlib import Path
 import sys
 
@@ -9,45 +10,47 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from connection import query
 import pandas as pd
 import streamlit as st
-from styles import page_hero, section
+from theme import page_hero, section
 
 page_hero(
-    "🏠",
     "Spanish Housing Radar",
-    "Find under-priced flats across Spain. Listings are scored against their own "
-    "neighbourhood, so a cheap flat in a pricey area rises to the top.",
+    "Spanish portals tell you a flat's price, never whether it's a good one. This "
+    "scores every listing against comparable flats in its own barrio, so a cheap flat "
+    "in an expensive area rises to the top.",
 )
 
 # ── Live data snapshot ────────────────────────────────────────────────────────
 try:
-    stats = query("""
+    row = query("""
         SELECT
             COUNT(DISTINCT listing_pk)    AS total_listings,
             COUNT(DISTINCT municipality)  AS cities,
             COUNT(DISTINCT neighborhood)  AS neighborhoods,
             MAX(_loaded_at::date)         AS last_run
         FROM spanish_housing_radar.main_silver.int_listings_current
-    """)
-    row = stats.iloc[0]
+    """).iloc[0]
 
-    section("Live snapshot")
+    section("What's in the warehouse")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Active listings", f"{int(row['total_listings']):,}")
     c2.metric("Cities", int(row["cities"]))
     c3.metric("Neighbourhoods", int(row["neighborhoods"]))
-    c4.metric("Last updated", str(row["last_run"]))
+    # An ISO date set at metric size is both the widest value in the row — it was
+    # being truncated to "2026-06-26…" — and the least useful, since the number a
+    # visitor actually wants from a freshness figure is how *old* it is. The age
+    # answers that in three characters; the date itself stays one hover away.
+    # `::date` in the SQL does not survive the round trip: DuckDB hands pandas a
+    # datetime64 column, so this arrives as a Timestamp and subtracting a
+    # date.today() from it raises. Normalise on the Python side rather than trust
+    # the cast.
+    last_run = pd.to_datetime(row["last_run"]).date() if pd.notna(row["last_run"]) else None
+    age_days = (date.today() - last_run).days if last_run is not None else None
+    c4.metric(
+        "Last ingest",
+        "—" if age_days is None else f"{age_days}d ago",
+        help=None if last_run is None else f"Most recent load: {last_run}.",
+    )
 
-    # Freshness guard — the daily pipeline should refresh this; warn if it hasn't.
-    days_stale = (pd.Timestamp.today().normalize() - pd.Timestamp(row["last_run"])).days
-    if days_stale >= 3:
-        st.warning(
-            f"⚠️ Data is **{days_stale} days old** — the daily pipeline may not have "
-            f"run recently. Figures below may be stale."
-        )
-
-    # ── Coverage by city (Valencia is the focus market) ───────────────────────
-    # Title-casing happens in pandas: INITCAP isn't available in every DuckDB
-    # build (it broke on the CI runner), .str.title() is portable everywhere.
     cov = query("""
         SELECT
             municipality                                        AS city,
@@ -57,24 +60,43 @@ try:
         GROUP BY 1
         ORDER BY (for_sale + for_rent) DESC
     """)
-    cov["city"] = cov["city"].str.title()
+
     section("Coverage by city")
-    st.dataframe(
-        cov.rename(columns={"city": "City", "for_sale": "For sale", "for_rent": "For rent"}),
-        use_container_width=True,
-        hide_index=True,
+    st.markdown(
+        ":small[Depth per city is what decides whether a score is computed against a "
+        "barrio or falls back to the whole city.]"
     )
-except Exception as e:
-    st.warning(f"Could not load the live snapshot: {e}")
+    st.dataframe(
+        cov.assign(city=cov["city"].str.title()),
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "city": st.column_config.TextColumn("City", pinned=True),
+            "for_sale": st.column_config.NumberColumn("For sale", format="%,d"),
+            "for_rent": st.column_config.NumberColumn("For rent", format="%,d"),
+        },
+    )
+except Exception as exc:
+    st.error(
+        "**Can't reach the warehouse, so the live snapshot is empty.** The app reads "
+        "from MotherDuck — locally that needs `MOTHERDUCK_TOKEN` in `.env`; on "
+        "Streamlit Cloud it comes from the app's Secrets. The pages below will show "
+        "the same error until the connection works."
+    )
+    st.caption(f"Underlying error: {exc}")
 
 st.markdown("")
 section("Where to go")
 st.markdown("""
 | Page | What you'll find |
 |---|---|
-| 🔍 **Opportunities** | Listings ranked by opportunity score — cheapest vs their neighbourhood first. |
-| 📊 **Market** | €/sqm benchmarks per neighbourhood, price spread, historical trends. |
-| 🧮 **Mortgage** | Fixed vs variable simulator with full French amortisation schedule. |
-| 💰 **Affordability** | What you need to earn to buy in each neighbourhood, plus buy-vs-rent. |
+| :material/search: **Opportunities** | Listings ranked by opportunity score, each showing the benchmark it was scored against. |
+| :material/bar_chart: **Market** | €/m² benchmarks per neighbourhood, price spread, official INE market context. |
+| :material/calculate: **Mortgage** | Fixed vs variable simulator with a full French amortisation schedule. |
+| :material/savings: **Affordability** | The income each neighbourhood demands, plus buy-vs-rent. |
+| :material/science: **How it works** | The pipeline, the score's arithmetic, and what this data can't tell you. |
 """)
-st.caption("Tip: most data is in **Valencia** — it's selected by default on every page.")
+st.markdown(
+    ":small[Coverage is deepest in **Valencia**, which is why it's the default city "
+    "on every page.]"
+)

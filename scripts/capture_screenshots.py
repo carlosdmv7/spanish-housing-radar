@@ -29,6 +29,7 @@ PAGES = [
     ("market", "market", 8),
     ("mortgage", "mortgage", 5),
     ("affordability", "affordability", 8),
+    ("how-it-works", "how_it_works", 6),
     ("", "home", 12),
 ]
 

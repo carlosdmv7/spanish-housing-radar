@@ -11,6 +11,10 @@ on:
     - cron: "0 5 * * 1"   # 05:00 UTC every Monday
   workflow_dispatch: {}   # still runnable on demand from the Actions tab
 
+# The run pushes docs/status.json back to the default branch.
+permissions:
+  contents: write
+
 jobs:
   run-pipeline:
     name: Extract + dbt build (prod)
@@ -29,8 +33,18 @@ jobs:
       - name: dbt deps
         run: uv run dbt deps --project-dir transform
 
-      # daily_pipeline.py pins DBT_PROFILES_DIR to transform/ itself before
-      # invoking dbt, so it isn't needed here.
+      # transform/profiles.yml is gitignored -- it is the working copy, and only
+      # the .example template is committed. So the file daily_pipeline.py points
+      # DBT_PROFILES_DIR at simply did not exist on the runner, and every dbt
+      # invocation died with "Could not find profile named
+      # 'spanish_housing_radar'". This workflow was disabled at the GitHub level
+      # in June, before it ever ran, which is why nothing caught it.
+      #
+      # The template reads the token via env_var(), so materialising it is the
+      # whole fix -- and it is the same step `make install` performs locally,
+      # rather than a fourth hand-written copy of the profile in YAML.
+      - name: Materialise the dbt profile
+        run: cp transform/profiles.yml.example transform/profiles.yml
       - name: Run daily pipeline (extract → dbt build)
         run: uv run python -m orchestration.flows.daily_pipeline
         env:
@@ -43,3 +57,55 @@ jobs:
           # ephemeral local server — gives a persistent UI/history across runs.
           PREFECT_API_KEY: ${{ secrets.PREFECT_API_KEY }}
           PREFECT_API_URL: ${{ secrets.PREFECT_API_URL }}
+
+      # if: always() is the point of this step. A run that dies mid-pipeline is
+      # exactly the run whose status is worth recording — otherwise the only
+      # evidence is a red tick in the Actions tab that nothing outside GitHub
+      # can read, and docs/status.json silently keeps asserting the last good
+      # run's numbers. Recording the failure is what stops the file from lying.
+      - name: Record pipeline status
+        if: always()
+        run: uv run python -m orchestration.status
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+          # `job.status` is the job's conclusion so far, which at this point is
+          # the conclusion of the pipeline steps above.
+          RUN_CONCLUSION: ${{ job.status }}
+
+      - name: Commit pipeline status
+        if: always()
+        run: |
+          set -euo pipefail
+
+          # The step above is itself if: always(), so it can have failed before
+          # writing anything (a broken `uv sync`, for instance). No file, nothing
+          # to commit — and still not a reason to fail the job.
+          if [ ! -f docs/status.json ]; then
+            echo "docs/status.json was never written — nothing to commit."
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/status.json
+
+          # generated_at moves on every run, so committing unconditionally would
+          # bury this file's history — the very thing it exists to provide —
+          # under a weekly no-op commit. Commit only when a *substantive* field
+          # changed: row counts, test counts, ingest date, run conclusion.
+          substantive=$(git diff --cached -U0 -- docs/status.json \
+            | grep -E '^[+-]' \
+            | grep -vE '^(\+\+\+|---)' \
+            | grep -v '"generated_at"' || true)
+
+          if [ -z "$substantive" ]; then
+            echo "No substantive change since the last run — not committing."
+            git restore --staged docs/status.json
+            exit 0
+          fi
+
+          git commit -m "Daily pipeline: record run status [skip ci]"
+          # A merge can land between checkout and here; rebase rather than let a
+          # push race fail a run that already did its real work.
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

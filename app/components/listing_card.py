@@ -1,64 +1,134 @@
 """
-Listing card component — renders a single listing as a styled Streamlit card.
+Listing card — one listing, with the arithmetic behind its score shown inline.
+
+ADR-0005 makes this a correctness requirement, not a nicety: any surface that
+shows an opportunity score must also show the grain it was computed at and how
+many comparables backed it. A score of 82 against 9 city-wide flats and a score
+of 82 against 60 flats in the same barrio are not the same claim.
 """
 from __future__ import annotations
 
-from config import DEAL_TIER_COLORS, DEAL_TIER_LABELS
+from config import DEAL_TIER_COLORS, DEAL_TIER_FALLBACK_COLOR, DEAL_TIER_LABELS
 import pandas as pd
 import streamlit as st
+from theme import INK_MUTED, RUST_700, TEAL_700
+
+# Wording for each benchmark grain: what the listing was compared against, and
+# the noun for the median shown next to it.
+GRAIN_WORDING: dict[str, tuple[str, str]] = {
+    "neighbourhood": ("its own barrio", "Barrio median"),
+    "district": ("its district", "District median"),
+    "city": ("the whole city", "City median"),
+}
+
+
+def _grain_wording(level: str) -> tuple[str, str]:
+    return GRAIN_WORDING.get(level, (f"the {level} level", "Benchmark"))
+
+
+def score_explainer(row: dict) -> str:
+    """
+    One line of markdown that reconstructs the score from its inputs.
+
+    Returned rather than rendered so the caller controls placement — the card
+    puts it under the metrics, the table puts it in a column tooltip.
+    """
+    ppsqm = row.get("price_per_sqm")
+    bench = row.get("neighborhood_median_ppsqm")
+    level = row.get("benchmark_level", "city")
+    comps = int(row.get("benchmark_comp_count") or 0)
+    compared_to, _ = _grain_wording(level)
+
+    if not pd.notna(ppsqm) or not pd.notna(bench) or not bench:
+        return f":small[{_muted(f'Scored against {compared_to} · {comps} comparables')}]"
+
+    delta_pct = (ppsqm - bench) / bench * 100
+    direction = "below" if delta_pct < 0 else "above"
+    tone = TEAL_700 if delta_pct < 0 else RUST_700
+    delta = f":color[{delta_pct:+.1f}%]{{foreground=\"{tone}\"}}"
+
+    return (
+        f":small[€{ppsqm:,.0f}/m² vs €{bench:,.0f}/m² across **{compared_to}** "
+        f"→ **{delta}** {direction} · {comps} comparables]"
+    )
+
+
+def _muted(text: str) -> str:
+    return f":color[{text}]{{foreground=\"{INK_MUTED}\"}}"
+
+
+def confidence_note(row: dict) -> str | None:
+    """
+    Why this particular score deserves less trust, or None when it doesn't.
+
+    Two separate weaknesses, deliberately worded differently: falling back off
+    barrio grain (coarse comparison) and the model's own `low_confidence_flag`
+    (thin city grain). The second is worse and says so.
+    """
+    level = row.get("benchmark_level", "city")
+    comps = int(row.get("benchmark_comp_count") or 0)
+
+    if row.get("low_confidence_flag"):
+        return (
+            f"**Low confidence** — only {comps} comparable listings city-wide, "
+            "below the 8 this benchmark needs. Treat the score as a hint, not a verdict."
+        )
+    if level != "neighbourhood":
+        compared_to, _ = _grain_wording(level)
+        return (
+            f"**Reduced confidence** — too few comparables in this barrio, so the "
+            f"score comes from {compared_to}. It reads the market, not the street."
+        )
+    return None
 
 
 def listing_card(row: dict) -> None:
-    tier   = row.get("deal_tier", "fair")
-    color  = DEAL_TIER_COLORS.get(tier, "#94a3b8")
-    label  = DEAL_TIER_LABELS.get(tier, tier)
+    tier = row.get("deal_tier", "fair")
+    color = DEAL_TIER_COLORS.get(tier, DEAL_TIER_FALLBACK_COLOR)
+    label = DEAL_TIER_LABELS.get(tier, tier)
+
     rooms_val = row.get("rooms")
-    rooms  = f"{int(rooms_val)} bed · " if pd.notna(rooms_val) else ""
-    size   = f"{row['size_sqm']:.0f} sqm"
-    hood   = (row.get("neighborhood") or "").title()
-    dist   = (row.get("district") or "").title()
-    loc    = f"{hood}, {dist}" if dist else hood
+    rooms = f"{int(rooms_val)} bed · " if pd.notna(rooms_val) else ""
+    hood = (row.get("neighborhood") or "").title()
+    dist = (row.get("district") or "").title()
+    loc = f"{hood}, {dist}" if dist else hood
+    level = row.get("benchmark_level", "city")
+    _, bench_label = _grain_wording(level)
 
     with st.container(border=True):
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.markdown(f"**{rooms}{size}** · {loc}")
-            st.caption(f"{row['source_name'].capitalize()} · {row.get('scraped_date', '')}")
+        head, price = st.columns([3, 1], vertical_alignment="center")
+        with head:
+            st.markdown(f"**{rooms}{row['size_sqm']:.0f} m²** · {loc}")
+            provenance = f"{row['source_name'].capitalize()} · {row.get('scraped_date', '')}"
+            st.markdown(f":small[{_muted(provenance)}]")
+        with price:
+            st.markdown(f"### €{row['price_eur']:,.0f}")
+            st.markdown(f":small[:color[{label}]{{foreground=\"{color}\"}}]")
 
-            # Behavioural signal — only shown when the history actually supports it
-            dom = row.get("days_on_market") or 0
-            cuts = row.get("n_price_changes") or 0
-            if row.get("seller_motivation") in ("medium", "high"):
-                bits = []
-                if dom >= 21:
-                    bits.append(f"{int(dom)} days listed")
-                if cuts >= 1:
-                    pct = row.get("price_change_pct") or 0
-                    bits.append(f"{int(cuts)} price cut{'s' if cuts > 1 else ''} ({pct:+.0f}%)")
-                if bits:
-                    st.caption("🔥 Motivated seller · " + " · ".join(bits))
+        m1, m2, m3 = st.columns(3)
+        m1.metric("€/m²", f"€{row['price_per_sqm']:,.0f}")
+        m2.metric(bench_label, f"€{row['neighborhood_median_ppsqm']:,.0f}")
+        m3.metric("Opportunity score", f"{row['opportunity_score']:.0f}/100")
 
-            if row.get("low_confidence_flag"):
-                st.caption("⚠️ Few comparable listings in this neighborhood — score may be unreliable")
-        with col2:
+        st.markdown(score_explainer(row))
+
+        note = confidence_note(row)
+        if note:
             st.markdown(
-                f"<div style='text-align:right;font-size:1.3rem;font-weight:700'>"
-                f"€{row['price_eur']:,.0f}</div>"
-                f"<div style='text-align:right;color:{color};font-size:0.85rem'>{label}</div>",
-                unsafe_allow_html=True,
+                f":small[:color[:material/warning:]{{foreground=\"{RUST_700}\"}} {note}]"
             )
 
-        level = row.get("benchmark_level", "city")
-        level_label = {"neighbourhood": "Area median", "district": "District median",
-                       "city": "City median"}.get(level, "Benchmark")
+        # Behavioural signal — only shown when the snapshot history supports it.
+        if row.get("seller_motivation") in ("medium", "high"):
+            dom = row.get("days_on_market") or 0
+            cuts = row.get("n_price_changes") or 0
+            bits = []
+            if dom >= 21:
+                bits.append(f"{int(dom)} days listed")
+            if cuts >= 1:
+                pct = row.get("price_change_pct") or 0
+                bits.append(f"{int(cuts)} price cut{'s' if cuts > 1 else ''} ({pct:+.0f}%)")
+            if bits:
+                st.markdown(f":small[**Motivated seller** · {' · '.join(bits)}]")
 
-        col3, col4, col5 = st.columns(3)
-        col3.metric("€/sqm",            f"€{row['price_per_sqm']:,.0f}")
-        col4.metric(level_label,        f"€{row['neighborhood_median_ppsqm']:,.0f}",
-                    help=f"Scored against the {level} median ({int(row.get('benchmark_comp_count', 0))} comparable listings)")
-        col5.metric("Opportunity score", f"{row['opportunity_score']:.0f}/100")
-
-        st.markdown(
-            f"<a href='{row['url']}' target='_blank'>View on {row['source_name'].capitalize()} →</a>",
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"[View on {row['source_name'].capitalize()} →]({row['url']})")

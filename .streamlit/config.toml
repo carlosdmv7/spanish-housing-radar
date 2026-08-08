@@ -1,13 +1,168 @@
-# Streamlit app configuration (committed — no secrets here).
-# Secrets (MOTHERDUCK_TOKEN, ...) go in .streamlit/secrets.toml (gitignored)
-# or in the Streamlit Community Cloud "Secrets" UI.
+# Streamlit theme — brand tokens, native keys only (survives version upgrades).
+#
+# The canonical source for every value here is the `:root` block of
+# carlosdmv7/personal-portfolio `styles.css`. This file is the Streamlit
+# translation of it; when the portfolio's tokens move, they move here too.
+#
+# Hard rule inherited from that design system: NO CSS injection anywhere in this
+# app. Everything below is a native theme key, so a Streamlit upgrade can change
+# the DOM without silently breaking the look.
 
 [theme]
-primaryColor = "#3b82f6"
-backgroundColor = "#0e1117"
-secondaryBackgroundColor = "#161b26"
-textColor = "#e7ecf3"
-font = "sans serif"
+base = "light"
+
+# ── Fonts ─────────────────────────────────────────────────────────────────────
+# Same three families, loaded from the same Google Fonts URLs as the portfolio's
+# index.html, so the two properties render in the same type. Streamlit takes a
+# "<family>:<css url>" string natively — no self-hosting, no static file serving,
+# no @font-face injection. Fallbacks after the comma cover a blocked CDN.
+font = "Public Sans:https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600&display=swap, sans-serif"
+headingFont = "Archivo:https://fonts.googleapis.com/css2?family=Archivo:wght@400..700&display=swap, sans-serif"
+codeFont = "IBM Plex Mono:https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap, monospace"
+
+# Portfolio display headings are 700; body is 400.
+baseFontWeight = 400
+
+# ── Type scale ────────────────────────────────────────────────────────────────
+# Streamlit's default headings run larger and lighter than the portfolio's, so
+# matching the families alone still leaves the two properties looking unrelated.
+# These are h1..h6, read off styles.css: `.case-hero h1` tops out at 2.9rem and
+# `.section-title` at 2.6rem — but those are landing-page headings with a whole
+# viewport to themselves, and an app page title sits above dense controls, so h1
+# takes the bottom of that range rather than the top. h3 is `.project h3`
+# (1.32rem) and `.exp-role` (1.28rem) almost exactly.
+#
+# Weights follow the same stylesheet: 700 for the display headings, 600 for the
+# smaller emphasis levels. Nothing here is invented — every number has a line in
+# styles.css behind it.
+#
+# Not reachable natively: the portfolio's negative letter-spacing on display
+# headings (-0.02em to -0.035em). Streamlit exposes no tracking key, and the one
+# way to apply it is CSS injection, which this app does not do. Headings are
+# therefore very slightly looser than the portfolio's. That is the honest cost of
+# the no-injection rule, recorded here so the gap reads as a decision.
+headingFontSizes = ["2.25rem", "1.6rem", "1.3rem", "1.1rem", "1rem", "0.875rem"]
+headingFontWeights = [700, 700, 700, 600, 600, 600]
+
+# The portfolio's own headline figure is `.impact-num`: display font, 1.4rem,
+# weight 700 — restrained, because the label around it carries the meaning.
+# Streamlit's default metric value is 2.25rem, which on a page of six metrics
+# reads as a scoreboard. This brings it back to the portfolio's register.
+metricValueFontSize = "1.75rem"
+metricValueFontWeight = 700
+
+# ── Core surfaces and ink ─────────────────────────────────────────────────────
+backgroundColor = "#FDFAF4"           # --surface
+secondaryBackgroundColor = "#F5EFE3"  # --surface-2 (cards, wells)
+textColor = "#274C56"                 # --ink
+borderColor = "#E4D9C4"               # --border
+linkColor = "#A8501F"                 # --rust-700
+
+# --rust-700, NOT --rust-500. Streamlit puts white labels on primaryColor fills,
+# and white on --rust-500 measures 3.42:1 — below AA. On --rust-700 it is
+# 5.48:1. This is exactly the rule the portfolio's stylesheet states: rust-500
+# is graphical only; a rust fill carrying a white label must be rust-700.
+primaryColor = "#A8501F"
+
+# ── Rhythm ────────────────────────────────────────────────────────────────────
+# Portfolio --radius: 12px, --radius-sm: 8px.
+baseRadius = "0.75rem"
+buttonRadius = "0.5rem"
+showWidgetBorder = true
+showSidebarBorder = true
+linkUnderline = false
+
+# ── Semantic colours ──────────────────────────────────────────────────────────
+# Streamlit's defaults for st.error / st.warning / st.info / st.success are a
+# red-amber-blue-green set — i.e. the green→red scale this brand explicitly
+# forbids, sitting on a warm paper page. Remapped onto real tokens below.
+# Every text/background pair here is measured ≥ 4.5:1 with the portfolio's own
+# tools/contrast-check.py; the ratio is noted on each.
+
+# st.error → the rust tint. The palette has no red; rust-900 is its alarm ink.
+redColor = "#A8501F"            # --rust-700, icon and rule
+redBackgroundColor = "#FBEADF"  # --rust-050
+redTextColor = "#6E2F10"        # --rust-900 on --rust-050 = 8.64:1
+
+# st.warning → the sand fill. Sand is never text, always a fill; ink rides it.
+orangeColor = "#E7A84E"            # --amber-500, icon only
+orangeBackgroundColor = "#F6E2B3"  # --sand-100
+orangeTextColor = "#274C56"        # --ink on --sand-100 = 7.30:1
+yellowColor = "#E7A84E"
+yellowBackgroundColor = "#F6E2B3"
+yellowTextColor = "#274C56"
+
+# st.info → a quiet neutral well, not a blue box. Keeping info visually calmer
+# than success/warning/error is deliberate: 8 of the app's 15 alert boxes are
+# st.info explaining absent data, and they should not read as alarms.
+blueColor = "#274C56"            # --petrol-900
+blueBackgroundColor = "#F5EFE3"  # --surface-2
+blueTextColor = "#274C56"        # --ink on --surface-2 = 8.13:1
+violetColor = "#274C56"
+violetBackgroundColor = "#F5EFE3"
+violetTextColor = "#274C56"
+
+# st.success → the teal tint. Teal carries the identity alongside petrol.
+greenColor = "#2E6B5E"            # --teal-700
+greenBackgroundColor = "#E4F0EC"  # --teal-050
+greenTextColor = "#2E6B5E"        # --teal-700 on --teal-050 = 5.32:1
+
+# Neutral/gray callouts sit on the same well as info.
+grayColor = "#4E636D"            # --ink-muted-2
+grayBackgroundColor = "#F5EFE3"  # --surface-2
+grayTextColor = "#4E636D"        # --ink-muted-2 on --surface-2 = 5.51:1
+
+# ── Charts ────────────────────────────────────────────────────────────────────
+# app/theme.py registers an Altair theme with these same ramps, but that only
+# reaches charts built through it. These keys reach Altair, Vega-Lite and Plotly
+# alike, so a chart added without the helper still lands on-brand instead of on
+# Streamlit's default blue.
+chartCategoricalColors = ["#274C56", "#D96C2C", "#3E8E7E", "#E7A84E", "#5C7480"]
+chartDivergingColors = ["#2E6B5E", "#7FB3A4", "#F6E2B3", "#E7A84E", "#D96C2C"]
+chartSequentialColors = ["#F6E2B3", "#E7A84E", "#D96C2C", "#A8501F", "#6E2F10"]
+
+# ── Dataframes and code ───────────────────────────────────────────────────────
+dataframeHeaderBackgroundColor = "#F5EFE3"
+dataframeBorderColor = "#E4D9C4"
+codeBackgroundColor = "#F5EFE3"
+codeTextColor = "#6E2F10"
+
+# ── Sidebar ───────────────────────────────────────────────────────────────────
+# The portfolio's sidebar/well surface is --surface-2, one step off the page.
+[theme.sidebar]
+backgroundColor = "#F5EFE3"
+secondaryBackgroundColor = "#FDFAF4"
+borderColor = "#E4D9C4"
+textColor = "#274C56"
+linkColor = "#A8501F"
+primaryColor = "#A8501F"
+codeBackgroundColor = "#FDFAF4"
+
+# ── Dark mode ─────────────────────────────────────────────────────────────────
+# The portfolio is light-only — "warm paper, petrol ink" has no dark counterpart,
+# and the README's old screenshots show what the app looked like when a viewer's
+# dark preference won: Streamlit's default blue on near-black, nothing like the
+# brand. Pinning the dark variant to the same tokens makes the app render warm
+# paper regardless of the visitor's system or Streamlit Cloud setting.
+[theme.dark]
+backgroundColor = "#FDFAF4"
+secondaryBackgroundColor = "#F5EFE3"
+textColor = "#274C56"
+borderColor = "#E4D9C4"
+linkColor = "#A8501F"
+primaryColor = "#A8501F"
+dataframeHeaderBackgroundColor = "#F5EFE3"
+dataframeBorderColor = "#E4D9C4"
+codeBackgroundColor = "#F5EFE3"
+codeTextColor = "#6E2F10"
+
+[client]
+# Streamlit's default toolbar puts a "Deploy" button in the top-right of every
+# page, including the deployed one, where it is an invitation to deploy an app
+# that is already deployed. "minimal" keeps the useful menu items (rerun, print,
+# settings) and drops the developer chrome, so the first thing a visitor sees in
+# the corner is not a button meant for its author.
+toolbarMode = "minimal"
 
 [server]
 headless = true

@@ -3,6 +3,8 @@ name = "spanish-housing-radar"
 version = "0.1.0"
 description = "End-to-end analytics-engineering pipeline that finds undervalued homes across Spain."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12,<3.13"
 dependencies = [
     # ── Core data stack ──────────────────────────────────────────────────────
@@ -10,9 +12,14 @@ dependencies = [
     "dbt-duckdb==1.10.1",
     "dbt-core==1.9.5",
     # ── Streamlit app ────────────────────────────────────────────────────────
-    "streamlit==1.44.1",
+    # streamlit >= 1.45 for the native theme keys the brand tokens rely on
+    # (linkColor, borderColor, baseRadius) — see .streamlit/config.toml. Pinned
+    # to 1.60 so no brand styling has to fall back to CSS injection.
+    "streamlit==1.60.0",
     "pydeck==0.9.1",
-    "plotly==5.24.1",
+    # Charts are Altair only (declarative theming from the brand tokens);
+    # pydeck stays for the map. Plotly was removed — see docs/adr.
+    "altair==5.5.0",
     "pandas==2.2.3",
     # ── Extraction ───────────────────────────────────────────────────────────
     "requests==2.32.3",
