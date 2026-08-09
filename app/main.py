@@ -60,6 +60,6 @@ with st.sidebar:
 # The strip is a handful of cached aggregate queries. If the warehouse is
 # unreachable it renders its own "—" facts rather than raising, so a dead
 # connection degrades the header instead of blanking the whole app.
-render_header(get_freshness_strip())
+render_header(get_freshness_strip(), show_identity=(nav.title == "Home"))
 nav.run()
 render_footer()

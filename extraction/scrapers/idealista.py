@@ -32,7 +32,7 @@ from extraction.config import (
     IDEALISTA_SELECTORS,
     get_idealista_search_url,
 )
-from extraction.scrapers.base import AbstractScraper
+from extraction.scrapers.base import AbstractScraper, CreditBudgetExhausted
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,12 @@ class IdealistaScraper(AbstractScraper):
 
             try:
                 html = self._get_html(page_url)
+            except CreditBudgetExhausted as exc:
+                # A clean stop, not a failure: every listing already yielded is
+                # valid and gets loaded. Draining a monthly quota mid-run and
+                # discarding the work would be the worse outcome.
+                logger.warning("[idealista] Stopping at page %d — %s", page, exc)
+                break
             except Exception as exc:
                 logger.warning("[idealista] Could not fetch page %d: %s", page, exc)
                 break
@@ -276,9 +282,14 @@ class IdealistaScraper(AbstractScraper):
             # type word so a real barrio is never truncated at an inner " en ".
             parts[0] = re.sub(r"^.*?\ben\s+", "", parts[0], count=1)
 
-        while parts and (
-            cls._STREET_KEYWORDS.search(parts[0]) or cls._HOUSE_NUMBER.match(parts[0])
-        ):
+        # At most ONE leading street segment is dropped, not every segment that
+        # looks street-like. Idealista puts the street first and the area second,
+        # so a loop that keeps popping eats the answer: València has a barrio
+        # literally called "Gran Vía", and
+        #   "Piso en Gran Via del Marqués del Túria, Gran Vía, València"
+        # lost both segments and returned no neighbourhood at all. One pop takes
+        # the street and leaves the barrio, which is the actual shape of the data.
+        if parts and cls._STREET_KEYWORDS.search(parts[0]):
             parts.pop(0)
 
         # A house number can also sit between the street and the barrio
