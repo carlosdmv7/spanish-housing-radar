@@ -10,6 +10,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 import logging
+import os
 import time
 
 import requests
@@ -28,6 +29,42 @@ from extraction.config import (
 )
 from extraction.schemas.raw_listings import RawListing
 
+logger_cost = logging.getLogger(__name__)
+
+# Hard ceiling on credits one process may spend, from SCRAPFLY_CREDIT_BUDGET.
+# 0 disables it. This exists because Scrapfly bills per request and a paginated
+# run can empty a monthly quota in minutes with no warning: the first deep run
+# of this scraper cost ~25 credits a page against an ADR that claimed ~1.
+SCRAPFLY_CREDIT_BUDGET: int = int(os.getenv("SCRAPFLY_CREDIT_BUDGET", "0"))
+
+
+class CreditBudgetExhausted(RuntimeError):
+    """Raised when a run reaches SCRAPFLY_CREDIT_BUDGET, so it stops rather than
+    silently draining the quota. Callers treat it as a clean stop, not a crash:
+    everything scraped before it is already valid and worth loading."""
+
+
+def _extract_cost(result) -> int | None:
+    """
+    Credits this scrape cost, or None if the SDK did not say.
+
+    None must never be coerced to 0 — an unknown cost that reads as free is how
+    a budget guard silently stops guarding.
+    """
+    for probe in (
+        lambda: result.scrape_result["cost"]["total"],
+        lambda: result.scrape_result["cost"],
+        lambda: result.context["cost"]["total"],
+        lambda: result.context["cost"],
+    ):
+        try:
+            value = probe()
+        except (KeyError, TypeError, AttributeError):
+            continue
+        if isinstance(value, int | float):
+            return int(value)
+    return None
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,6 +78,8 @@ class AbstractScraper(ABC):
         # Reuse a single requests.Session for connection pooling + shared headers
         self.session = requests.Session()
         self.session.headers.update(DEFAULT_HEADERS)
+        # Credits this scraper instance has spent, for the budget guard below.
+        self._credits_spent = 0
 
     # ── Public interface ──────────────────────────────────────────────────────
 
@@ -134,13 +173,25 @@ class AbstractScraper(ABC):
             )
         )
 
-        # Log credit usage so you can track your budget
-        cost = result.scrape_result.get("cost", "?")
-        remaining = result.scrape_result.get("remaining_api_calls", "?")
+        # Credit accounting. This used to read keys that are not in the payload,
+        # so every line logged "cost=? remaining=?" and the real price of a scrape
+        # was invisible -- which is how ADR-0001's "~1 credit per search card"
+        # went unchallenged while Idealista, behind ASP, actually costs ~25.
+        # Several shapes are tried because the SDK has moved this field around
+        # between versions, and an unparsed cost must read as unknown, never 0.
+        cost = _extract_cost(result)
+        self._credits_spent += cost or 0
         logger.info(
-            "[scrapfly] url=%s  cost=%s credits  remaining=%s",
-            url, cost, remaining,
+            "[scrapfly] url=%s  cost=%s credits  spent this run=%d",
+            url, cost if cost is not None else "unknown", self._credits_spent,
         )
+
+        if SCRAPFLY_CREDIT_BUDGET and self._credits_spent >= SCRAPFLY_CREDIT_BUDGET:
+            raise CreditBudgetExhausted(
+                f"Spent {self._credits_spent} credits, at or over the "
+                f"SCRAPFLY_CREDIT_BUDGET of {SCRAPFLY_CREDIT_BUDGET}. "
+                "Raise the budget to continue."
+            )
 
         return result.content
 

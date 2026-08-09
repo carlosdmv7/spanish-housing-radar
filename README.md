@@ -179,7 +179,7 @@ anywhere, so a Streamlit upgrade can't silently break the look.
 - **Idempotent upserts (`INSERT OR REPLACE`, PK `(source_name, source_id)`).** Re-running an
   extraction never duplicates rows, so the pipeline is safe to retry — a prerequisite for scheduled
   orchestration.
-- **Search-card scraping over detail-page scraping.** ~1 Scrapfly credit per request vs 25–29 with
+- **Search-card scraping over detail-page scraping.** 25 Scrapfly credits buy ~30 listings from a search page, against one listing from a detail page — ~30× cheaper per listing. (An earlier version of this claimed ~1 credit per search page; that was never measured and is wrong — Idealista requires Scrapfly's anti-bot protection, billed flat at 25.) Detail pages cost 25–29 with
   JS rendering. The trade-off: no per-listing coordinates (see limitations). For a benchmark engine,
   breadth of comparables matters more than per-listing depth.
 - **Low-confidence data is shown, not hidden.** Dropping sparse neighbourhoods would make the app
@@ -203,7 +203,7 @@ and the alternatives I rejected and why.
 
 | ADR | Decision | The cost I accepted |
 |---|---|---|
-| [0001](docs/adr/0001-search-card-scraping.md) | Scrape **search cards**, not detail pages | ~1 Scrapfly credit vs 25–29 — but **no per-listing coordinates**, so the map plots barrio centroids |
+| [0001](docs/adr/0001-search-card-scraping.md) | Scrape **search cards**, not detail pages | ~30 listings per 25-credit request instead of one — but **no per-listing coordinates**, so the map plots barrio centroids |
 | [0002](docs/adr/0002-warehouse-motherduck-medallion.md) | MotherDuck (DuckDB) warehouse with a dbt medallion | Free and zero-ops at this scale; free-tier limits are a real ceiling |
 | [0003](docs/adr/0003-idempotent-upserts.md) | Idempotent upserts keyed on `(source_name, source_id)` | Retry-safe, but a re-scrape overwrites the prior observation — history has to live in silver |
 | [0004](docs/adr/0004-hierarchical-benchmark-grain.md) | Hierarchical benchmark grain: neighbourhood → district → city, `min_comps_for_benchmark = 8` | Grain is **per row**, so `benchmark_level` is a visible gold column the app must always show — a score without its grain isn't interpretable |
@@ -223,7 +223,7 @@ make install        # uv sync (creates .venv from the lockfile) + config templat
 # edit .env  → MOTHERDUCK_TOKEN, SCRAPFLY_API_KEY
 make dbt-deps        # install dbt packages (once)
 
-make extract CITY=valencia OP=sale     # ~1 Scrapfly credit (render_js=false)
+make extract CITY=valencia OP=sale     # 25 Scrapfly credits per page of ~30 listings
 make ingest-ine                         # free: official INE house-price index → raw.ine_hpi
 make transform                          # dbt run: bronze → silver → gold
 make dbt-test                           # data-quality tests

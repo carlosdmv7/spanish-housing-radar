@@ -241,22 +241,35 @@ def section(label: str) -> None:
     st.markdown(f":small[**{_mark(label.upper(), INK_MUTED)}**]")
 
 
-def render_header(freshness: Sequence[StripItem] = ()) -> None:
+def render_header(
+    freshness: Sequence[StripItem] = (),
+    *,
+    show_identity: bool = True,
+) -> None:
     """
-    Persistent chrome for the top of every page: identity line, then the
-    freshness strip.
+    Persistent chrome for the top of every page: freshness strip, and on the
+    landing page an identity line.
 
-    Call once per page, before any content. Pass the strip items the app computed
-    from its own warehouse; pass nothing and the identity line renders alone.
+    `show_identity` is False on inner pages by design. Who built the tool is
+    context a visitor needs once, on arrival; repeating it above every page
+    spends the most valuable strip of the screen on the author rather than on
+    the answer, and it is the first thing to go when a page is too dense. The
+    footer still carries the attribution on every page, and the sidebar keeps a
+    link back to the portfolio.
+
+    The freshness strip stays everywhere, because it is not chrome: it says how
+    old the data behind *this* page is, and a stale answer is wrong on every
+    page equally.
     """
-    identity, portfolio = st.columns([3, 1], vertical_alignment="center")
-    with identity:
-        st.markdown(
-            f"**{AUTHOR_NAME}** · {_mark(AUTHOR_ROLE, INK_MUTED)}",
-            help=None,
-        )
-    with portfolio:
-        st.markdown(f"[← portfolio]({PORTFOLIO_URL})")
+    if show_identity:
+        identity, portfolio = st.columns([3, 1], vertical_alignment="center")
+        with identity:
+            st.markdown(
+                f"**{AUTHOR_NAME}** · {_mark(AUTHOR_ROLE, INK_MUTED)}",
+                help=None,
+            )
+        with portfolio:
+            st.markdown(f"[← portfolio]({PORTFOLIO_URL})")
 
     if freshness:
         # Tooltips live on their own row of captions rather than in the strip

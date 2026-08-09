@@ -97,6 +97,21 @@ class TestParseLocationProductionRegressions:
         assert hood not in {"29", "12"}
         assert muni in {"valencia", "sevilla"}
 
+    @pytest.mark.parametrize("title", [
+        "Piso en Gran Via del Marqués del Túria, Gran Vía, València",
+        "Piso en Calle del Comte d'Altea, Gran Vía, València",
+    ])
+    def test_a_barrio_named_after_a_street_type_survives(self, title):
+        """
+        València has a barrio called "Gran Vía". A loop that keeps dropping
+        street-looking segments ate both the street *and* the barrio and returned
+        no neighbourhood at all — found on live data, not in review. Idealista
+        puts the street first and the area second, so exactly one segment is
+        dropped.
+        """
+        _, _, hood = scraper._parse_location(title, fallback="?")
+        assert hood == "gran vía"
+
     def test_a_number_between_street_and_barrio_is_dropped(self):
         _, _, hood = scraper._parse_location(
             "Piso en venta en calle de Sueca, 34, Russafa, Valencia", fallback="?"

@@ -6,8 +6,19 @@
 Idealista exposes each listing twice: as a card in a paginated search result, and
 as a full detail page. Detail pages carry more fields (notably per-listing
 coordinates and the full description) but require JS rendering behind Scrapfly's
-anti-bot proxy, at **25–29 credits per request**. A search card costs ~1 credit
-and yields ~30 listings per fetch. The product is a *benchmark engine*: the score
+anti-bot proxy. A search-results page yields ~30 listings per fetch.
+
+**Correction, 2026-08-09.** This ADR originally claimed a search page costs ~1
+credit against 25–29 for a detail page, and that the saving was therefore ~750×
+per listing. Measured on a real run, **a search page costs 25 credits too**: the
+scraper sends `asp=true`, and Scrapfly's Anti-Scraping Protection is billed at a
+flat 25 credits per request regardless of `render_js`. The 1-credit figure was
+never measured — it was the price of a *plain* fetch, which Idealista blocks.
+
+The decision still holds, but for a different and weaker reason: the saving is
+~30× per listing (one 25-credit request returns 30 listings instead of one), not
+750×. The economics changed enough to matter — 1,000 monthly credits buy 40
+pages, roughly 1,200 listings, not the 30,000 the original arithmetic implied. The product is a *benchmark engine*: the score
 is only as good as the number of comparables behind the median, so coverage is
 the binding constraint, not per-listing depth.
 
@@ -19,8 +30,13 @@ parsing the card's `title` attribute with a `_parse_location()` heuristic
 detail-page fetches anywhere in the default path.
 
 ## Consequences
-- ~750× cheaper per listing, so a fixed credit budget buys breadth of
-  comparables instead of depth on a handful of flats.
+- ~30× cheaper per listing, so a fixed credit budget buys breadth of
+  comparables instead of depth on a handful of flats. (Originally stated as
+  ~750×; see the correction above.)
+- **A monthly quota is spent in minutes.** A single 18-page run of one city and
+  one operation costs 450 credits — 45% of the free tier. `SCRAPFLY_CREDIT_BUDGET`
+  now caps what one process may spend, because the first deep run of this scraper
+  emptied the month's quota before anyone could react.
 - **No per-listing coordinates.** The map plots barrio centroids from the
   `barrios_es` seed instead of exact addresses (see ADR 0004's grain logic and
   the README's known limitations).
@@ -31,7 +47,8 @@ detail-page fetches anywhere in the default path.
 
 ## Alternatives rejected
 - **Detail pages for everything.** The complete record — coordinates, full
-  description, floor, condition — at 25–29 credits a listing. At a fixed budget
+  description, floor, condition — at 25–29 credits a listing, against 25 credits
+  per *thirty* listings on the search page. At a fixed budget
   this buys roughly 1/750th the coverage, and coverage is what a benchmark is
   made of. A perfectly-described listing with four comparables behind its median
   is a worse product than a thinly-described one with forty.
