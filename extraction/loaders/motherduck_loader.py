@@ -14,8 +14,13 @@ import logging
 import duckdb
 import pandas as pd
 
-from extraction.config import INE_HPI_RAW_TABLE, MOTHERDUCK_DSN, RAW_TABLE_MAP
-from extraction.schemas.ine_records import IneHpiRecord
+from extraction.config import (
+    INE_HPI_RAW_TABLE,
+    INE_INCOME_RAW_TABLE,
+    MOTHERDUCK_DSN,
+    RAW_TABLE_MAP,
+)
+from extraction.schemas.ine_records import IneHpiRecord, IneIncomeRecord
 from extraction.schemas.raw_listings import RawListing
 
 logger = logging.getLogger(__name__)
@@ -198,6 +203,61 @@ class MotherDuckLoader:
         self._conn.unregister("df")
 
         logger.info("[loader] ✓  %d rows → %s", len(df), INE_HPI_RAW_TABLE)
+        return len(df)
+
+    _CREATE_INE_INCOME_SQL = """
+    CREATE TABLE IF NOT EXISTS {table} (
+        municipality_code VARCHAR      NOT NULL,
+        municipality_name VARCHAR      NOT NULL,
+        district_code     VARCHAR      NOT NULL,
+        district_name     VARCHAR      NOT NULL,
+        metric            VARCHAR      NOT NULL,
+        year              INTEGER      NOT NULL,
+        value             DOUBLE       NOT NULL,
+        _loaded_at        TIMESTAMPTZ  NOT NULL,
+        _run_id           VARCHAR      NOT NULL,
+        -- One figure per district, metric and year. Re-running the annual fetch
+        -- must correct a district in place, not append a second opinion.
+        PRIMARY KEY (district_code, metric, year)
+    );
+    """
+
+    _UPSERT_INE_INCOME_SQL = """
+    INSERT OR REPLACE INTO {table} (
+        municipality_code, municipality_name, district_code, district_name,
+        metric, year, value, _loaded_at, _run_id
+    )
+        SELECT municipality_code, municipality_name, district_code, district_name,
+               metric, year, value, _loaded_at, _run_id
+        FROM df;
+    """
+
+    def load_ine_income(self, records: list[IneIncomeRecord]) -> int:
+        """Upsert ADRH district income into raw.ine_income. Idempotent per year."""
+        if not records:
+            logger.warning("[loader] No INE income records — nothing to write.")
+            return 0
+
+        now = datetime.now(tz=UTC)
+        df = pd.DataFrame([
+            {**r.model_dump(), "_loaded_at": now, "_run_id": self.run_id}
+            for r in records
+        ])
+
+        if self.dry_run:
+            logger.info("[loader][DRY RUN] Would write %d rows → %s", len(df), INE_INCOME_RAW_TABLE)
+            print(df.head(5).to_string(index=False))
+            return 0
+
+        if self._conn is None:
+            raise RuntimeError("Loader not initialised — use as a context manager.")
+
+        self._conn.register("df", df)
+        self._conn.execute(self._CREATE_INE_INCOME_SQL.format(table=INE_INCOME_RAW_TABLE))
+        self._conn.execute(self._UPSERT_INE_INCOME_SQL.format(table=INE_INCOME_RAW_TABLE))
+        self._conn.unregister("df")
+
+        logger.info("[loader] ✓  %d rows → %s", len(df), INE_INCOME_RAW_TABLE)
         return len(df)
 
     def _to_dataframe(self, listings: list[RawListing]) -> pd.DataFrame:

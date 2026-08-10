@@ -69,3 +69,45 @@ sources:
                   values: [index, qoq, yoy, ytd]
           - name: value
             tests: [not_null]
+      - name: ine_income
+        description: >
+          District-level household income from INE's Atlas de Distribución de
+          Renta de los Hogares (ADRH, table 30824). One row per district ×
+          metric × year, 2015 onwards. This is the denominator the opportunity
+          score never had: a barrio can be cheap because it is a bargain or
+          because nobody there can afford more, and €/m² alone cannot tell those
+          apart.
+
+          **Annual, not daily.** INE publishes one reference year at a time with
+          roughly a two-year lag, so freshness is measured in months and this
+          table is deliberately exempt from the pipeline's staleness gate — a
+          warn at 400 days catches a feed that has genuinely stopped, without
+          turning a normal publication gap into a red build.
+        freshness:
+          warn_after: {count: 400, period: day}
+        columns:
+          - name: district_code
+            description: 7-digit INE district code, e.g. 4625001 for Ciutat Vella.
+            tests: [not_null]
+          - name: municipality_code
+            tests: [not_null]
+          - name: metric
+            tests:
+              - not_null
+              - accepted_values:
+                  values:
+                    - net_income_per_person
+                    - net_income_per_household
+                    - gross_income_per_person
+                    - gross_income_per_household
+                    - mean_income_per_consumption_unit
+                    - median_income_per_consumption_unit
+          - name: year
+            tests: [not_null]
+          - name: value
+            description: Euros. Never zero — a suppressed cell is dropped at extraction.
+            tests:
+              - not_null
+              - dbt_utils.accepted_range:
+                  min_value: 1
+                  max_value: 500000

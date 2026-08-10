@@ -35,3 +35,26 @@ class IneHpiRecord(BaseModel):
     period_date: date = Field(..., description="Reference date of the quarter")
     year: int = Field(..., ge=2000, le=2100)
     value: float = Field(..., description="Index level (base 2015=100) or % variation")
+
+
+class IneIncomeRecord(BaseModel):
+    """
+    One income observation for one district, one metric, one year.
+
+    From the Atlas de Distribución de Renta de los Hogares. The grain is
+    deliberately the *district* and not the census section: sections are finer
+    than any listing this app holds, so keeping them would multiply the table
+    twentyfold for data nothing could join to.
+    """
+
+    municipality_code: str = Field(..., min_length=5, max_length=5,
+                                   description="5-digit INE municipality code, e.g. '46250'")
+    municipality_name: str = Field(..., description="Verbatim INE name, e.g. 'València'")
+    district_code: str = Field(..., min_length=7, max_length=7,
+                               description="7-digit INE district code, e.g. '4625001'")
+    district_name: str = Field(..., description="Verbatim, e.g. 'València distrito 01'")
+    metric: str = Field(..., description="net_income_per_person | …")
+    year: int = Field(..., ge=2000, le=2100)
+    # No upper bound beyond sanity: this is euros per person or per household and
+    # the two differ by roughly 2.5x, so one shared ceiling would be arbitrary.
+    value: float = Field(..., gt=0)

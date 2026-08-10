@@ -42,3 +42,30 @@ seeds:
         tests: [not_null, unique]
       - name: ine_region
         tests: [not_null]
+
+  - name: ine_districts
+    description: >
+      Maps INE's numeric district codes to the district names this app uses.
+      INE identifies a district as "València distrito 01"; a listing calls it
+      "ciutat vella", and nothing in either dataset connects the two.
+
+      Sourced from the Ajuntament de València's own published list of the 19
+      districts, NOT inferred from the listings. Inferring it would mean deciding
+      which barrio sits in which district using the very prices the join exists
+      to divide by income — circular, and impossible to check.
+
+      Currently València only. Other cities need their own official district
+      lists before they can be added; a guessed row here silently corrupts every
+      affordability figure downstream.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [ine_district_code]
+    columns:
+      - name: ine_district_code
+        description: 7-digit INE code — 5-digit municipality plus 2-digit district.
+        tests: [not_null, unique]
+      - name: municipality
+        tests: [not_null]
+      - name: district
+        description: The name as it appears in int_listings_current.district.
+        tests: [not_null]
