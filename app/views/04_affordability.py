@@ -17,6 +17,7 @@ from config import (
     VALENCIA_AVG_NET_SALARY_MONTHLY,
 )
 from connection import query
+import pandas as pd
 import streamlit as st
 from theme import altair_chart, page_hero, section
 
@@ -126,7 +127,94 @@ with col_l:
 with col_r:
     altair_chart(bar_years_of_salary(hood_stats))
 
-# ── Buy vs Rent ───────────────────────────────────────────────────────────────
+# ── Against what the district actually earns ──────────────────────────────────
+# Everything above answers "can *I* afford this?" from the income in the sidebar.
+# This answers a different question the app could not previously ask at all: can
+# the people who already live there afford it? A barrio can be cheap because it
+# is a bargain or because nobody in it can pay more, and €/m² cannot tell those
+# apart. INE's household income is the denominator that can.
+st.markdown("")
+section("Priced against the people who live there")
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_district_income(muni):
+    return query(
+        "SELECT * FROM spanish_housing_radar.main_gold.rpt_district_affordability "
+        "WHERE ($m = 'all' OR municipality = $m) "
+        "AND operation_type = 'sale' AND property_type = 'apartment' "
+        "AND years_of_household_income IS NOT NULL "
+        "ORDER BY years_of_household_income DESC",
+        m=muni,
+    )
+
+
+try:
+    dist = load_district_income(muni)
+except Exception as exc:
+    dist = pd.DataFrame()
+    st.caption(f"District income is unavailable right now: {exc}")
+
+if dist.empty:
+    st.info(
+        "**No official income figures for this city's districts yet.** The mapping "
+        "from INE's numbered districts to the names used here exists for València "
+        "only — every other city needs its own official district list before its "
+        "figures can be trusted."
+    )
+else:
+    ref_year = int(dist["income_reference_year"].max())
+    st.markdown(
+        ":small[Years of **median household income** to buy the median flat outright, "
+        "ignoring financing entirely. The moment a mortgage rate enters, the number "
+        "stops describing the district and starts describing the borrower.]"
+    )
+    st.dataframe(
+        dist.assign(area=dist["district"].str.title())[[
+            "area", "listings", "median_price_eur", "median_ppsqm",
+            "net_income_per_household", "years_of_household_income",
+        ]],
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "area": st.column_config.TextColumn("District", pinned=True),
+            "listings": st.column_config.NumberColumn("Listings", format="%d"),
+            "median_price_eur": st.column_config.NumberColumn("Median price", format="€%,d"),
+            "median_ppsqm": st.column_config.NumberColumn("€/m²", format="€%,d"),
+            "net_income_per_household": st.column_config.NumberColumn(
+                "Household income", format="€%,d",
+                help=f"INE Atlas de Distribución de Renta, reference year {ref_year}.",
+            ),
+            "years_of_household_income": st.column_config.NumberColumn(
+                "Years to buy", format="%.1f",
+                help="Median asking price ÷ median net household income.",
+            ),
+        },
+    )
+
+    # The comparison that makes the point: the priciest per m² is not the least
+    # affordable, because the two are decoupled by income.
+    dearest = dist.loc[dist["median_ppsqm"].idxmax()]
+    hardest = dist.loc[dist["years_of_household_income"].idxmax()]
+    if dearest["district"] != hardest["district"]:
+        st.markdown(
+            f":small[**{dearest['district'].title()}** has the highest €/m² "
+            f"(€{dearest['median_ppsqm']:,.0f}) yet takes "
+            f"{dearest['years_of_household_income']:.1f} years of local income, while "
+            f"**{hardest['district'].title()}** is cheaper per m² "
+            f"(€{hardest['median_ppsqm']:,.0f}) and takes "
+            f"{hardest['years_of_household_income']:.1f}. Price and affordability are "
+            "not the same ranking — which is the whole reason this table exists.]"
+        )
+
+    st.caption(
+        f"Income: INE Atlas de Distribución de Renta de los Hogares, table 30824, "
+        f"reference year {ref_year} — published with a ~2-year lag, so it is the "
+        "latest official figure, not a current one. Prices are asking prices from "
+        "today's listings, so the ratio mixes two dates and reads as a direction, "
+        "not a precise multiple."
+    )
+
 st.markdown("")
 section("Buy vs rent")
 

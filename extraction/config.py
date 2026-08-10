@@ -193,4 +193,12 @@ INE_BASE_URL: str = os.getenv("INE_BASE_URL", "https://servicios.ine.es/wstempus
 INE_HPI_TABLE_ID: str = os.getenv("INE_HPI_TABLE_ID", "25171")
 INE_HPI_N_PERIODS: int = int(os.getenv("INE_HPI_N_PERIODS", "16"))  # ~4 years of quarters
 INE_HPI_RAW_TABLE: str = "raw.ine_hpi"
+# ADRH district income. Annual, so this refreshes about once a year in anger.
+INE_INCOME_RAW_TABLE: str = "raw.ine_income"
+# INE municipality codes we hold listings for, keyed by our own city slug. The
+# 64 MB ADRH export is filtered against these as it streams, which is what makes
+# a 3-million-row file tractable.
+INE_MUNICIPALITY_CODES: dict[str, str] = {
+    "valència": "46250",
+}
 INE_TIMEOUT_SECONDS: int = int(os.getenv("INE_TIMEOUT_SECONDS", "30"))
