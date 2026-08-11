@@ -155,9 +155,10 @@ listings share a point.
 Sevilla, Málaga. Listings elsewhere are scored but not mapped.
 
 **Price history is accumulated, never backfilled.** Days-on-market and price-cut
-counts come from comparing daily snapshots, so a listing seen once reads as "no
-signal yet" rather than a fabricated zero. Scraping is currently paused, which
-stops that clock.
+counts come from comparing snapshots, so a listing seen once reads as "no signal
+yet" rather than a fabricated zero. Valencia now has four snapshots since May, so
+its price evolution and seller-motivation signals are real; every other city has
+one or two, and reads as no signal.
 
 **The score says nothing about the flat itself** — no condition, floor, light,
 noise, or renovation state. It says a price is unusual for its market, which is
@@ -170,8 +171,9 @@ st.markdown(f"""
 - **dbt tests** on sources and models — `unique`, `not_null`, `accepted_values`,
   `accepted_range` — so a broken assumption fails the build instead of reaching this page.
 - **Source freshness thresholds** per table: the INE feed errors CI after 10 days of
-  staleness; the paused listings table warns without failing, because its staleness is
-  a known decision rather than a fault.
+  staleness; the listings table warns without failing, because scraping runs on a
+  metered budget rather than nightly, so its staleness is a known decision rather
+  than a fault.
 - **A contract on `rpt_opportunities`** — the model this app reads is a declared
   interface, so a column change breaks CI, not the dashboard.
 - **CI builds into isolated `ci_*` schemas**, never `main_*`, so a bad pull request

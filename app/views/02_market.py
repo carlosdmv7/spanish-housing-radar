@@ -212,8 +212,9 @@ if hist["scraped_date"].nunique() > 1:
     altair_chart(line_price_history(hist[hist["neighborhood"].isin(top_hoods)]))
 else:
     st.info(
-        "**Only one snapshot so far, so there is no trend to draw.** Price history is "
-        "accumulated, not backfilled — `int_listings_history` keeps every observation, "
-        "and this chart fills in once the pipeline has run on several days. Listing "
-        "scraping is currently paused, so the clock is stopped here on purpose."
+        "**Only one snapshot for this city, so there is no trend to draw.** Price "
+        "history is accumulated, not backfilled — `int_listings_history` keeps every "
+        "observation, and this chart fills in once the pipeline has scraped the same "
+        "city more than once. Valencia has four snapshots since May and does draw; "
+        "scraping runs on a metered credit budget, so depth arrives one city at a time."
     )

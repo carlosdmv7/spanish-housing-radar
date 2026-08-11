@@ -71,7 +71,8 @@ with st.sidebar:
         "Only motivated sellers",
         value=False,
         help="Keeps listings long on the market or with price cuts — a stronger "
-             "signal of a negotiable deal. Fills in as snapshot history accumulates.",
+             "signal of a negotiable deal. Needs a city scraped more than once, so "
+             "it is populated for Valencia and empty almost everywhere else.",
     )
 
 # ── Load data ─────────────────────────────────────────────────────────────────
