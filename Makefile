@@ -30,7 +30,7 @@ install: ## Sync the uv-managed venv (from uv.lock) + copy config templates
 
 .PHONY: dbt-deps
 dbt-deps: ## Install dbt packages (run once after install)
-	cd transform && $(DBT) deps
+	$(DBT) deps --project-dir transform
 
 # ── Extraction ─────────────────────────────────────────────────────────────────
 
@@ -65,35 +65,47 @@ ingest-ine-dry: ## Dry-run the INE feed — fetch + validate, no MotherDuck writ
 	$(PYTHON) -m extraction.run_ine --dry-run
 
 # ── dbt ────────────────────────────────────────────────────────────────────────
+# Always invoked from the repo root with --project-dir, never `cd transform`, and
+# that is not a style preference.
+#
+# dbt caches its parse in transform/target/partial_parse.msgpack, and the seed
+# paths it stores there are relative to the *invocation* directory. Mixing the two
+# forms means a cache written by one breaks the other: after any root-level run,
+# `cd transform && dbt build` looks for transform/seeds/*.csv from inside
+# transform/ and fails all three seeds with "No files found that match". It fails
+# on seeds only, so `make transform` still passes and the breakage surfaces at
+# deploy time.
+#
+# CI has always used --project-dir (see .github/workflows/ci.yml), so this also
+# makes the local command and the one that gates merges the same command.
+DBT_RUN := DBT_PROFILES_DIR=transform $(DBT)
+
 .PHONY: transform
 transform: ## Full dbt run: bronze → silver → gold
-	cd transform && $(DBT) run
+	$(DBT_RUN) run --project-dir transform
 
 .PHONY: transform-bronze
 transform-bronze: ## Bronze models only
-	cd transform && $(DBT) run --select bronze
+	$(DBT_RUN) run --project-dir transform --select bronze
 
 .PHONY: dbt-test
 dbt-test: ## Run all dbt tests
-	cd transform && $(DBT) test
+	$(DBT_RUN) test --project-dir transform
 
 .PHONY: transform-test
 transform-test: transform dbt-test ## dbt run + dbt test
 
 .PHONY: transform-full-refresh
 transform-full-refresh: ## Full dbt run with full-refresh (rebuilds all incrementals from scratch)
-	cd transform && $(DBT) run --full-refresh
+	$(DBT_RUN) run --project-dir transform --full-refresh
 
-# DBT_PROFILES_DIR=. forces dbt to read transform/profiles.yml (cwd), overriding
-# any DBT_PROFILES_DIR=./transform leaked from a sourced .env — which only makes
-# sense when run from the repo root, and breaks these cd-into-transform recipes.
 .PHONY: deploy-prod
 deploy-prod: ## Full dbt BUILD (seed+run+test) to PROD — rebuilds the live app's main_* tables
-	cd transform && DBT_PROFILES_DIR=. $(DBT) build --target prod
+	$(DBT_RUN) build --project-dir transform --target prod
 
 .PHONY: validate-ci
 validate-ci: ## Full dbt BUILD to the isolated ci_* sandbox (safe; DROP SCHEMA ci_* after)
-	cd transform && DBT_PROFILES_DIR=. $(DBT) build --target ci
+	$(DBT_RUN) build --project-dir transform --target ci
 
 # ── App ────────────────────────────────────────────────────────────────────────
 .PHONY: app
@@ -119,13 +131,17 @@ conn = duckdb.connect('md:spanish_housing_radar?motherduck_token=' + os.environ[
 rows = conn.execute(\"SELECT schema_name, table_name FROM duckdb_tables() WHERE database_name = current_database() AND schema_name = 'raw' ORDER BY table_name\").fetchall(); \
 [print(f'  raw.{r[1]:35s} → {conn.execute(f\"SELECT COUNT(*) FROM raw.{r[1]}\").fetchone()[0]:>6} rows') for r in rows] if rows else print('  No tables in raw schema yet — run make extract first')"
 
+# `.` and not a list of packages, to match `ruff check .` in CI exactly. Naming
+# two directories here made the local gate laxer than the one that blocks a
+# merge: orchestration/, shared/ and scripts/ were never linted locally, so the
+# first sign of a problem in them was a red PR.
 .PHONY: lint
-lint: ## Lint with ruff
-	$(CURDIR)/.venv/bin/ruff check extraction/ app/
+lint: ## Lint with ruff (same command CI runs)
+	$(CURDIR)/.venv/bin/ruff check .
 
 .PHONY: format
 format: ## Format with black
-	$(CURDIR)/.venv/bin/black extraction/ app/ --line-length 100
+	$(CURDIR)/.venv/bin/black extraction/ app/ orchestration/ shared/ --line-length 100
 
 .PHONY: pytest
 pytest: ## Run Python unit tests
