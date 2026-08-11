@@ -33,10 +33,15 @@ interactive Streamlit app — surfacing deals priced below their neighbourhood's
 
 </details>
 
-> **ℹ️ On the data:** listing scraping is paused (Scrapfly credits), but the pipeline is
+> **ℹ️ On the data:** the scheduled listing scrape is off by default, but the pipeline is
 > **not** frozen: a free, keyless **INE house-price-index** feed refreshes the warehouse on
-> a weekly cron, so the app keeps showing current official market context. Listing scraping
-> resumes by flipping one repo variable (`SCRAPFLY_ENABLED=true`) when credits return.
+> a weekly cron, so the app keeps showing current official market context. Scraping is
+> enabled by setting the repo variable `SCRAPFLY_ENABLED=true` — worth knowing what that
+> costs before you do, because Scrapfly bills a **flat 25 credits per search page**, which
+> makes the free monthly allowance exactly **40 pages**. The scheduled run is therefore
+> scoped to València by default (`SCRAPE_CITIES`, `SCRAPE_OPERATIONS`) rather than every
+> city: depth in one city produces barrio-level benchmarks, whereas one page each across
+> ten cities produces city-level fallbacks nobody can act on.
 > Every page carries a freshness header with the live figures, and the
 > **[How it works & data quality](https://spanish-housing-radar-carlosdmv7.streamlit.app/how-it-works)**
 > page states what this data can and cannot tell you.
