@@ -107,6 +107,13 @@ VALENCIA_AVG_NET_SALARY_MONTHLY: float = round(
 # borrower guidance, not a legal cap.
 AFFORDABILITY_RATIO_MAX:         float = 35.0
 
+# Housing-cost overburden: the share of disposable household income above which
+# Eurostat (and INE, which reports the same indicator for Spain) classes a
+# household as overburdened by housing. A statistical convention, not a rule any
+# lender applies — it describes households, whereas AFFORDABILITY_RATIO_MAX
+# above describes what a bank will underwrite.
+OVERBURDEN_PCT:                  float = 30.0
+
 # ── Source notes rendered in the app ──────────────────────────────────────────
 MORTGAGE_SOURCE_NOTE = (
     f"**Where these defaults come from** — Fixed rate {MORTGAGE_DEFAULT_RATE_FIXED:.2f}%: "
