@@ -21,6 +21,12 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 DBT_DOCS_URL = "https://carlosdmv7.github.io/spanish-housing-radar/"
 
+# How recently a listing must have been written for the scraper to count as
+# active. The scheduled run is weekly, so 14 days tolerates one missed run before
+# the strip starts saying so — short enough to be informative, long enough not to
+# cry wolf over ordinary cadence.
+SCRAPE_ACTIVE_DAYS = 14
+
 
 @st.cache_resource(ttl=3600)
 def _load_dbt_test_results() -> dict | None:
@@ -98,6 +104,7 @@ def get_freshness_strip() -> list[StripItem]:
     Returns a list of StripItems for app/theme.render_header().
     """
     items: list[StripItem] = []
+    listing_stale_days: int | None = None
 
     # ── Last ingest date ───────────────────────────────────────────────────
     try:
@@ -108,13 +115,15 @@ def get_freshness_strip() -> list[StripItem]:
         # DuckDB's DATE arrives as a pandas Timestamp, whose str() carries a
         # 00:00:00 that implies a precision the daily pipeline doesn't have.
         stale_days = (pd.Timestamp.today().normalize() - pd.Timestamp(last_ingest)).days
+        listing_stale_days = stale_days
         items.append(StripItem(
             label="last ingest",
             value=pd.Timestamp(last_ingest).date().isoformat(),
             tone="good" if stale_days <= 7 else "warn",
-            help=f"Most recent row written to the warehouse — {stale_days} days ago. "
-                 "Listing scraping is paused, so this date is expected to sit still; "
-                 "the INE market-context feed still refreshes weekly.",
+            help=f"Most recent listing written to the warehouse — {stale_days} days "
+                 "ago. Scraping runs on a metered credit budget rather than nightly, "
+                 "so this moves in steps; the INE market-context feed refreshes weekly "
+                 "regardless.",
         ))
     except Exception:
         items.append(StripItem(
@@ -220,16 +229,36 @@ def get_freshness_strip() -> list[StripItem]:
         ))
 
     # ── Scraping status ────────────────────────────────────────────────────
-    # This is hardcoded because scraping pauses at the orchestration layer
-    # (Prefect `SCRAPFLY_ENABLED=false`), not at the warehouse schema.
-    # The README announces it, and the header repeats it here for honesty.
-    items.append(StripItem(
-        label="scraping",
-        value="paused",
-        tone="warn",
-        help="Idealista extraction is on hold (Scrapfly credits). "
-             "INE feed runs weekly. Resume by setting SCRAPFLY_ENABLED=true.",
-    ))
+    # Derived, not hardcoded. This field said "paused" for as long as the string
+    # was in the file: it kept saying it on the day 240 València rentals landed,
+    # which is the failure mode of writing a live status by hand. The warehouse
+    # already knows when a listing was last written, so ask it.
+    if listing_stale_days is None:
+        items.append(StripItem(
+            label="scraping",
+            value="unknown",
+            tone="warn",
+            help="Could not read the last listing load, so the state of the "
+                 "scraper cannot be reported.",
+        ))
+    elif listing_stale_days <= SCRAPE_ACTIVE_DAYS:
+        items.append(StripItem(
+            label="scraping",
+            value="active",
+            tone="good",
+            help=f"Listings were last scraped {listing_stale_days} days ago. "
+                 "Scrapfly bills a flat 25 credits per search page, so runs are "
+                 "metered and scoped to one city at a time rather than nightly.",
+        ))
+    else:
+        items.append(StripItem(
+            label="scraping",
+            value=f"idle {listing_stale_days}d",
+            tone="warn",
+            help=f"No listing has been written for {listing_stale_days} days. The "
+                 "free INE market-context feed still refreshes weekly, so the app "
+                 "is not frozen — but the listings are as old as this says.",
+        ))
 
     return items
 
