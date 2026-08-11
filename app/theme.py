@@ -236,6 +236,27 @@ def page_hero(title: str, subtitle: str) -> None:
     st.markdown("")
 
 
+def lede(answer: str, detail: str = "") -> None:
+    """
+    The page's own question, answered in a sentence, before any control.
+
+    Every page here asks one question, and the honest place to put its answer is
+    the top — not four metrics the visitor has to reduce themselves. A number
+    like "median €4,982/m²" is an input to an answer, never the answer; this
+    renders the sentence that a person would actually say out loud.
+
+    `st.container(border=True)` rather than a coloured callout: `st.success` and
+    `st.error` carry a verdict this app is usually not entitled to make. The
+    mortgage page uses those because "you are €4,700 short" genuinely is pass or
+    fail; "Russafa is the priciest barrio" is neither.
+    """
+    with st.container(border=True):
+        st.markdown(f"#### {answer}")
+        if detail:
+            st.markdown(f":small[{_mark(detail, INK_MUTED)}]")
+    st.markdown("")
+
+
 def section(label: str) -> None:
     """Quiet uppercase label that breaks a page into scannable blocks."""
     st.markdown(f":small[**{_mark(label.upper(), INK_MUTED)}**]")
