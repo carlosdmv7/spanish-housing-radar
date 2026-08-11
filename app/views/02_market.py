@@ -1,5 +1,11 @@
 """
 Market — neighbourhood €/m² benchmarks, price spread, historical evolution.
+
+The page answers one question: *how much does a m² cost here, and how far apart
+are the barrios?* The spread is the part worth leading with — a city median is a
+number anyone can look up, whereas "the priciest barrio costs 2.3× the cheapest"
+is the thing that decides where to look, and it was previously left implicit in
+two `st.metric` labels the reader had to divide themselves.
 """
 from pathlib import Path
 import sys
@@ -12,10 +18,10 @@ from config import PROPERTY_TYPE_LABELS
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import altair_chart, page_hero, section
+from theme import altair_chart, lede, page_hero, section
 
 page_hero(
-    "Market Overview",
+    "What does a m² cost here?",
     "The benchmark every opportunity score is measured against: €/m² by "
     "neighbourhood, how wide the spread is, and where prices are heading.",
 )
@@ -62,8 +68,33 @@ if df.empty:
     )
     st.stop()
 
-# ── KPIs ──────────────────────────────────────────────────────────────────────
+# ── The answer ────────────────────────────────────────────────────────────────
+# df arrives sorted by median_ppsqm DESC (see queries/market.sql).
 unit = "€/m²" if op == "sale" else "€/m² rent"
+_place = "these cities" if muni == "all" else str(muni).title()
+
+top, bottom = df.iloc[0], df.iloc[-1]
+_median = df["median_ppsqm"].median()
+_ratio = top["median_ppsqm"] / bottom["median_ppsqm"] if bottom["median_ppsqm"] else None
+
+if len(df) > 1 and _ratio:
+    answer = (
+        f"In {_place}, the median barrio asks **€{_median:,.0f}/m²** — but "
+        f"{top['neighborhood'].title()} costs **{_ratio:.1f}×** what "
+        f"{bottom['neighborhood'].title()} does."
+    )
+else:
+    answer = f"In {_place}, the median barrio asks **€{_median:,.0f}/m²**."
+
+lede(
+    answer,
+    f"Across {len(df):,} barrio benchmarks "
+    f"(€{bottom['median_ppsqm']:,.0f}–€{top['median_ppsqm']:,.0f}/m²). Each is a "
+    "median of asking prices, so it tracks what sellers want rather than what "
+    "buyers paid — the INE index below is the transaction-based check on that.",
+)
+
+# ── KPIs ──────────────────────────────────────────────────────────────────────
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Neighbourhoods", len(df))
 c2.metric(f"Median {unit}", f"€{df['median_ppsqm'].median():,.0f}")

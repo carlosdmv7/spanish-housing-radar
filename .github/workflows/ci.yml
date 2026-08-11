@@ -47,7 +47,13 @@ jobs:
       - name: Pytest (app)
         run: uv run pytest app/ -v
         env:
-          MOTHERDUCK_TOKEN: unused-in-ci
+          # The real secret when it is available, so test_pages_render.py actually
+          # renders the six pages against the live warehouse — that check is the
+          # only thing standing between a broken view and production, and it is
+          # worthless against a fake token. Falls back to the placeholder on fork
+          # PRs, where secrets are withheld; the test skips itself there rather
+          # than failing on a credential it was never given.
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN || 'unused-in-ci' }}
 
   docker-build:
     name: Docker image builds

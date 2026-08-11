@@ -1,9 +1,11 @@
 """
 Opportunities — listings ranked by opportunity score, with filters, map and cards.
 
-The page is built so the *first* screen is already the answer: it loads with
-Valencia sale listings at full price range and shows the top ten straight away.
-A visitor who touches no filter still sees the product work.
+The page answers one question: *which flats are underpriced right now?* It loads
+with Valencia sale listings at full price range, so a visitor who touches no
+filter still sees the product work, and it names the single best deal in a
+sentence before showing any table. Four metrics are an input to that answer, not
+the answer — reducing them was work the page was leaving to the reader.
 """
 from pathlib import Path
 import sys
@@ -22,13 +24,14 @@ from components.listing_card import listing_card
 from components.map_view import listings_map
 from config import DEAL_TIER_LABELS
 from connection import query
+import pandas as pd
 import streamlit as st
-from theme import altair_chart, page_hero, section
+from theme import altair_chart, lede, page_hero, section
 
 TOP_N_DEFAULT = 10
 
 page_hero(
-    "Opportunities",
+    "Which flats are underpriced right now?",
     "Every listing is scored 0–100 against comparable flats — its own barrio when "
     "there are enough, otherwise its district or city. Higher means better deal.",
 )
@@ -122,11 +125,61 @@ if df.empty:
     )
     st.stop()
 
-# ── Summary metrics ───────────────────────────────────────────────────────────
 # Rent is quoted per month; a sale price is not. The euro sign stays in front
 # either way — the metric beside this one is "€4,982", and "940,000 €" next to it
 # put the same currency on both sides of the number in one row.
 per = "/mo" if op == "rent" else ""
+
+# ── The answer ────────────────────────────────────────────────────────────────
+# df arrives sorted by opportunity_score DESC (see queries/opportunities.sql), so
+# row zero is the best deal under the current filters.
+_GRAIN_WORDS = {
+    "neighbourhood": "its own barrio",
+    "district":      "its district",
+    "city":          "the city as a whole",
+}
+
+best = df.iloc[0]
+area = str(best["neighborhood"] or best["district"] or best["municipality"]).title()
+size = f"{best['size_sqm']:.0f} m² " if pd.notna(best["size_sqm"]) else ""
+grain = _GRAIN_WORDS.get(str(best["benchmark_level"]), str(best["benchmark_level"]))
+
+# ppsqm_vs_median is the absolute €/m² gap; as a share of the benchmark it becomes
+# the "how much cheaper" a person actually asks for.
+bench = best["neighborhood_median_ppsqm"]
+gap = best["ppsqm_vs_median"]
+if pd.notna(bench) and pd.notna(gap) and bench:
+    pct = gap / bench * 100
+    verdict = (
+        f"A {size}flat in {area} at €{best['price_eur']:,.0f}{per} — "
+        f"**{abs(pct):.0f}% {'below' if pct < 0 else 'above'}** the €/m² of {grain}."
+    )
+else:
+    verdict = f"A {size}flat in {area} at €{best['price_eur']:,.0f}{per} tops the ranking."
+
+comps = best["benchmark_comp_count"]
+# The listing card below warns whenever the benchmark fell back to a coarser
+# grain, but `low_confidence_flag` is only raised at *city* grain — so checking
+# the flag alone let the lede present a district-grain score without the caveat
+# its own card carried three lines further down.
+if bool(best["low_confidence_flag"]):
+    caveat = " Thin benchmark, so read it as a hint rather than a finding."
+elif str(best["benchmark_level"]) != "neighbourhood":
+    caveat = (
+        f" Too few comparables in {area} itself, so this is a wider comparison "
+        "than a barrio-level score."
+    )
+else:
+    caveat = ""
+lede(
+    verdict,
+    f"Best of {len(df):,} listings on screen. Scored {best['opportunity_score']:.0f}/100 "
+    f"against {int(comps) if pd.notna(comps) else 0} comparable flats in {grain}."
+    f"{caveat} These are asking prices: the score says a flat is cheap for its area, "
+    "never that the area is cheap.",
+)
+
+# ── Summary metrics ───────────────────────────────────────────────────────────
 great = int((df["deal_tier"] == "great_deal").sum())
 motivated = int(df["seller_motivation"].isin(["medium", "high"]).sum())
 barrio_grain = float((df["benchmark_level"] == "neighbourhood").mean() * 100)

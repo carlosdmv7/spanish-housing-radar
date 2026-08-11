@@ -50,7 +50,9 @@ DEFAULT_HEADERS: dict[str, str] = {
 
 # ── Scrapfly ──────────────────────────────────────────────────────────────────
 # Free tier: 1 000 credits/month. pip install scrapfly-sdk
-# Cost: ~1 credit per search page with asp=True
+# Cost: 25 credits per search page. ASP is billed at a flat rate whether or not
+# render_js is on, so the whole monthly budget is 40 pages ≈ 1 200 listings.
+# Measured, not estimated — see ADR-0001. Every page here is a budget decision.
 SCRAPFLY_ENABLED: bool = os.getenv("SCRAPFLY_ENABLED", "false").lower() == "true"
 SCRAPFLY_API_KEY: str = os.getenv("SCRAPFLY_API_KEY", "")
 SCRAPFLY_ASP: bool = os.getenv("SCRAPFLY_ASP", "true").lower() == "true"

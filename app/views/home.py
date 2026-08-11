@@ -1,5 +1,11 @@
 """
 Home — what the tool is, what's actually in the warehouse, and where to go next.
+
+The page answers one question: *what can this actually tell me?* The honest
+answer depends on depth, not on totals — a listing scored against its own barrio
+is worth far more than one scored against a whole city — so the lede leads with
+the share at barrio grain rather than with the row count, which is the flattering
+number and the less informative one.
 """
 from datetime import date
 from pathlib import Path
@@ -10,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import page_hero, section
+from theme import lede, page_hero, section
 
 page_hero(
     "Spanish Housing Radar",
@@ -18,6 +24,42 @@ page_hero(
     "scores every listing against comparable flats in its own barrio, so a cheap flat "
     "in an expensive area rises to the top.",
 )
+
+
+# ── What this can currently answer ────────────────────────────────────────────
+# Deliberately separate from the snapshot below and deliberately about grain. A
+# score computed against a whole city barely answers the question the app asks,
+# so quoting the total row count as the headline would overstate what is here.
+@st.cache_data(ttl=600)
+def load_grain():
+    return query("""
+        SELECT
+            municipality,
+            COUNT(*)                                                AS scored,
+            COUNT(*) FILTER (WHERE benchmark_level = 'neighbourhood') AS at_barrio
+        FROM spanish_housing_radar.main_gold.rpt_opportunities
+        GROUP BY 1
+    """)
+
+
+try:
+    grain = load_grain()
+    total_scored = int(grain["scored"].sum())
+    total_barrio = int(grain["at_barrio"].sum())
+    deepest = grain.sort_values("at_barrio", ascending=False).iloc[0]
+    lede(
+        f"**{total_barrio:,}** of {total_scored:,} listings are priced against their "
+        f"own barrio — deepest in **{str(deepest['municipality']).title()}**, with "
+        f"{int(deepest['at_barrio']):,}.",
+        "The rest fall back to their district or the whole city, which is a weaker "
+        "comparison and is labelled as such on every listing. Depth is the "
+        "constraint here, not coverage: one city scraped properly answers the "
+        "question that ten cities scraped thinly cannot.",
+    )
+except Exception:
+    # The snapshot below reports the connection failure in full; repeating it here
+    # would put the same error on screen twice.
+    pass
 
 # ── Live data snapshot ────────────────────────────────────────────────────────
 try:
