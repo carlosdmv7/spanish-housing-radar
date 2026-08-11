@@ -242,6 +242,9 @@ make docker-run                         # extract → dbt build inside the conta
 
 Full command list: `make help`.
 
+Branching, commit conventions and how data changes reach production:
+**[CONTRIBUTING.md](CONTRIBUTING.md)**.
+
 ---
 
 ## Roadmap
