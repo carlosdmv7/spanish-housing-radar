@@ -14,6 +14,7 @@ from config import (
     AFFORDABILITY_SOURCE_NOTE,
     MORTGAGE_DEFAULT_RATE_FIXED,
     MORTGAGE_DEFAULT_YEARS,
+    OVERBURDEN_PCT,
     VALENCIA_AVG_NET_SALARY_MONTHLY,
 )
 from connection import query
@@ -142,20 +143,34 @@ def load_district_income(muni):
     return query(
         "SELECT * FROM spanish_housing_radar.main_gold.rpt_district_affordability "
         "WHERE ($m = 'all' OR municipality = $m) "
-        "AND operation_type = 'sale' AND property_type = 'apartment' "
-        "AND years_of_household_income IS NOT NULL "
-        "ORDER BY years_of_household_income DESC",
+        "AND property_type = 'apartment'",
         m=muni,
     )
 
 
 try:
-    dist = load_district_income(muni)
+    dist_all = load_district_income(muni)
 except Exception as exc:
-    dist = pd.DataFrame()
+    dist_all = pd.DataFrame()
     st.caption(f"District income is unavailable right now: {exc}")
 
-if dist.empty:
+# The rent half of this table has existed in gold since the model was written and
+# nothing read it, because this page hard-coded operation_type = 'sale'. With 73
+# València rentals in the warehouse that was defensible; at 308 it is a column
+# going to waste, and it carries the harder finding of the two.
+if dist_all.empty:
+    dist = dist_rent = dist_all
+else:
+    dist = (
+        dist_all[dist_all["years_of_household_income"].notna()]
+        .sort_values("years_of_household_income", ascending=False)
+    )
+    dist_rent = (
+        dist_all[dist_all["rent_pct_of_household_income"].notna()]
+        .sort_values("rent_pct_of_household_income", ascending=False)
+    )
+
+if dist.empty and dist_rent.empty:
     st.info(
         "**No official income figures for this city's districts yet.** The mapping "
         "from INE's numbered districts to the names used here exists for València "
@@ -163,49 +178,108 @@ if dist.empty:
         "figures can be trusted."
     )
 else:
-    ref_year = int(dist["income_reference_year"].max())
-    st.markdown(
-        ":small[Years of **median household income** to buy the median flat outright, "
-        "ignoring financing entirely. The moment a mortgage rate enters, the number "
-        "stops describing the district and starts describing the borrower.]"
-    )
-    st.dataframe(
-        dist.assign(area=dist["district"].str.title())[[
-            "area", "listings", "median_price_eur", "median_ppsqm",
-            "net_income_per_household", "years_of_household_income",
-        ]],
-        width="stretch",
-        hide_index=True,
-        column_config={
-            "area": st.column_config.TextColumn("District", pinned=True),
-            "listings": st.column_config.NumberColumn("Listings", format="%d"),
-            "median_price_eur": st.column_config.NumberColumn("Median price", format="€%,d"),
-            "median_ppsqm": st.column_config.NumberColumn("€/m²", format="€%,d"),
-            "net_income_per_household": st.column_config.NumberColumn(
-                "Household income", format="€%,d",
-                help=f"INE Atlas de Distribución de Renta, reference year {ref_year}.",
-            ),
-            "years_of_household_income": st.column_config.NumberColumn(
-                "Years to buy", format="%.1f",
-                help="Median asking price ÷ median net household income.",
-            ),
-        },
-    )
+    ref_year = int(dist_all["income_reference_year"].max())
+    tab_buy, tab_rent = st.tabs(["To buy", "To rent"])
 
-    # The comparison that makes the point: the priciest per m² is not the least
-    # affordable, because the two are decoupled by income.
-    dearest = dist.loc[dist["median_ppsqm"].idxmax()]
-    hardest = dist.loc[dist["years_of_household_income"].idxmax()]
-    if dearest["district"] != hardest["district"]:
-        st.markdown(
-            f":small[**{dearest['district'].title()}** has the highest €/m² "
-            f"(€{dearest['median_ppsqm']:,.0f}) yet takes "
-            f"{dearest['years_of_household_income']:.1f} years of local income, while "
-            f"**{hardest['district'].title()}** is cheaper per m² "
-            f"(€{hardest['median_ppsqm']:,.0f}) and takes "
-            f"{hardest['years_of_household_income']:.1f}. Price and affordability are "
-            "not the same ranking — which is the whole reason this table exists.]"
-        )
+    with tab_buy:
+        if dist.empty:
+            st.info("**No sale listings in these districts yet.**")
+        else:
+            st.markdown(
+                ":small[Years of **median household income** to buy the median flat "
+                "outright, ignoring financing entirely. The moment a mortgage rate "
+                "enters, the number stops describing the district and starts "
+                "describing the borrower.]"
+            )
+            st.dataframe(
+                dist.assign(area=dist["district"].str.title())[[
+                    "area", "listings", "median_price_eur", "median_ppsqm",
+                    "net_income_per_household", "years_of_household_income",
+                ]],
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "area": st.column_config.TextColumn("District", pinned=True),
+                    "listings": st.column_config.NumberColumn("Listings", format="%d"),
+                    "median_price_eur": st.column_config.NumberColumn(
+                        "Median price", format="€%,d"),
+                    "median_ppsqm": st.column_config.NumberColumn("€/m²", format="€%,d"),
+                    "net_income_per_household": st.column_config.NumberColumn(
+                        "Household income", format="€%,d",
+                        help=f"INE Atlas de Distribución de Renta, reference year {ref_year}.",
+                    ),
+                    "years_of_household_income": st.column_config.NumberColumn(
+                        "Years to buy", format="%.1f",
+                        help="Median asking price ÷ median net household income.",
+                    ),
+                },
+            )
+
+            # The comparison that makes the point: the priciest per m² is not the
+            # least affordable, because the two are decoupled by income.
+            dearest = dist.loc[dist["median_ppsqm"].idxmax()]
+            hardest = dist.loc[dist["years_of_household_income"].idxmax()]
+            if dearest["district"] != hardest["district"]:
+                st.markdown(
+                    f":small[**{dearest['district'].title()}** has the highest €/m² "
+                    f"(€{dearest['median_ppsqm']:,.0f}) yet takes "
+                    f"{dearest['years_of_household_income']:.1f} years of local "
+                    f"income, while **{hardest['district'].title()}** is cheaper per "
+                    f"m² (€{hardest['median_ppsqm']:,.0f}) and takes "
+                    f"{hardest['years_of_household_income']:.1f}. Price and "
+                    "affordability are not the same ranking — which is the whole "
+                    "reason this table exists.]"
+                )
+
+    with tab_rent:
+        if dist_rent.empty:
+            st.info(
+                "**No rental listings in these districts yet.** This is the same "
+                "question asked of renting, and it needs rent scraped in the same "
+                "districts the income figures cover."
+            )
+        else:
+            st.markdown(
+                f":small[Share of **median net household income** the median asking "
+                f"rent consumes. Above **{OVERBURDEN_PCT:.0f}%** is the threshold "
+                "Eurostat and INE treat as housing-cost overburden.]"
+            )
+            over = dist_rent[dist_rent["rent_pct_of_household_income"] > OVERBURDEN_PCT]
+            if not over.empty:
+                st.warning(
+                    f"**{len(over)} of {len(dist_rent)} districts sit above the "
+                    f"{OVERBURDEN_PCT:.0f}% overburden line**, from "
+                    f"{over['rent_pct_of_household_income'].min():.0f}% to "
+                    f"{over['rent_pct_of_household_income'].max():.0f}%. Read that as "
+                    "the gap between the market and the residents, not as what "
+                    "households pay: these are asking rents for flats available "
+                    "today, while the income is the district's median across "
+                    "everyone — most of whom are not moving, and many of whom own."
+                )
+            st.dataframe(
+                dist_rent.assign(area=dist_rent["district"].str.title())[[
+                    "area", "listings", "median_price_eur", "median_ppsqm",
+                    "net_income_per_household", "rent_pct_of_household_income",
+                ]],
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "area": st.column_config.TextColumn("District", pinned=True),
+                    "listings": st.column_config.NumberColumn("Listings", format="%d"),
+                    "median_price_eur": st.column_config.NumberColumn(
+                        "Median rent", format="€%,d", help="Monthly asking rent."),
+                    "median_ppsqm": st.column_config.NumberColumn(
+                        "€/m²/mo", format="€%.1f"),
+                    "net_income_per_household": st.column_config.NumberColumn(
+                        "Household income", format="€%,d",
+                        help=f"INE Atlas de Distribución de Renta, reference year {ref_year}.",
+                    ),
+                    "rent_pct_of_household_income": st.column_config.ProgressColumn(
+                        "% of income", min_value=0, max_value=100, format="%.0f%%",
+                        help="Median asking rent × 12 ÷ median net household income.",
+                    ),
+                },
+            )
 
     st.caption(
         f"Income: INE Atlas de Distribución de Renta de los Hogares, table 30824, "
