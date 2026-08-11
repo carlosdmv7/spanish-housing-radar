@@ -50,9 +50,22 @@ jobs:
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
           SCRAPFLY_API_KEY: ${{ secrets.SCRAPFLY_API_KEY }}
-          # Listing scrape runs only when this repo variable is 'true' (set it once
-          # Scrapfly credits are back). Until then the run refreshes INE + dbt only.
+          # Listing scrape runs only when this repo variable is 'true'. Until then
+          # the run refreshes INE + dbt only.
           SCRAPFLY_ENABLED: ${{ vars.SCRAPFLY_ENABLED || 'false' }}
+          # Scrapfly bills a flat 25 credits per search page, so the free monthly
+          # allowance is 40 pages. These bound what one scheduled run may spend:
+          # València, sale + rent, 4 pages each = 200 credits, roughly one weekly
+          # run inside a 1 000-credit month with room for an ad-hoc scrape.
+          SCRAPE_CITIES: ${{ vars.SCRAPE_CITIES || 'valencia' }}
+          SCRAPE_OPERATIONS: ${{ vars.SCRAPE_OPERATIONS || 'sale,rent' }}
+          IDEALISTA_MAX_SEARCH_PAGES: ${{ vars.IDEALISTA_MAX_SEARCH_PAGES || '4' }}
+          IDEALISTA_MAX_LISTINGS: ${{ vars.IDEALISTA_MAX_LISTINGS || '150' }}
+          # The scraper enforces this ceiling per *process*, and the flow starts one
+          # process per operation — so this is 125 per operation, not 125 per run.
+          # Two operations puts the hard stop at 250 for the whole run, above the
+          # 200 the settings above should cost and below anything that would hurt.
+          SCRAPFLY_CREDIT_BUDGET: ${{ vars.SCRAPFLY_CREDIT_BUDGET || '125' }}
           # Reports this flow run to Prefect Cloud instead of spinning up an
           # ephemeral local server — gives a persistent UI/history across runs.
           PREFECT_API_KEY: ${{ secrets.PREFECT_API_KEY }}
