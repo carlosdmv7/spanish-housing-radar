@@ -39,7 +39,7 @@ RUN_RESULTS_PATH = PROJECT_ROOT / "transform" / "target" / "run_results.json"
 # Run by hand on a dev box it found no token, took the "we can't tell" branch and
 # wrote rows_in_warehouse: null over figures that were correct — and since the
 # portfolio's live strip reads exactly those fields, a local run silently made the
-# public page worse. Every other entry point (connection.py, daily_pipeline.py)
+# public page worse. Every other entry point (connection.py, flows/pipeline.py)
 # already loads .env; this one was the exception.
 try:
     from dotenv import load_dotenv

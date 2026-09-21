@@ -123,9 +123,10 @@ try:
     if not ctx.empty:
         section("Official market context · INE house-price index")
         st.markdown(
-            ":small[Transaction-based reality check (INE IPV, latest quarter). The "
-            "prices above are *asking* prices; this is where the market actually "
-            "cleared. Regional grain, so it reads direction, never a per-flat value.]"
+            ":small[Transaction-based reality check (INE IPV). The prices above are "
+            "*asking* prices; this is where the market actually cleared. Regional "
+            "grain, so it reads direction, never a per-flat value — and it is the "
+            "newest quarter in the warehouse, which is not the same as this quarter.]"
         )
         row = ctx.iloc[0] if muni != "all" else None
         if row is not None:
@@ -135,7 +136,29 @@ try:
             k2.metric("YoY · all housing", f"{row['hpi_yoy_general']:+.1f}%")
             sh = row["hpi_yoy_second_hand"]
             k3.metric("YoY · second-hand", f"{sh:+.1f}%" if pd.notna(sh) else "—")
-            st.markdown(f":small[Reference quarter: {row['latest_period']}]")
+            # This printed "2025-09-30 00:00:00" — a raw pandas Timestamp whose
+            # midnight implies a precision a quarterly index does not have, under a
+            # caption that said "latest quarter" and left the reader to assume it
+            # meant the current one. It did not: the figures above were four
+            # quarters old. The quarter is now named, and its age stated, because a
+            # YoY number read as current when it is a year old is worse than no
+            # number.
+            period = pd.Timestamp(row["latest_period"])
+            months_behind = (
+                (pd.Timestamp.today().year - period.year) * 12
+                + pd.Timestamp.today().month - period.month
+            )
+            age = (
+                f" — **{months_behind} months** behind today"
+                if months_behind >= 9
+                else f" — {months_behind} months behind today"
+            )
+            st.markdown(
+                f":small[Reference quarter: **Q{period.quarter} {period.year}** "
+                f"(quarter ending {period.date().isoformat()}){age}. The IPV is "
+                "published about a quarter in arrears, so some lag is normal; this "
+                "is the newest quarter INE has released into the warehouse.]"
+            )
         else:
             st.dataframe(
                 ctx.assign(region_name=ctx["region"].str.title())
@@ -215,6 +238,6 @@ else:
         "**Only one snapshot for this city, so there is no trend to draw.** Price "
         "history is accumulated, not backfilled — `int_listings_history` keeps every "
         "observation, and this chart fills in once the pipeline has scraped the same "
-        "city more than once. Valencia has four snapshots since May and does draw; "
-        "scraping runs on a metered credit budget, so depth arrives one city at a time."
+        "city more than once. València has been revisited and does draw; scraping "
+        "runs on a metered credit budget, so depth arrives one city at a time."
     )

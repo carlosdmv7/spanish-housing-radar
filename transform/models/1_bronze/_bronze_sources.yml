@@ -8,18 +8,22 @@ sources:
       Append-only raw tables written by the extraction pipeline.
       Never modified after insert — every scraping run adds new rows.
 
-    # Default freshness is overridden per table below. See ADR-0003 and the
-    # README's "scraping is paused" note for why idealista stays warn-only while
-    # ine_hpi fails the build when stale.
+    # Default freshness is overridden per table below: each feed's staleness
+    # means something different, so one global threshold would force a choice
+    # between a permanently red build and no gate at all. Read each table's own
+    # description for what its threshold is actually watching — and note that
+    # every threshold here measures LOAD time, never data currency.
     loaded_at_field: _loaded_at
 
     tables:
       - name: idealista_listings
         description: >
           Raw listings scraped from idealista.com, one row per listing per run.
-          **Note:** scraping is paused (Scrapfly credits). This table will not
-          update until credits return. The freshness threshold is warn-only so CI
-          stays green; the freshness header shows "paused" to be transparent.
+          The scheduled scrape runs only when the repo variable SCRAPFLY_ENABLED
+          is 'true', because Scrapfly bills a flat 25 credits per search page.
+          The freshness threshold is warn-only so a metered scrape cannot turn CI
+          red; the app's freshness header derives "active" or "idle N days" from
+          this table's own latest row rather than asserting a state by hand.
         freshness:
           warn_after: {count: 30, period: day}
           # No error_after; we knowingly let this table age without failing the build.
@@ -52,8 +56,16 @@ sources:
           Official INE house-price index (IPV) by autonomous community, quarterly
           (base 2015=100). Free Tempus3 API feed — grounds scraped asking prices
           against transaction-based reality. One row per series × quarter.
-          **This feed is actively maintained.** Freshness failures on this table
-          will fail the build — a broken CI gate that catches a stalled pipeline.
+
+          **What this threshold does and does not catch.** The loader replaces
+          the whole table on every run, stamping a new `_loaded_at` on every row,
+          so this gate detects a loader that has *stopped running* and nothing
+          else. It cannot detect a feed that runs perfectly while the data inside
+          it stands still — and that is the live state: the newest quarter here
+          is well over a year old while this check returns a green PASS. Data
+          currency is a separate assertion,
+          `tests/assert_ine_hpi_period_is_current.sql`, which warns on
+          `period_date` rather than on load time.
         freshness:
           warn_after: {count: 7, period: day}
           error_after: {count: 10, period: day}
