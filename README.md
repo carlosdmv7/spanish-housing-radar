@@ -93,7 +93,7 @@ flowchart LR
     NE -->|"idempotent upsert"| RAW
     RAW --> BRONZE --> SILVER --> GOLD --> APP
 
-    ORCH["⏱️ Prefect<br/>daily schedule + retries"]
+    ORCH["⏱️ Prefect<br/>scheduled + retries"]
     CI["🧪 GitHub Actions<br/>lint + tests + dbt build"]
     ORCH -.orchestrates.-> PY
     ORCH -.orchestrates.-> GOLD
@@ -108,7 +108,7 @@ flowchart LR
 | **Market context** | INE Tempus3 JSON API | Free, keyless feed of the official house-price index (IPV) — grounds asking prices against transaction-based reality; runs even while scraping is parked |
 | **Warehouse** | MotherDuck (DuckDB in the cloud) | Cheap, serverless, zero-ops analytical store |
 | **Transformation** | dbt Core (Medallion: bronze → silver → gold) | Tested, documented, lineage-tracked SQL models |
-| **Orchestration** | Prefect | `extract → dbt build` flow with task-level retries + structured logging, triggered daily by a GitHub Actions cron (`.github/workflows/daily_pipeline.yml`) |
+| **Orchestration** | Prefect | `extract → dbt build` flow with task-level retries + structured logging, triggered weekly by a GitHub Actions cron (`.github/workflows/pipeline.yml`) |
 | **CI/CD** | GitHub Actions | Ruff + pytest + `dbt build` against an isolated `ci_*` schema on every PR (`.github/workflows/ci.yml`) |
 | **Serving** | Streamlit · Altair · pydeck | 5-page interactive analytical app; charts inherit one brand theme, no CSS injection |
 
@@ -194,7 +194,7 @@ anywhere, so a Streamlit upgrade can't silently break the look.
   to −3 → **score 100 → "great deal"** — the pipeline's most confident verdict from its least
   evidence. The z-score is coalesced to 0 (score 50) instead.
 - **Snapshot history as a first-class table.** `int_listings_history` keeps every observation so
-  price-evolution is real (accumulated daily) rather than reconstructed.
+  price-evolution is real (accumulated one scrape at a time) rather than reconstructed.
 - **Per-table source freshness, not one global threshold.** The INE feed is production-critical and
   fails CI after 10 days of staleness; the paused listings table warns without failing, because its
   staleness is a recorded decision rather than a fault. One global threshold would have forced a
@@ -255,7 +255,7 @@ Branching, commit conventions and how data changes reach production:
 ## Roadmap
 
 - [x] **Prefect** flow orchestrating `extract → dbt build`, with task-level retries
-- [x] **GitHub Actions** CI: lint + `pytest` + `dbt build` on every PR; daily scheduled pipeline run
+- [x] **GitHub Actions** CI: lint + `pytest` + `dbt build` on every PR; weekly scheduled pipeline run
 - [x] `pytest` unit tests for the `_parse_location()` heuristic, orchestration flow, and mortgage math
 - [x] **Hierarchical opportunity score** (neighbourhood → district → city fallback) so the score is
       meaningful even where a barrio is sparse
@@ -281,7 +281,7 @@ Branching, commit conventions and how data changes reach production:
 
 1. **Data volume is still growing.** Most listings currently benchmark against the **city** grain
    (`benchmark_level`); barrios flip to local benchmarks as they accumulate ≥ 8 comparables. The fix
-   is sustained scraping + daily runs, not lowering the threshold.
+   is sustained scraping, not lowering the threshold.
 2. **Geocoding is barrio-centroid level** (Valencia, Madrid, Barcelona, Sevilla, Málaga) — listings
    plot at their neighbourhood's centroid, not their exact address (search-card scraping doesn't
    expose per-listing coordinates). Zaragoza/Valladolid/Bilbao have no centroids yet.

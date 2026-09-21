@@ -1,13 +1,19 @@
 """
-Daily pipeline: extract → dbt build, orchestrated with Prefect.
+The refresh pipeline: extract → dbt build, orchestrated with Prefect.
 
 Run once, ad hoc:
-    python -m orchestration.flows.daily_pipeline
+    python -m orchestration.flows.pipeline
 
 Run on a schedule:
-    See .github/workflows/daily_pipeline.yml — a GitHub Actions cron triggers
-    this flow daily; Prefect itself only provides task structure (retries,
-    logging, dependency ordering), not the scheduler.
+    See .github/workflows/pipeline.yml — a GitHub Actions cron triggers this
+    flow; Prefect itself only provides task structure (retries, logging,
+    dependency ordering), not the scheduler.
+
+This module is deliberately NOT named after its cadence. It was
+`daily_pipeline.py` while the cron ran weekly, which is how a filename ends up
+asserting something the repository contradicts — and the cadence is expected to
+move again (back to daily once listing scraping resumes, per the workflow). The
+schedule owns the cadence; the flow is just the flow.
 """
 from __future__ import annotations
 
@@ -114,8 +120,13 @@ def dbt_build(target: str = "prod") -> None:
     )
 
 
+# The Prefect Cloud flow name keeps the word "daily" on purpose: it is the key
+# this flow's whole run history is filed under in the Cloud UI, and renaming it
+# starts an empty flow beside the old one rather than moving anything. A stale
+# word in an external identifier costs less than throwing away the run history
+# that identifier exists to accumulate.
 @flow(name="spanish-housing-radar-daily")
-def daily_pipeline(dbt_target: str = "prod", scrape: bool | None = None) -> None:
+def run_pipeline(dbt_target: str = "prod", scrape: bool | None = None) -> None:
     """
     Refresh pipeline: ingest official market data (always, free), scrape fresh
     listings (only when Scrapfly credits are available), then rebuild the medallion.
@@ -153,4 +164,4 @@ def daily_pipeline(dbt_target: str = "prod", scrape: bool | None = None) -> None
 
 
 if __name__ == "__main__":
-    daily_pipeline()
+    run_pipeline()

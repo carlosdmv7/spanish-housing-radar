@@ -1,5 +1,5 @@
 # Spanish Housing Radar — pipeline image.
-# Runs the Prefect daily flow (extract → dbt build) in a reproducible environment.
+# Runs the Prefect refresh flow (extract → dbt build) in a reproducible environment.
 #
 #   docker build -t housing-radar .
 #   docker run --rm --env-file .env housing-radar                                  # full pipeline
@@ -42,4 +42,4 @@ USER pipeline
 
 ENV DBT_PROFILES_DIR=/pipeline/transform
 
-ENTRYPOINT ["python", "-m", "orchestration.flows.daily_pipeline"]
+ENTRYPOINT ["python", "-m", "orchestration.flows.pipeline"]
