@@ -95,30 +95,40 @@ def _utc_now_iso() -> str:
     return _as_utc_z(datetime.now(tz=UTC))
 
 
-def read_dbt_test_results() -> tuple[int | None, int | None]:
+def read_dbt_test_results() -> tuple[int | None, int | None, int | None]:
     """
-    Return (passed, total) dbt test counts from run_results.json.
+    Return (passed, warned, total) dbt test counts from run_results.json.
 
-    (None, None) when the artifact is missing or unparseable — which is the
+    (None, None, None) when the artifact is missing or unparseable — which is the
     normal case for a run that failed before `dbt build` ever executed.
+
+    `warned` is counted separately because a dbt test configured
+    `severity: warn` reports status "warn", and folding that into "not passed"
+    would publish 103/104 for a build in which nothing is broken. The app and
+    the portfolio strip both read these fields to tell a visitor whether the data
+    can be trusted, and an advisory rendered as a failure is a false alarm on the
+    most prominent number on the page. A warning is not a failure; it is also not
+    a pass, so it gets its own field rather than being quietly absorbed by either.
     """
     if not RUN_RESULTS_PATH.exists():
-        return None, None
+        return None, None, None
     try:
         data = json.loads(RUN_RESULTS_PATH.read_text())
     except (OSError, json.JSONDecodeError):
-        return None, None
+        return None, None, None
 
     # run_results.json holds every executed node; test nodes are the ones whose
-    # unique_id is prefixed `test.`. Models report "success", tests "pass".
+    # unique_id is prefixed `test.`. Models report "success", tests "pass",
+    # "warn", "fail" or "error".
     tests = [
         r for r in data.get("results", [])
         if str(r.get("unique_id", "")).startswith("test.")
     ]
     if not tests:
-        return None, None
+        return None, None, None
     passed = sum(1 for r in tests if r.get("status") == "pass")
-    return passed, len(tests)
+    warned = sum(1 for r in tests if r.get("status") == "warn")
+    return passed, warned, len(tests)
 
 
 def query_warehouse() -> tuple[int | None, str | None]:
@@ -152,7 +162,7 @@ def query_warehouse() -> tuple[int | None, str | None]:
 
 def build_status() -> dict[str, Any]:
     rows, last_ingest_at = query_warehouse()
-    tests_passed, tests_total = read_dbt_test_results()
+    tests_passed, tests_warned, tests_total = read_dbt_test_results()
 
     return {
         "project": PROJECT_NAME,
@@ -160,6 +170,10 @@ def build_status() -> dict[str, Any]:
         "last_ingest_at": last_ingest_at,
         "rows_in_warehouse": rows,
         "dbt_tests_passed": tests_passed,
+        # Additive field: existing consumers that read passed/total keep working
+        # untouched, and anything that wants to tell an advisory apart from a
+        # broken assertion now can.
+        "dbt_tests_warned": tests_warned,
         "dbt_tests_total": tests_total,
         # Set by the workflow from `job.status`; "unknown" when run by hand.
         "last_run_conclusion": os.environ.get("RUN_CONCLUSION", "unknown"),
