@@ -33,26 +33,23 @@ jobs:
       - name: Ruff lint
         run: uv run ruff check .
 
-      - name: Pytest (extraction + orchestration)
-        run: uv run pytest extraction/ orchestration/ -v
-        env:
-          # extraction/config.py requires this at import time even though
-          # these tests never touch MotherDuck — any non-empty value works.
-          MOTHERDUCK_TOKEN: unused-in-ci
-
-      # Run app tests separately: app/, extraction/ and orchestration/ each have a
-      # `tests` package, and pytest's import mode can't load three same-named
-      # packages in one invocation (it also avoids an app/config vs extraction/config
-      # module-name clash).
-      - name: Pytest (app)
-        run: uv run pytest app/ -v
+      # One invocation over the whole repo. This used to be two, because app/,
+      # extraction/ and orchestration/ each hold a package named `tests` and
+      # pytest's default import mode makes all three claim the same top-level
+      # module name. pyproject now sets --import-mode=importlib, which imports
+      # each module by path, so the split is gone and this is character-for-
+      # character the command CONTRIBUTING tells a contributor to run locally.
+      - name: Pytest
+        run: uv run pytest -v
         env:
           # The real secret when it is available, so test_pages_render.py actually
           # renders the six pages against the live warehouse — that check is the
           # only thing standing between a broken view and production, and it is
           # worthless against a fake token. Falls back to the placeholder on fork
-          # PRs, where secrets are withheld; the test skips itself there rather
-          # than failing on a credential it was never given.
+          # PRs, where secrets are withheld; the page tests skip themselves there
+          # rather than failing on a credential they were never given, while
+          # extraction/config.py still gets the non-empty value it demands at
+          # import time.
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN || 'unused-in-ci' }}
 
   docker-build:

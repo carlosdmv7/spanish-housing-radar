@@ -19,8 +19,11 @@ endif
 .PHONY: install
 install: ## Sync the uv-managed venv (from uv.lock) + copy config templates
 	uv sync
-	@test -f .env          || cp .env.example .env          && echo "  created .env"
-	@test -f transform/profiles.yml || cp transform/profiles.yml.example transform/profiles.yml && echo "  created transform/profiles.yml"
+	@if [ ! -f .env ]; then cp .env.example .env; echo "  created .env"; fi
+	@if [ ! -f transform/profiles.yml ]; then \
+		cp transform/profiles.yml.example transform/profiles.yml; \
+		echo "  created transform/profiles.yml"; \
+	fi
 	@echo ""
 	@echo "✅  Done! Next steps:"
 	@echo "   1. Edit .env → add MOTHERDUCK_TOKEN and SCRAPFLY_API_KEY"
@@ -143,10 +146,14 @@ lint: ## Lint with ruff (same command CI runs)
 format: ## Format with black
 	$(CURDIR)/.venv/bin/black extraction/ app/ orchestration/ shared/ --line-length 100
 
+# One invocation over the whole repo, same as CI and same as the bare `pytest`
+# CONTRIBUTING tells you to run. It used to be two because three packages named
+# `tests` collided under pytest's default import mode; pyproject now sets
+# --import-mode=importlib, so the split is no longer needed and the local gate,
+# the documented gate and the merge gate are finally the same command.
 .PHONY: pytest
 pytest: ## Run Python unit tests
-	$(CURDIR)/.venv/bin/pytest extraction/ orchestration/ -v
-	$(CURDIR)/.venv/bin/pytest app/ -v
+	$(CURDIR)/.venv/bin/pytest -v
 
 .PHONY: docker-build
 docker-build: ## Build the pipeline Docker image

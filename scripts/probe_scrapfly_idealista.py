@@ -1,4 +1,19 @@
-# scrpts/test_scrapfly_idealista.py
+"""
+One-shot Scrapfly probe: fetch a single Idealista search page and report what
+came back — HTML length, the credits it cost, credits remaining, and whether the
+response is real listings or an anti-bot challenge.
+
+    python scripts/probe_scrapfly_idealista.py
+
+**This spends real money.** Idealista needs Scrapfly's anti-bot protection,
+which is billed at a flat 25 credits per request — 2.5% of the 1,000-credit free
+month for one run. See docs/adr/0001-search-card-scraping.md.
+
+It was called `test_scrapfly_idealista.py` until it wasn't: the name matched
+pytest's default collection pattern, and everything here runs at import time, so
+any bare `pytest` that reached scripts/ would have billed a live scrape. Renamed
+to `probe_` so no test runner will ever pick it up again.
+"""
 from __future__ import annotations
 
 from pathlib import Path

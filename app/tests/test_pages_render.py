@@ -53,11 +53,36 @@ BROKEN = re.compile(
     re.IGNORECASE,
 )
 
-# CI hands the other app tests a placeholder token, because extraction/config.py
-# demands *something* at import time. Treating that placeholder as a real
-# credential would turn this check red on every fork PR for a reason that has
-# nothing to do with the code under review.
-_PLACEHOLDER_TOKENS = {"", "unused-in-ci"}
+
+def _template_token() -> str | None:
+    """
+    The placeholder `.env.example` ships, read from the file itself.
+
+    Hardcoding the list of non-credentials is how this check went red on a fresh
+    clone: `make install` copies `.env.example` to `.env`, that template carries
+    `MOTHERDUCK_TOKEN=your-motherduck-token-here`, and the set below listed only
+    the two placeholders CI happened to use. So the first thing a new contributor
+    ran after a successful install was a suite with four failures that said
+    nothing about their machine or their code. Reading the value out of the
+    template means the two can never disagree again — change the template and
+    this follows.
+    """
+    example = REPO_ROOT / ".env.example"
+    if not example.exists():
+        return None
+    for line in example.read_text().splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key.strip() == "MOTHERDUCK_TOKEN":
+            return value.strip().strip("\"'")
+    return None
+
+
+# A token that is not a credential means "no warehouse to test against", which is
+# a skip, not a failure: CI hands the non-app tests `unused-in-ci` because
+# extraction/config.py demands *something* at import time, fork PRs get nothing
+# at all, and a fresh clone gets the template's placeholder. None of those are a
+# broken view, which is the only thing this file exists to catch.
+_PLACEHOLDER_TOKENS = {"", "unused-in-ci", _template_token()} - {None}
 
 pytestmark = pytest.mark.skipif(
     os.getenv("MOTHERDUCK_TOKEN", "") in _PLACEHOLDER_TOKENS,
