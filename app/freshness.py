@@ -86,8 +86,13 @@ def _load_committed_status() -> dict | None:
         # on the read side too, or "couldn't tell" renders as "0/0 passing".
         if not isinstance(passed, int) or not isinstance(total, int) or total == 0:
             return None
+        # Added after `severity: warn` entered the project. Absent or null in a
+        # status file written before that, which reads as 0 — correct for those
+        # runs, since no test could warn.
+        warned = data.get("dbt_tests_warned")
         return {
             "pass": passed,
+            "warn": warned if isinstance(warned, int) else 0,
             "total": total,
             "generated_at": str(data.get("generated_at") or "")[:10],
             "conclusion": data.get("last_run_conclusion") or "unknown",
@@ -198,8 +203,19 @@ def get_freshness_strip() -> list[StripItem]:
         # The deployed app's normal path: no local dbt artifact, but the last
         # pipeline run committed its own verdict. Say which run it was and when,
         # so the number is attributable rather than merely present.
-        broken = committed["total"] - committed["pass"]
+        # A warned test is neither passing nor broken, and folding it into
+        # "not passed" put "103/104 passing" in the header of a build where
+        # nothing was wrong — a false alarm on the most prominent number the
+        # page carries. Advisories are counted out of `broken` and said out loud
+        # instead.
+        warned = committed["warn"]
+        broken = committed["total"] - committed["pass"] - warned
         conclusion = committed["conclusion"]
+        advisory = (
+            f" {warned} test{'s' if warned > 1 else ''} raised an advisory warning, "
+            "which is a flag to read rather than something broken."
+            if warned else ""
+        )
         items.append(StripItem(
             label="dbt tests",
             value=f"{committed['pass']}/{committed['total']} passing",
@@ -207,7 +223,7 @@ def get_freshness_strip() -> list[StripItem]:
             help="Data-quality tests on sources and models (unique, not_null, "
                  "accepted_values, accepted_range), as recorded by the pipeline run "
                  f"of {committed['generated_at'] or 'an unknown date'} "
-                 f"(outcome: {conclusion}). Full results at {DBT_DOCS_URL}.",
+                 f"(outcome: {conclusion}).{advisory} Full results at {DBT_DOCS_URL}.",
         ))
     elif results is None:
         items.append(StripItem(
