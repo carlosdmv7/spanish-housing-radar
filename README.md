@@ -34,8 +34,12 @@ interactive Streamlit app — surfacing deals priced below their neighbourhood's
 </details>
 
 > **ℹ️ On the data:** the scheduled listing scrape is off by default, but the pipeline is
-> **not** frozen: a free, keyless **INE house-price-index** feed refreshes the warehouse on
-> a weekly cron, so the app keeps showing current official market context. Scraping is
+> **not** frozen: a free, keyless **INE house-price-index** feed reloads the warehouse on
+> a weekly cron, so the build stays live and tested without spending a credit. That keeps the
+> *pipeline* current, which is not the same as keeping the *data* current — the IPV is
+> quarterly and published in arrears, and the newest quarter INE has released is presently
+> four quarters back. The Market page names that quarter and states its age rather than
+> letting a YoY figure read as today's. Scraping is
 > enabled by setting the repo variable `SCRAPFLY_ENABLED=true` — worth knowing what that
 > costs before you do, because Scrapfly bills a **flat 25 credits per search page**, which
 > makes the free monthly allowance exactly **40 pages**. The scheduled run is therefore
@@ -84,7 +88,7 @@ flowchart LR
         GOLD["facts + reports<br/>(3_gold)"]
     end
 
-    APP["Streamlit app<br/>5 pages"]
+    APP["Streamlit app<br/>6 pages"]
 
     I --> SC --> PY
     F -.-> SC
@@ -110,7 +114,7 @@ flowchart LR
 | **Transformation** | dbt Core (Medallion: bronze → silver → gold) | Tested, documented, lineage-tracked SQL models |
 | **Orchestration** | Prefect | `extract → dbt build` flow with task-level retries + structured logging, triggered weekly by a GitHub Actions cron (`.github/workflows/pipeline.yml`) |
 | **CI/CD** | GitHub Actions | Ruff + pytest + `dbt build` against an isolated `ci_*` schema on every PR (`.github/workflows/ci.yml`) |
-| **Serving** | Streamlit · Altair · pydeck | 5-page interactive analytical app; charts inherit one brand theme, no CSS injection |
+| **Serving** | Streamlit · Altair · pydeck | 6-page interactive analytical app; charts inherit one brand theme, no CSS injection |
 
 ---
 
@@ -144,11 +148,15 @@ thin city grain are flagged `low_confidence` and **surfaced with a warning rathe
 
 ```
 1_bronze   stg_idealista__listings · stg_fotocasa__listings        (sources + light typing)
+           stg_ine__hpi · stg_ine__income                          (the two official feeds)
 2_silver   int_listings_unioned → int_listings_current             (latest snapshot per listing)
                                  → int_listings_history             (all snapshots, for trends)
            int_neighborhood_stats · dim_neighborhoods              (benchmarks + dimension)
+           int_listing_lifecycle                                   (days-on-market, price cuts)
+           int_market_context · int_district_income                (INE, resolved to joinable grains)
 3_gold     fct_listings_scored                                     (the scoring fact table)
            rpt_opportunities                                       (consumption view for the app)
+           rpt_market_context · rpt_district_affordability         (market direction + income)
 ```
 
 Every model carries a **grain declaration**, column descriptions, and tests
@@ -163,7 +171,7 @@ loudly when an assumption breaks. See [`transform/models/`](transform/models/).
 |---|---|
 | **Opportunities** | Where are the under-priced listings right now? Ranked by score, with deal-tier breakdown and map. |
 | **Market** | What's the €/m² benchmark by neighbourhood, and how is it evolving? |
-| **Mortgage** | Fixed vs variable French-amortisation simulator. |
+| **Mortgage** | What buying actually costs: transfer tax and fees on signing day, fixed vs variable vs stressed amortisation, what the bank's tie-ins are really worth, and buy-versus-rent-and-invest. |
 | **Affordability** | What income does each neighbourhood require? Buy-vs-rent comparison. |
 | **How it works** | Where the numbers come from, how the score is computed, and what this data cannot tell you. |
 
@@ -196,9 +204,16 @@ anywhere, so a Streamlit upgrade can't silently break the look.
 - **Snapshot history as a first-class table.** `int_listings_history` keeps every observation so
   price-evolution is real (accumulated one scrape at a time) rather than reconstructed.
 - **Per-table source freshness, not one global threshold.** The INE feed is production-critical and
-  fails CI after 10 days of staleness; the paused listings table warns without failing, because its
+  fails CI after 10 days of staleness; the metered listings table warns without failing, because its
   staleness is a recorded decision rather than a fault. One global threshold would have forced a
   choice between a permanently red build and no freshness gate at all.
+- **Load freshness and data freshness are different questions, so they are different checks.**
+  `dbt source freshness` measures `_loaded_at`, and the INE loader rewrites every row each week —
+  so that gate returns a green PASS however old the index inside the table is, and it did, for a
+  year. It catches a cron that died and nothing else. `assert_ine_hpi_period_is_current` watches
+  `period_date` instead and **warns** when the newest quarter falls further behind than a
+  publication gap explains. Warn, not error: whether the IPV advances is INE's business, and a red
+  build would assert a fault in code that is working correctly.
 
 ### Key decisions (ADRs)
 
@@ -293,6 +308,10 @@ Branching, commit conventions and how data changes reach production:
 5. **INE context is autonomous-community grain**, not per-listing. The IPV is an official
    *regional* transaction-price index (quarterly), so it grounds *market direction* honestly;
    it is deliberately not presented as a per-flat "fair price" (that would be an AVM — future work).
+6. **The IPV is currently four quarters behind.** The feed reloads weekly and the newest quarter
+   INE has published into it is 2025 Q3. That is a property of the source, not of this pipeline,
+   but it is the app's job to say so: the Market page names the reference quarter and its age, and
+   `assert_ine_hpi_period_is_current` warns in every build until it advances.
 
 ---
 
