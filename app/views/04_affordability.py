@@ -22,6 +22,12 @@ import pandas as pd
 import streamlit as st
 from theme import altair_chart, page_hero, section
 
+# transform/dbt_project.yml → vars.min_listings_for_area_stat. Same threshold the
+# warehouse applies when it stamps rpt_district_affordability.low_sample_flag, so
+# the barrio figures this page computes itself and the district figures it reads
+# from gold disagree about nothing.
+MIN_LISTINGS = 8
+
 # Every other page hero is the question that page answers — that was the point of
 # the one-question-per-page pass. This one kept a noun and sat there as the odd
 # one out in the sidebar. It asks two things, so the hero has to cover both: what
@@ -106,16 +112,40 @@ hood_stats["required_income"] = hood_stats["median_price"].apply(
 )
 hood_stats["affordable"] = hood_stats["required_income"] <= net_income
 hood_stats["years_of_salary"] = hood_stats["median_price"] / (net_income * 12)
+hood_stats["low_sample"] = hood_stats["listings"] < MIN_LISTINGS
+
+# The opportunity score refuses to benchmark a listing against fewer than
+# MIN_LISTINGS comparables, because a median of one flat is that flat. This page
+# was doing exactly that and calling it a barrio: "Within reach — 1 / 63" counted
+# 63 barrios of which 40 held fewer than eight listings and ten held exactly one,
+# each weighted the same as one built on 78.
+#
+# ADR-0005 says flag, never drop, so the thin barrios stay in the table and in the
+# charts. What changes is that the headline figures — the ones read without
+# scrolling — are computed on the barrios that can support them, and say how many
+# were set aside.
+confident = hood_stats[~hood_stats["low_sample"]]
+headline = confident if not confident.empty else hood_stats
+set_aside = len(hood_stats) - len(headline)
 
 # ── KPIs ──────────────────────────────────────────────────────────────────────
 max_budget = max_affordable_loan(net_income, max_ratio, rate, years) / (ltv / 100)
 
+sample_help = (
+    f" Computed on the {len(headline)} barrios with at least {MIN_LISTINGS} "
+    f"listings; {set_aside} thinner ones are shown below but left out of this "
+    "figure."
+    if set_aside else ""
+)
+
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Within reach", f"{int(hood_stats['affordable'].sum())} / {len(hood_stats)}",
-          help="Neighbourhoods whose median flat you could service at these terms.")
-c2.metric("Cheapest entry", f"€{hood_stats['required_income'].min():,.0f}/mo",
-          help="Income needed in the most affordable neighbourhood.")
-c3.metric("Median years of salary", f"{hood_stats['years_of_salary'].median():.1f} yrs")
+c1.metric("Within reach", f"{int(headline['affordable'].sum())} / {len(headline)}",
+          help="Neighbourhoods whose median flat you could service at these terms."
+               + sample_help)
+c2.metric("Cheapest entry", f"€{headline['required_income'].min():,.0f}/mo",
+          help="Income needed in the most affordable neighbourhood." + sample_help)
+c3.metric("Median years of salary", f"{headline['years_of_salary'].median():.1f} yrs",
+          help="Median across those barrios." + sample_help)
 c4.metric("Your max budget", f"€{max_budget:,.0f}",
           help=f"Highest property price you could finance at {ltv}% LTV.")
 
@@ -124,6 +154,14 @@ st.markdown(
     "each barrio — a barrio can be out of reach at the median and still hold something "
     "you can afford.]"
 )
+if set_aside:
+    st.markdown(
+        f":small[{set_aside} of {len(hood_stats)} barrios hold fewer than "
+        f"{MIN_LISTINGS} listings each, so their median describes a handful of "
+        "flats rather than the barrio. They are kept in the charts below rather "
+        "than dropped — hiding them would make coverage look better than it is — "
+        "but they are excluded from the four figures above.]"
+    )
 st.markdown("")
 
 # ── Charts ────────────────────────────────────────────────────────────────────
@@ -163,6 +201,17 @@ except Exception as exc:
 # nothing read it, because this page hard-coded operation_type = 'sale'. With 73
 # València rentals in the warehouse that was defensible; at 308 it is a column
 # going to waste, and it carries the harder finding of the two.
+# Deploy-ordering guard, not defensive clutter. `low_sample_flag` is a new column
+# in gold, and gold is rebuilt by the weekly pipeline — so between this code
+# merging and the next Monday run, main_gold could still be serving the old
+# schema and every district table here would die on a KeyError. The flag is a
+# pure function of `listings`, and this page already knows the threshold, so it
+# can reconstruct it rather than require a manual `make deploy-prod` to be
+# sequenced correctly by a human. Gold stays the source of truth: when the column
+# is there it is used as-is, so any other consumer reads the same judgement.
+if not dist_all.empty and "low_sample_flag" not in dist_all.columns:
+    dist_all = dist_all.assign(low_sample_flag=dist_all["listings"] < MIN_LISTINGS)
+
 if dist_all.empty:
     dist = dist_rent = dist_all
 else:
@@ -198,14 +247,22 @@ else:
             )
             st.dataframe(
                 dist.assign(area=dist["district"].str.title())[[
-                    "area", "listings", "median_price_eur", "median_ppsqm",
-                    "net_income_per_household", "years_of_household_income",
+                    "area", "listings", "low_sample_flag", "median_price_eur",
+                    "median_ppsqm", "net_income_per_household",
+                    "years_of_household_income",
                 ]],
                 width="stretch",
                 hide_index=True,
                 column_config={
                     "area": st.column_config.TextColumn("District", pinned=True),
                     "listings": st.column_config.NumberColumn("Listings", format="%d"),
+                    "low_sample_flag": st.column_config.CheckboxColumn(
+                        "Thin",
+                        help=f"Fewer than {MIN_LISTINGS} listings, so this row's "
+                             "median describes a handful of flats rather than the "
+                             "district. Shown rather than dropped, and excluded "
+                             "from the summary above it.",
+                    ),
                     "median_price_eur": st.column_config.NumberColumn(
                         "Median price", format="€%,d"),
                     "median_ppsqm": st.column_config.NumberColumn("€/m²", format="€%,d"),
@@ -221,9 +278,14 @@ else:
             )
 
             # The comparison that makes the point: the priciest per m² is not the
-            # least affordable, because the two are decoupled by income.
-            dearest = dist.loc[dist["median_ppsqm"].idxmax()]
-            hardest = dist.loc[dist["years_of_household_income"].idxmax()]
+            # least affordable, because the two are decoupled by income. Drawn from
+            # the districts that can carry it — naming a "priciest district" that is
+            # one expensive flat would undo the point rather than make it.
+            solid = dist[~dist["low_sample_flag"]]
+            if solid.empty:
+                solid = dist
+            dearest = solid.loc[solid["median_ppsqm"].idxmax()]
+            hardest = solid.loc[solid["years_of_household_income"].idxmax()]
             if dearest["district"] != hardest["district"]:
                 st.markdown(
                     f":small[**{dearest['district'].title()}** has the highest €/m² "
@@ -249,28 +311,51 @@ else:
                 f"rent consumes. Above **{OVERBURDEN_PCT:.0f}%** is the threshold "
                 "Eurostat and INE treat as housing-cost overburden.]"
             )
-            over = dist_rent[dist_rent["rent_pct_of_household_income"] > OVERBURDEN_PCT]
+            # Counted over districts with a real sample. The headline said
+            # "16 of 16 districts" while one of the sixteen was two listings, and a
+            # statement that strong should not rest on a row the table itself
+            # marks as thin.
+            solid_rent = dist_rent[~dist_rent["low_sample_flag"]]
+            counted = solid_rent if not solid_rent.empty else dist_rent
+            thin_rent = len(dist_rent) - len(counted)
+            over = counted[counted["rent_pct_of_household_income"] > OVERBURDEN_PCT]
             if not over.empty:
+                thin_note = (
+                    f" A further {thin_rent} district"
+                    f"{'s are' if thin_rent > 1 else ' is'} listed below but built "
+                    f"on fewer than {MIN_LISTINGS} rentals, so "
+                    f"{'they are' if thin_rent > 1 else 'it is'} not counted here."
+                    if thin_rent else ""
+                )
                 st.warning(
-                    f"**{len(over)} of {len(dist_rent)} districts sit above the "
+                    f"**{len(over)} of {len(counted)} districts sit above the "
                     f"{OVERBURDEN_PCT:.0f}% overburden line**, from "
                     f"{over['rent_pct_of_household_income'].min():.0f}% to "
                     f"{over['rent_pct_of_household_income'].max():.0f}%. Read that as "
                     "the gap between the market and the residents, not as what "
                     "households pay: these are asking rents for flats available "
                     "today, while the income is the district's median across "
-                    "everyone — most of whom are not moving, and many of whom own."
+                    f"everyone — most of whom are not moving, and many of whom own."
+                    f"{thin_note}"
                 )
             st.dataframe(
                 dist_rent.assign(area=dist_rent["district"].str.title())[[
-                    "area", "listings", "median_price_eur", "median_ppsqm",
-                    "net_income_per_household", "rent_pct_of_household_income",
+                    "area", "listings", "low_sample_flag", "median_price_eur",
+                    "median_ppsqm", "net_income_per_household",
+                    "rent_pct_of_household_income",
                 ]],
                 width="stretch",
                 hide_index=True,
                 column_config={
                     "area": st.column_config.TextColumn("District", pinned=True),
                     "listings": st.column_config.NumberColumn("Listings", format="%d"),
+                    "low_sample_flag": st.column_config.CheckboxColumn(
+                        "Thin",
+                        help=f"Fewer than {MIN_LISTINGS} rentals, so this row's "
+                             "median describes a handful of flats rather than the "
+                             "district. Shown rather than dropped, and excluded "
+                             "from the count above it.",
+                    ),
                     "median_price_eur": st.column_config.NumberColumn(
                         "Median rent", format="€%,d", help="Monthly asking rent."),
                     "median_ppsqm": st.column_config.NumberColumn(

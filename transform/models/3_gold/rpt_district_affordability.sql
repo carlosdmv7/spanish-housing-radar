@@ -65,7 +65,21 @@ select
     case
         when p.operation_type = 'rent' and i.net_income_per_household > 0
         then round(p.median_price_eur * 12 / i.net_income_per_household * 100, 1)
-    end                                   as rent_pct_of_household_income
+    end                                   as rent_pct_of_household_income,
+
+    -- ADR-0004 refuses to score a listing against fewer than
+    -- min_comps_for_benchmark comparables, because a median of one flat is that
+    -- flat. This table was publishing exactly that and calling it a district:
+    -- 57 rows rest on a single listing, and "years of household income" computed
+    -- from one asking price was rendered beside a figure built on 78.
+    --
+    -- ADR-0005 decides what to do about it — flag, never drop. Dropping would
+    -- shrink the table to the districts that happen to be well scraped and make
+    -- the coverage look better than it is. So the ratio is still computed and
+    -- still shown; this column is what lets every surface say which ones are
+    -- thin, the same way benchmark_level does for a score.
+    p.listings < {{ var('min_listings_for_area_stat') }}
+                                          as low_sample_flag
 
 from price_by_district p
 -- LEFT, not INNER: a district with no income figure still belongs in this table
