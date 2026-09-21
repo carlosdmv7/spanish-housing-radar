@@ -12,7 +12,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from components.charts import bar_benchmark_grain
-from freshness import get_benchmark_grain_counts
+from freshness import get_benchmark_grain_counts, get_snapshot_coverage
 import streamlit as st
 from theme import altair_chart, page_hero, section
 
@@ -29,22 +29,24 @@ page_hero(
 # ── Lineage ───────────────────────────────────────────────────────────────────
 section("From portal to page")
 st.markdown(
-    ":small[Two sources, one warehouse, three modelling layers. Scraped listings give "
-    "**asking** prices; the INE house-price index grounds them against **transactions**.]"
+    ":small[Three feeds, one warehouse, three modelling layers. Scraped listings give "
+    "**asking** prices; the INE house-price index grounds them against **transactions**; "
+    "INE household income is the denominator that turns *cheap for the area* into "
+    "*cheap for the people who live there*.]"
 )
 st.code(
     "Idealista search cards ┐\n"
-    "                       ├─→  raw  →  bronze  →  silver  →  gold  →  this app\n"
-    "INE house-price index  ┘",
+    "INE house-price index  ├─→  raw  →  bronze  →  silver  →  gold  →  this app\n"
+    "INE district income    ┘",
     language="text",
 )
 st.markdown("""
 | Layer | Models | What happens |
 |---|---|---|
-| **raw** | `idealista_listings`, `ine_hpi` | Append-only landing tables. Loads are idempotent upserts on `(source_name, source_id)`, so a retried run never duplicates rows. |
+| **raw** | `idealista_listings`, `ine_hpi`, `ine_income` | Append-only landing tables. Loads are idempotent upserts on `(source_name, source_id)`, so a retried run never duplicates rows. |
 | **bronze** | `stg_*` | Typing, renaming, light cleaning. No business logic, one staging model per source table. |
-| **silver** | `int_listings_current`, `int_listings_history`, `int_neighborhood_stats`, `int_listing_lifecycle`, `dim_neighborhoods` | Latest snapshot per listing, the full snapshot history behind price trends, and the €/m² benchmarks the score divides by. |
-| **gold** | `fct_listings_scored`, `rpt_opportunities`, `rpt_market_context` | The scoring fact table and the consumption views this app reads. |
+| **silver** | `int_listings_current`, `int_listings_history`, `int_neighborhood_stats`, `int_listing_lifecycle`, `int_market_context`, `int_district_income`, `dim_neighborhoods` | Latest snapshot per listing, the full snapshot history behind price trends, the €/m² benchmarks the score divides by, and the two INE feeds resolved to the grains this app can join to. |
+| **gold** | `fct_listings_scored`, `rpt_opportunities`, `rpt_market_context`, `rpt_district_affordability` | The scoring fact table and the consumption views this app reads. |
 """)
 st.markdown(
     f":small[Every model carries a grain declaration, column docs and tests. The full "
@@ -140,40 +142,68 @@ else:
 # ── Honesty about the data ────────────────────────────────────────────────────
 st.markdown("")
 section("What this data cannot tell you")
+
+# Derived, not written down. The sentence this replaces said "Valencia now has
+# four snapshots since May, so its price evolution and seller-motivation signals
+# are real" — while the warehouse held 1,260 of 1,283 listings observed exactly
+# once. A claim about live data that is typed by hand is true until the data
+# moves, and this page is the last one that should be making one.
+coverage = get_snapshot_coverage()
+if coverage is None:
+    history_note = (
+        "Days-on-market and price-cut counts come from comparing snapshots, so a "
+        "listing seen once reads as \"no signal yet\" rather than a fabricated zero. "
+        "How much repeat history exists right now could not be read from the "
+        "warehouse."
+    )
+else:
+    history_note = (
+        f"Days-on-market and price-cut counts come from comparing snapshots, so a "
+        f"listing seen once reads as \"no signal yet\" rather than a fabricated zero. "
+        f"Right now that is most of them: **{coverage['observed_again']:,} of "
+        f"{coverage['listings']:,}** listings "
+        f"({coverage['repeat_share']:.1%}) have been seen more than once, and the "
+        f"deepest history on any single listing is {coverage['max_snapshots']} "
+        f"observations. The behavioural signals are therefore real for that slice "
+        f"and silent for the rest — they fill in as the scheduled scrape revisits "
+        f"the same city, which is a question of credits, not of modelling."
+    )
+
 with st.container(border=True):
     st.markdown("""
 **Asking prices, not sale prices.** Everything scraped is what a seller *wants*.
 The INE index on the Market page is the transaction-based counterweight, but it's
 regional and quarterly — deliberately not presented as a per-flat valuation.
 
-**No per-listing coordinates.** Search cards are scraped at ~1 proxy credit per 30
-listings instead of 25–29 per detail page, which buys breadth of comparables at the
-cost of exact addresses. Map dots sit at their barrio's centroid, so several
-listings share a point.
+**No per-listing coordinates.** A search page costs a flat 25 proxy credits and
+returns ~30 listings; a detail page costs 25–29 and returns one. Scraping cards is
+therefore ~30× cheaper per listing, and it buys breadth of comparables at the cost
+of exact addresses. Map dots sit at their barrio's centroid, so several listings
+share a point.
 
 **Barrio centroids exist for five cities only** — Valencia, Madrid, Barcelona,
 Sevilla, Málaga. Listings elsewhere are scored but not mapped.
-
-**Price history is accumulated, never backfilled.** Days-on-market and price-cut
-counts come from comparing snapshots, so a listing seen once reads as "no signal
-yet" rather than a fabricated zero. Valencia now has four snapshots since May, so
-its price evolution and seller-motivation signals are real; every other city has
-one or two, and reads as no signal.
 
 **The score says nothing about the flat itself** — no condition, floor, light,
 noise, or renovation state. It says a price is unusual for its market, which is
 where a search should *start*, not end.
 """)
+    st.markdown(f"**Price history is accumulated, never backfilled.** {history_note}")
 
 st.markdown("")
 section("How it's kept honest")
 st.markdown(f"""
 - **dbt tests** on sources and models — `unique`, `not_null`, `accepted_values`,
   `accepted_range` — so a broken assumption fails the build instead of reaching this page.
-- **Source freshness thresholds** per table: the INE feed errors CI after 10 days of
-  staleness; the listings table warns without failing, because scraping runs on a
-  metered budget rather than nightly, so its staleness is a known decision rather
-  than a fault.
+- **Two separate staleness checks, because they catch different things.** Source
+  freshness watches *load* time: the INE feed errors CI after 10 days, which catches
+  a cron that has died, while the listings table only warns, because a metered scrape
+  ageing is a decision rather than a fault. Load time says nothing about the data
+  inside, though — the INE loader replaces every row each week, so that gate passes
+  however old the index is. `assert_ine_hpi_period_is_current` watches the newest
+  *quarter* instead and warns when it falls further behind than a publication gap
+  explains. It is warning today, and the Market page shows the reference quarter and
+  its age rather than leaving you to infer currency from a green check.
 - **A contract on `rpt_opportunities`** — the model this app reads is a declared
   interface, so a column change breaks CI, not the dashboard.
 - **CI builds into isolated `ci_*` schemas**, never `main_*`, so a bad pull request

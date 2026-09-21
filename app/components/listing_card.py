@@ -99,7 +99,18 @@ def listing_card(row: dict) -> None:
         head, price = st.columns([3, 1], vertical_alignment="center")
         with head:
             st.markdown(f"**{rooms}{row['size_sqm']:.0f} m²** · {loc}")
-            provenance = f"{row['source_name'].capitalize()} · {row.get('scraped_date', '')}"
+            # `scraped_date` is `_loaded_at::date`, which DuckDB hands back as a
+            # pandas Timestamp — so str() appended a 00:00:00 the scrape never
+            # had, and every card read "Idealista · 2026-08-09 00:00:00". Same
+            # bug app/freshness.py documents fixing in the strip; it survived
+            # here because nothing renders this column but the eye.
+            scraped = row.get("scraped_date")
+            stamp = (
+                pd.Timestamp(scraped).date().isoformat() if pd.notna(scraped) else ""
+            )
+            provenance = f"{row['source_name'].capitalize()}"
+            if stamp:
+                provenance += f" · seen {stamp}"
             st.markdown(f":small[{_muted(provenance)}]")
         with price:
             st.markdown(f"### €{row['price_eur']:,.0f}")

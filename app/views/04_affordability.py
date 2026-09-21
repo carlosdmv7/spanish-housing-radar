@@ -22,8 +22,13 @@ import pandas as pd
 import streamlit as st
 from theme import altair_chart, page_hero, section
 
+# Every other page hero is the question that page answers — that was the point of
+# the one-question-per-page pass. This one kept a noun and sat there as the odd
+# one out in the sidebar. It asks two things, so the hero has to cover both: what
+# the barrio demands of *your* income, and what it demands of the people already
+# living in it.
 page_hero(
-    "Affordability Index",
+    "Who can afford to live here?",
     "What you need to earn to buy in each neighbourhood, how many years of salary a "
     "flat costs, and whether buying beats renting the same street.",
 )

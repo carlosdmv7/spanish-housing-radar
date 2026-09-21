@@ -264,6 +264,44 @@ def get_freshness_strip() -> list[StripItem]:
 
 
 @st.cache_data(ttl=600)
+def get_snapshot_coverage() -> dict | None:
+    """
+    How much snapshot history actually exists, or None when it can't be read.
+
+    The How it works page used to state this from memory — "Valencia now has
+    four snapshots since May, so its price evolution and seller-motivation
+    signals are real". The warehouse disagreed: 1,260 of 1,283 listings had been
+    observed exactly once and three had ever changed price. A hand-written claim
+    about live data ages the moment the data moves, which is the same failure the
+    scraping-status field had before it was derived (see get_freshness_strip).
+    So the page asks instead of asserting.
+
+    `repeat_share` is the fraction of listings with more than one observation —
+    the share for which days-on-market and price-cut counts mean anything at all.
+    """
+    try:
+        row = query("""
+            SELECT
+                COUNT(*)                                   AS listings,
+                COUNT(*) FILTER (WHERE n_snapshots > 1)    AS observed_again,
+                MAX(n_snapshots)                           AS max_snapshots
+            FROM spanish_housing_radar.main_silver.int_listing_lifecycle
+        """).iloc[0]
+    except Exception:
+        return None
+    listings = int(row["listings"] or 0)
+    if not listings:
+        return None
+    observed_again = int(row["observed_again"] or 0)
+    return {
+        "listings": listings,
+        "observed_again": observed_again,
+        "max_snapshots": int(row["max_snapshots"] or 0),
+        "repeat_share": observed_again / listings,
+    }
+
+
+@st.cache_data(ttl=600)
 def get_benchmark_grain_counts() -> pd.DataFrame:
     """
     Listings per benchmark grain, with each grain's share of the total.
