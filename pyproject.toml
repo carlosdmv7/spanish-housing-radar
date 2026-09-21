@@ -105,3 +105,15 @@ line-ending = "auto"
 # ══════════════════════════════════════════════════════════════════════════════
 [tool.pytest.ini_options]
 pythonpath = ["."]
+# extraction/, app/ and orchestration/ each hold a package literally named
+# `tests`. Under pytest's default "prepend" import mode all three claim the
+# top-level module name `tests`, so the first one imported wins and the rest
+# die with `ModuleNotFoundError: No module named 'tests.test_...'` — which is
+# why a bare `pytest` at the repo root failed while CI stayed green by running
+# two separate invocations. CONTRIBUTING tells contributors to run the bare
+# command, so the gate they were told to use was the one that did not work.
+#
+# importlib mode imports each test module by its file path instead of by a
+# top-level name, so same-named packages no longer collide and one invocation
+# covers the whole repo.
+addopts = "--import-mode=importlib"

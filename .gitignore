@@ -15,6 +15,9 @@ build/
 # ── dbt ───────────────────────────────────────────────────────────────────────
 # per-developer dbt config — copied from profiles.yml.example by `make install`
 transform/profiles.yml
+# dbt writes a per-developer anonymous id here on first run; it identifies the
+# machine, not the project, so it has no business being shared.
+transform/.user.yml
 transform/target/
 transform/dbt_packages/
 transform/logs/
@@ -25,8 +28,9 @@ logs/
 .streamlit/secrets.toml
 
 # ── VSCode ────────────────────────────────────────────────────────────────────
-# Keep launch.json and settings.json (useful for team)
-.vscode/extensions.json
+# launch.json, settings.json and extensions.json are all committed on purpose:
+# CONTRIBUTING links to extensions.json as the list VSCode offers to install on
+# first open, and an ignored file makes that link dead in a fresh clone.
 
 # ── OS / WSL ──────────────────────────────────────────────────────────────────
 .DS_Store

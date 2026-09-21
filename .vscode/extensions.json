@@ -1,0 +1,12 @@
+{
+    "recommendations": [
+        "ms-python.python",
+        "ms-python.black-formatter",
+        "charliermarsh.ruff",
+        "innoverio.vscode-dbt-power-user",
+        "dorzey.vscode-sqlfluff",
+        "ms-vscode-remote.remote-wsl",
+        "mechatroner.rainbow-csv",
+        "eamodio.gitlens"
+    ]
+}
