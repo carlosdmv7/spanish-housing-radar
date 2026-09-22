@@ -67,6 +67,13 @@ ingest-ine: ## Fetch the official INE house-price index → raw.ine_hpi (free, n
 ingest-ine-dry: ## Dry-run the INE feed — fetch + validate, no MotherDuck writes
 	$(PYTHON) -m extraction.run_ine --dry-run
 
+# Annual data, so this is not part of the scheduled pipeline and is run by hand
+# when INE publishes a new reference year. It had no target at all, which meant
+# the only way to load it was to remember the module path.
+.PHONY: ingest-ine-income
+ingest-ine-income: ## Fetch INE district household income → raw.ine_income (free, annual)
+	$(PYTHON) -m extraction.run_ine_income
+
 # ── dbt ────────────────────────────────────────────────────────────────────────
 # Always invoked from the repo root with --project-dir, never `cd transform`, and
 # that is not a style preference.
@@ -142,9 +149,13 @@ rows = conn.execute(\"SELECT schema_name, table_name FROM duckdb_tables() WHERE 
 lint: ## Lint with ruff (same command CI runs)
 	$(CURDIR)/.venv/bin/ruff check .
 
+# Same tool that lints, over the same paths `ruff check .` covers. It used to be
+# black over four hand-listed directories: two formatters with separate opinions,
+# and a path list that silently excluded scripts/ and transform/ from formatting
+# while CI linted them.
 .PHONY: format
-format: ## Format with black
-	$(CURDIR)/.venv/bin/black extraction/ app/ orchestration/ shared/ --line-length 100
+format: ## Format with ruff (same tool that lints)
+	$(CURDIR)/.venv/bin/ruff format .
 
 # One invocation over the whole repo, same as CI and same as the bare `pytest`
 # CONTRIBUTING tells you to run. It used to be two because three packages named

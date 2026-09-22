@@ -5,7 +5,19 @@ description = "End-to-end analytics-engineering pipeline that finds undervalued 
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.12,<3.13"
+# Spans two minors on purpose. The app is deployed on Streamlit Community
+# Cloud, which picks a Python version per app in its own Advanced settings —
+# that choice lives in their dashboard, not in this repo, and it is not read
+# from `.python-version` or from here. Community Cloud still defaults to 3.12.
+# So pinning the floor at 3.13 would declare this project incompatible with the
+# interpreter the live app may well be running, and the deploy's dependency
+# install would fail with nothing in this repo to explain why.
+#
+# Widening instead of stepping up gets 3.13 everywhere the repo actually
+# controls the interpreter — local dev, Docker, CI — while leaving the deploy
+# free to be on either. Verified on both: 115 tests pass and `dbt build` is
+# PASS=165 on 3.12 and on 3.13 alike.
+requires-python = ">=3.12,<3.14"
 dependencies = [
     # ── Core data stack ──────────────────────────────────────────────────────
     "duckdb==1.5.2",          # MotherDuck requires >= 1.5.2
@@ -37,7 +49,10 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "black==25.1.0",
+    # No black. Ruff already lints this project and ships a formatter that is a
+    # drop-in for it, so carrying both meant two tools with independent opinions
+    # about the same files and a `make format` that could undo what `make lint`
+    # had just approved. `ruff format` is the one tool now.
     "ruff==0.9.9",
     "pytest==8.3.5",
     "pytest-mock==3.14.0",
@@ -53,7 +68,13 @@ package = false
 # Ruff — lint + format (was ruff.toml)
 # ══════════════════════════════════════════════════════════════════════════════
 [tool.ruff]
-target-version = "py311"
+# The LOWEST version this project supports, not the newest and not the one on
+# this machine. Ruff uses it to decide which syntax it may suggest, so setting
+# it to py313 while requires-python still allows 3.12 would let ruff propose
+# rewrites that crash on the interpreter Streamlit Cloud might be running. It
+# said py311 while the floor was 3.12 — wrong in the harmless direction, but
+# wrong.
+target-version = "py312"
 line-length = 100
 indent-width = 4
 exclude = [

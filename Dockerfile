@@ -9,7 +9,7 @@
 # Required env vars (pass via --env-file or -e): MOTHERDUCK_TOKEN,
 # SCRAPFLY_API_KEY, SCRAPFLY_ENABLED, and optionally PREFECT_API_KEY/URL to
 # report runs to Prefect Cloud.
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 # System deps: gcc for any wheel that needs compiling; git for dbt deps hub pulls.
 RUN apt-get update \
