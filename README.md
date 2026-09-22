@@ -1,13 +1,104 @@
 # 🏘️ Spanish Housing Radar
 
-**An end-to-end analytics-engineering pipeline that finds undervalued homes across Spain.**
-It scrapes live listings from Idealista, models them through a Medallion (bronze → silver → gold)
-dbt project on a cloud warehouse, and serves an **Opportunity Score (0–100)** per listing in an
-interactive Streamlit app — surfacing deals priced below their neighbourhood's market rate.
+### Is this flat expensive? No portal will tell you. This does.
+
+Spanish property portals show you a price. They never show you whether it is a **good** price.
+"€225,000 for 120 m² in Patraix" is a number with nothing to compare it against — and the only
+answer that means anything is *what are the other flats in Patraix asking per square metre?*
+No portal shows you that, because no portal is in the business of telling you a flat is overpriced.
+
+**Spanish Housing Radar builds that comparison and scores every flat 0–100 against its own
+neighbourhood** — so the question stops being "can I afford this?" and becomes "is this a deal?"
+
+---
+
+### What that actually looks like
+
+> In August 2026, among the flats on the market in València, the pipeline surfaced this one:
+>
+> **120 m² in Patraix — €225,000.**
+> That is **€1,875/m²**, against a **€2,865/m²** median for the other flats in the same barrio.
+> **34.6% below its own neighbourhood**, measured against 9 comparable listings.
+> **Score: 80 / 100.**
+>
+> On a portal, that flat is "€225,000" — indistinguishable from an overpriced one two streets away.
+> Here it is the highest-scoring flat in the city among those measured against their own barrio,
+> and you can see the arithmetic that says so.
 
 <p align="center">
+  <a href="https://spanish-housing-radar-carlosdmv7.streamlit.app/"><b>▶ Try it live</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://carlosdmv7.github.io/spanish-housing-radar/">Data lineage &amp; tests</a>
+</p>
+
+<p align="center">
+  <img alt="listings scored" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcarlosdmv7%2Fspanish-housing-radar%2Fmain%2Fdocs%2Fstatus.json&query=%24.rows_in_warehouse&label=listings%20scored&color=274C56">
+  <img alt="data tests"      src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcarlosdmv7%2Fspanish-housing-radar%2Fmain%2Fdocs%2Fstatus.json&query=%24.dbt_tests_total&label=data%20quality%20tests&color=2E6B5E">
+  <img alt="pipeline"        src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fcarlosdmv7%2Fspanish-housing-radar%2Fmain%2Fdocs%2Fstatus.json&query=%24.last_run_conclusion&label=last%20pipeline%20run&color=A8501F">
   <a href="https://github.com/carlosdmv7/spanish-housing-radar/actions/workflows/ci.yml">
     <img alt="CI" src="https://github.com/carlosdmv7/spanish-housing-radar/actions/workflows/ci.yml/badge.svg"></a>
+</p>
+
+<p align="center"><sub>Those three numbers are read live from
+<a href="docs/status.json"><code>docs/status.json</code></a>, which the pipeline rewrites on every
+run — the same file the app itself reads. They cannot go stale without this README saying so.</sub></p>
+
+![Opportunities — every listing scored against its own barrio](docs/img/opportunities.png)
+
+---
+
+## What you can ask it
+
+| | |
+|---|---|
+| **Which flats are underpriced right now?** | Every listing scored against comparable flats in its own barrio, ranked, on a map. |
+| **What does a m² cost here?** | The €/m² benchmark per neighbourhood — the number the score is measured against — next to the official INE index of what buyers actually paid. |
+| **Can I afford this?** | Not just the instalment: the transfer tax and fees due in cash on signing day, what the bank's tie-in products are really worth, and whether renting and investing the difference beats buying. |
+| **Who can afford to live here?** | What each barrio demands of *your* income — and, using official INE household income, what it demands of the people already living in it. |
+| **How does it work, and what can it not tell me?** | The arithmetic, the data's provenance, and the questions it honestly cannot answer. |
+
+<details>
+<summary>📸 More screenshots</summary>
+
+![Market overview](docs/img/market.png)
+![Mortgage simulator](docs/img/mortgage.png)
+![Affordability index](docs/img/affordability.png)
+![How it works & data quality](docs/img/how_it_works.png)
+
+</details>
+
+---
+
+## What it refuses to pretend
+
+Most of the engineering here went into *not* overclaiming, because a housing tool that sounds
+confident is easy and a housing tool you can trust is not.
+
+- **These are asking prices, not sale prices.** What a seller wants is not what a flat is worth.
+  The official INE transaction index sits on the Market page as the counterweight, labelled with
+  the quarter it describes and how old that quarter is — currently four behind, and the app says so
+  rather than letting a year-old figure read as today's.
+- **A score is only as good as what it was compared against.** A flat measured against 9 neighbours
+  and a flat measured against the whole city are not the same claim, so **every** score on every
+  screen shows which one it got and how many comparables backed it.
+- **Thin data is shown, flagged — never quietly dropped.** Dropping sparse neighbourhoods would make
+  the coverage look complete while lying about it.
+- **It tells you a price is unusual for its market. Nothing more.** It has never seen the flat: not
+  the condition, the floor, the light, the noise or the works it needs. That is where a search should
+  *start*, not end.
+
+---
+
+---
+
+# How it's built
+
+Everything above is the product. Everything below is the engineering, for whoever wants it — a
+deliberate showcase of a **modern, governed data stack**: the same problems I solve professionally
+(reliable ELT, trusted metrics, a single source of truth), built in the open and reproducible from
+a clean clone in three commands.
+
+<p align="center">
   <img alt="Python"     src="https://img.shields.io/badge/Python-3.12%20%7C%203.13-3776AB?logo=python&logoColor=white">
   <img alt="uv"         src="https://img.shields.io/badge/deps-uv-DE5FE9?logo=uv&logoColor=white">
   <img alt="dbt"        src="https://img.shields.io/badge/dbt-1.9-FF694B?logo=dbt&logoColor=white">
@@ -17,53 +108,6 @@ interactive Streamlit app — surfacing deals priced below their neighbourhood's
   <img alt="Docker"     src="https://img.shields.io/badge/Docker-pipeline-2496ED?logo=docker&logoColor=white">
   <img alt="License"    src="https://img.shields.io/badge/license-MIT-green">
 </p>
-
-> **🔗 Live demo:** https://spanish-housing-radar-carlosdmv7.streamlit.app/
-> **📊 dbt docs (lineage & tests):** https://carlosdmv7.github.io/spanish-housing-radar/
-
-![Opportunities — listings scored against their local market](docs/img/opportunities.png)
-
-<details>
-<summary>📸 More screenshots — Market, Mortgage, Affordability, How it works</summary>
-
-![Market overview](docs/img/market.png)
-![Mortgage simulator](docs/img/mortgage.png)
-![Affordability index](docs/img/affordability.png)
-![How it works & data quality](docs/img/how_it_works.png)
-
-</details>
-
-> **ℹ️ On the data:** the scheduled listing scrape is off by default, but the pipeline is
-> **not** frozen: a free, keyless **INE house-price-index** feed reloads the warehouse on
-> a weekly cron, so the build stays live and tested without spending a credit. That keeps the
-> *pipeline* current, which is not the same as keeping the *data* current — the IPV is
-> quarterly and published in arrears, and the newest quarter INE has released is presently
-> four quarters back. The Market page names that quarter and states its age rather than
-> letting a YoY figure read as today's. Scraping is
-> enabled by setting the repo variable `SCRAPFLY_ENABLED=true` — worth knowing what that
-> costs before you do, because Scrapfly bills a **flat 25 credits per search page**, which
-> makes the free monthly allowance exactly **40 pages**. The scheduled run is therefore
-> scoped to València by default (`SCRAPE_CITIES`, `SCRAPE_OPERATIONS`) rather than every
-> city: depth in one city produces barrio-level benchmarks, whereas one page each across
-> ten cities produces city-level fallbacks nobody can act on.
-> Every page carries a freshness header with the live figures, and the
-> **[How it works & data quality](https://spanish-housing-radar-carlosdmv7.streamlit.app/how-it-works)**
-> page states what this data can and cannot tell you.
-
----
-
-## Why this project
-
-Spanish housing portals tell you the *price* of a flat, but never whether that price is *good*.
-"€280k for 90 m² in this area" means nothing without a benchmark. **Spanish Housing Radar builds
-that benchmark from data**: it compares every listing against the live €/m² distribution of its own
-neighbourhood and quantifies how much of a deal it is.
-
-It's also a deliberate showcase of a **modern, governed data stack** — the same problems I solve
-professionally (reliable ELT, trusted metrics, a single source of truth), built in the open and
-fully reproducible.
-
----
 
 ## Architecture
 
@@ -120,8 +164,13 @@ flowchart LR
 
 ## The Opportunity Score
 
-The heart of the product. For each listing we compute its price per m² and compare it to the
-**median and standard deviation of comparable listings** (same operation × property type):
+**In one sentence:** a flat's price per m² is compared against what comparable flats in the same
+area are asking, and the further below that it sits, the higher it scores. 50 means "exactly
+average for the area". 100 means "far cheaper than anything comparable".
+
+The reason it is a z-score and not simply "% below the median" is that a 10% discount means
+something very different in a uniform barrio than in one where prices are all over the place.
+Dividing by the spread makes two neighbourhoods comparable. In algebra:
 
 ```text
 z_score   = (price_per_sqm − benchmark_median_ppsqm) / benchmark_stddev_ppsqm
@@ -165,15 +214,9 @@ loudly when an assumption breaks. See [`transform/models/`](transform/models/).
 
 ---
 
-## The Streamlit app
+## The app
 
-| Page | What it answers |
-|---|---|
-| **Opportunities** | Where are the under-priced listings right now? Ranked by score, with deal-tier breakdown and map. |
-| **Market** | What's the €/m² benchmark by neighbourhood, and how is it evolving? |
-| **Mortgage** | What buying actually costs: transfer tax and fees on signing day, fixed vs variable vs stressed amortisation, what the bank's tie-ins are really worth, and buy-versus-rent-and-invest. |
-| **Affordability** | What income does each neighbourhood require? Buy-vs-rent comparison. |
-| **How it works** | Where the numbers come from, how the score is computed, and what this data cannot tell you. |
+Six pages, listed at the top of this README. Two things about all of them:
 
 Every page carries a **freshness header** — last ingest, row counts, share of scores computed at
 barrio grain, dbt test results — so a visitor sees the data's condition before reading any figure.
@@ -246,6 +289,7 @@ make dbt-deps        # install dbt packages (once)
 
 make extract CITY=valencia OP=sale     # 25 Scrapfly credits per page of ~30 listings
 make ingest-ine                         # free: official INE house-price index → raw.ine_hpi
+make ingest-ine-income                  # free: official INE district household income (annual)
 make transform                          # dbt run: bronze → silver → gold
 make dbt-test                           # data-quality tests
 make app                                # Streamlit on :8501
@@ -264,6 +308,25 @@ Full command list: `make help`.
 
 Branching, commit conventions and how data changes reach production:
 **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+
+### What a scheduled run costs
+
+Worth stating plainly, because it is the constraint that shapes the whole project. Scrapfly bills a
+**flat 25 credits per search page** — Idealista requires its anti-bot protection, and that price does
+not move — so the free allowance of 1,000 credits a month is exactly **40 pages**.
+
+That arithmetic is why the scheduled scrape is scoped rather than broad. Four pages of València sale
+plus four of rent is 200 credits a run, ~800 a month. One page each across ten cities would cost the
+same and buy city-level fallbacks nobody can act on; depth in one city is what produces barrio-level
+benchmarks, which is the only grain the score is actually worth reading at.
+
+| Repo variable | Default | What it does |
+|---|---|---|
+| `SCRAPFLY_ENABLED` | `false` | Listing scrape runs only when `true`. With it off, the weekly run still refreshes the free INE feeds and rebuilds dbt, so the warehouse and the app stay live at zero cost. |
+| `SCRAPE_CITIES` | `valencia` | Comma-separated. Each city multiplies the credit cost. |
+| `SCRAPE_OPERATIONS` | `sale,rent` | Each operation is a separate scraper process. |
+| `IDEALISTA_MAX_SEARCH_PAGES` | `4` | Pages per city × operation. 1 page ≈ 30 listings ≈ 25 credits. |
+| `SCRAPFLY_CREDIT_BUDGET` | `125` | Hard ceiling **per process**, so a misconfiguration stops itself rather than emptying the month. |
 
 ---
 
