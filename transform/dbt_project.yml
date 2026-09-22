@@ -18,6 +18,13 @@ vars:
   # Below it, the opportunity score falls back to the next-coarser grain
   # (neighbourhood → district → city) instead of comparing a flat to itself.
   min_comps_for_benchmark: 8
+  # The same question asked of an area statistic rather than of a score: how many
+  # listings a district or barrio median must rest on before it describes the area
+  # instead of describing one flat. Deliberately the same number as
+  # min_comps_for_benchmark — it is the same judgement — but a separate var,
+  # because one is a scoring gate and the other is a disclosure threshold, and
+  # tying them together would hide that they can reasonably diverge.
+  min_listings_for_area_stat: 8
   # How far behind `current_date` the newest INE IPV quarter may fall before
   # assert_ine_hpi_period_is_current warns. The index is quarterly and published
   # about a quarter in arrears, so ~160 days back is normal just before a

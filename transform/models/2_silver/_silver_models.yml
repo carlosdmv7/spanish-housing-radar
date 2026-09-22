@@ -158,3 +158,51 @@ models:
           - dbt_utils.accepted_range:
               min_value: -10
               max_value: 5
+
+  - name: int_district_income
+    description: >
+      The latest published household income per district, joined to the district
+      names this app actually uses.
+      Grain: one row per (municipality, district) — equivalently one per
+      district_code, since only the most recent ADRH year is kept.
+
+      This is the denominator the opportunity score never had. Every other figure
+      in this warehouse compares a flat to other flats, which answers "is this
+      cheap for the area?" and cannot answer "is this area cheap?" — a barrio can
+      be inexpensive because it is a bargain or because nobody in it can pay more.
+      See ADR-0008.
+
+      **Coverage is València only, 19 districts.** The join runs through the
+      `ine_districts` seed, which is sourced from the Ajuntament's own published
+      district list; no other city has one yet, so every other municipality is
+      absent here rather than wrong. Inferring the mapping from the data would
+      mean deciding which barrio sits in which district using the very prices the
+      income is about to divide.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [municipality, district]
+    columns:
+      - name: district_code
+        tests: [unique, not_null]
+      - name: municipality
+        tests: [not_null]
+      - name: district
+        description: District name as listings spell it, via the ine_districts seed.
+        tests: [not_null]
+      - name: reference_year
+        description: >
+          The year the income describes, exposed deliberately so the app can
+          state it rather than let a ~2-year-old figure read as current.
+        tests: [not_null]
+      - name: net_income_per_person
+        tests:
+          - not_null
+          - dbt_utils.accepted_range: {min_value: 1, max_value: 200000}
+      - name: net_income_per_household
+        description: The denominator rpt_district_affordability divides asking prices by.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range: {min_value: 1, max_value: 500000}
+      - name: median_income_per_consumption_unit
+        tests:
+          - dbt_utils.accepted_range: {min_value: 1, max_value: 500000}

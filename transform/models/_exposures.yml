@@ -11,11 +11,20 @@ exposures:
       benchmarks per neighbourhood, mortgage simulator and affordability index.
       Anything these models expose is part of the app's de-facto API — see the
       enforced contract on rpt_opportunities.
+    # Every model app/ actually queries, verified by grepping the app for
+    # main_gold.* and main_silver.* rather than from memory. It listed four while
+    # the app read eight, so the published lineage graph understated the blast
+    # radius of a change to the other four — which is the one thing an exposure
+    # exists to prevent.
     depends_on:
-      - ref('rpt_opportunities')
-      - ref('int_neighborhood_stats')
-      - ref('int_listings_history')
-      - ref('int_listings_current')
+      - ref('rpt_opportunities')          # Opportunities: the contracted view
+      - ref('fct_listings_scored')        # freshness strip + grain distribution
+      - ref('rpt_market_context')         # Market: official INE context
+      - ref('rpt_district_affordability') # Affordability: income denominators
+      - ref('int_neighborhood_stats')     # Market: €/m² benchmarks
+      - ref('int_listings_history')       # Market: price evolution
+      - ref('int_listings_current')       # freshness strip, city filters
+      - ref('ccaa_by_municipality')       # seed bridging municipality → CCAA
     owner:
       name: Carlos DMV
       email: carlosdmv7@gmail.com

@@ -35,3 +35,87 @@ models:
         tests:
           - accepted_values:
               values: [sale, rent]
+
+  - name: stg_ine__hpi
+    description: >
+      Light typing over the raw INE house-price index (IPV) feed: region and
+      metric lowercased, period cast to a date. Keeps every series × quarter
+      observation; silver picks the grains and metrics it needs.
+      Grain: one row per (series_cod, period_date).
+
+      The IPV is a *regional* index, base 2015 = 100, published quarterly and in
+      arrears. It is the transaction-based counterweight to the scraped asking
+      prices, and it is never a per-flat valuation — the finest grain it has is
+      the autonomous community.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [series_cod, period_date]
+    columns:
+      - name: series_cod
+        description: INE's own series identifier, e.g. the code behind "Comunitat Valenciana. General. Índice.".
+        tests: [not_null]
+      - name: region
+        description: Autonomous community, lowercased to the exact INE label. Includes "nacional".
+        tests: [not_null]
+      - name: housing_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: [general, new, second_hand]
+      - name: metric
+        description: index (level, 2015=100), yoy / qoq / ytd (percentage changes).
+        tests:
+          - not_null
+          - accepted_values:
+              values: [index, qoq, yoy, ytd]
+      - name: period_date
+        description: >
+          Last day of the quarter the observation describes — NOT when it was
+          loaded. This is the column that says whether the data is current;
+          `_loaded_at` only says whether the loader ran. See
+          tests/assert_ine_hpi_period_is_current.sql.
+        tests: [not_null]
+      - name: value
+        tests: [not_null]
+
+  - name: stg_ine__income
+    description: >
+      Light typing over INE's Atlas de Distribución de Renta de los Hogares
+      (ADRH, table 30824): municipality and district names lowercased and
+      trimmed. Keeps every district × metric × year; silver picks the reference
+      year.
+      Grain: one row per (district_code, metric, year).
+
+      District names arrive as INE numbers them ("València distrito 01"), which
+      is not how listings name them — the `ine_districts` seed carries that
+      mapping and int_district_income performs the join.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [district_code, metric, year]
+    columns:
+      - name: district_code
+        description: 7-digit INE district code, e.g. 4625001 for València Ciutat Vella.
+        tests: [not_null]
+      - name: municipality_code
+        tests: [not_null]
+      - name: metric
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - net_income_per_person
+                - net_income_per_household
+                - gross_income_per_person
+                - gross_income_per_household
+                - mean_income_per_consumption_unit
+                - median_income_per_consumption_unit
+      - name: year
+        description: Reference year of the figure, not its publication year — ADRH lags ~2 years.
+        tests: [not_null]
+      - name: value
+        description: Euros. A suppressed cell is dropped at extraction, never zero-filled.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+              max_value: 500000

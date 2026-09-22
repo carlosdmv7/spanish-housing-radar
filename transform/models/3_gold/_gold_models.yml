@@ -146,3 +146,94 @@ models:
         data_type: double
       - name: _loaded_at
         data_type: timestamp with time zone
+
+  - name: rpt_district_affordability
+    description: >
+      Asking prices divided by what the people who live there actually earn.
+      Grain: one row per (municipality, district, operation_type, property_type).
+
+      Every other figure in this warehouse compares a flat to other flats, which
+      answers "is this cheap for the area?" and cannot answer "is this area
+      cheap?". District household income from INE's ADRH is the missing
+      denominator, and unlike a listing it does not disappear when the advert
+      comes down. See ADR-0008.
+
+      Districts and not barrios on purpose: ADRH's finer grain is the census
+      section, which is finer than anything this app can join to, so the district
+      is the honest floor. Income is joined LEFT — a district with no INE figure
+      keeps its price rows and gets a null ratio, rather than vanishing and
+      making coverage look better than it is.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [municipality, district, operation_type, property_type]
+    columns:
+      - name: municipality
+        tests: [not_null]
+      - name: district
+        tests: [not_null]
+      - name: operation_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: [sale, rent]
+      - name: property_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: [apartment, house, other]
+      - name: listings
+        description: >
+          How many listings the medians on this row are computed from. Load-
+          bearing, not decorative: it is what makes low_sample_flag meaningful
+          and it is shown in the app beside every figure it qualifies.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+      - name: low_sample_flag
+        description: >
+          True when this row rests on fewer than `min_listings_for_area_stat`
+          listings, i.e. when the median describes a handful of flats rather than
+          a district. The row is kept and shown anyway (ADR-0005); this flag is
+          what obliges every surface to say so, exactly as benchmark_level does
+          for an opportunity score.
+        tests: [not_null]
+      - name: median_price_eur
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+      - name: median_ppsqm
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 1
+      - name: income_reference_year
+        description: >
+          The year the income figure describes, not its publication year. ADRH
+          lags roughly two years, so this row mixes today's asking prices with a
+          two-year-old income and reads as a direction, never a precise multiple.
+          Null where no income was joined.
+      - name: net_income_per_household
+        description: The denominator of both ratios below. Null outside València.
+      - name: years_of_household_income
+        description: >
+          Median asking price ÷ median net household income, sale rows only.
+          Deliberately gross and deliberately unfinanced — the moment a mortgage
+          rate enters, the number stops describing the district and starts
+          describing the borrower.
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 200
+      - name: rent_pct_of_household_income
+        description: >
+          Share of median net household income the median asking rent consumes,
+          rent rows only. Above 30% is the Eurostat/INE housing-cost overburden
+          threshold. These are asking rents for flats on the market today against
+          the income of everyone already living there, most of whom are not
+          moving — it measures the gap between market and residents, not what
+          households actually pay.
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 500
