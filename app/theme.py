@@ -219,23 +219,6 @@ def _strip_markdown(items: Sequence[StripItem]) -> str:
     return ":small[" + "  ·  ".join(parts) + "]"
 
 
-def page_hero(title: str, subtitle: str) -> None:
-    """
-    Page title and one-line framing. Native heading, no card markup.
-
-    No icon argument, deliberately. The portfolio's own `h1`/`h2` carry text and
-    nothing else — its icons live in cards and links, never in headings — so a
-    pictogram in front of a page title is a divergence, not a decoration. Where
-    this app does want an icon it uses `:material/...:`, which renders a 24px
-    monochrome glyph in `currentColor`: the same thing the portfolio ships as
-    inline SVG, and unlike an emoji it inherits the brand ink instead of
-    importing a vendor's colour palette.
-    """
-    st.title(title, anchor=False)
-    st.markdown(_mark(subtitle, INK_MUTED))
-    st.markdown("")
-
-
 def lede(answer: str, detail: str = "") -> None:
     """
     The page's own question, answered in a sentence, before any control.
@@ -263,46 +246,43 @@ def section(label: str) -> None:
 
 
 def render_header(
-    freshness: Sequence[StripItem] = (),
+    title: str,
+    subtitle: str = "",
+    facts: Sequence[StripItem] = (),
     *,
-    show_identity: bool = True,
+    explain_facts: bool = False,
 ) -> None:
     """
-    Persistent chrome for the top of every page: freshness strip, and on the
-    landing page an identity line.
+    The top of every page, in the order a visitor reads it: who built this, what
+    this page is, one line on what it answers, then how fresh the data behind it
+    is. Nothing above the title except a single quiet byline.
 
-    `show_identity` is False on inner pages by design. Who built the tool is
-    context a visitor needs once, on arrival; repeating it above every page
-    spends the most valuable strip of the screen on the author rather than on
-    the answer, and it is the first thing to go when a page is too dense. The
-    footer still carries the attribution on every page, and the sidebar keeps a
-    link back to the portfolio.
+    This replaced a header rendered by the router *before* each page ran, which
+    put a strip of warehouse metadata, an expander and a divider above every page
+    title — so the first thing on any screen was plumbing, and the question the
+    page answered started a third of the way down. The same order as the sibling
+    job-market-intelligence app, which is the one that reads well.
 
-    The freshness strip stays everywhere, because it is not chrome: it says how
-    old the data behind *this* page is, and a stale answer is wrong on every
-    page equally.
+    `explain_facts` renders the tooltips as an expander. Off by default: it is a
+    whole box of caveats, and it earns its space once, on the landing page, not
+    above every chart. The strip itself stays on every page, because a stale
+    answer is wrong on every page equally.
     """
-    if show_identity:
-        identity, portfolio = st.columns([3, 1], vertical_alignment="center")
-        with identity:
-            st.markdown(
-                f"**{AUTHOR_NAME}** · {_mark(AUTHOR_ROLE, INK_MUTED)}",
-                help=None,
-            )
-        with portfolio:
-            st.markdown(f"[← portfolio]({PORTFOLIO_URL})")
-
-    if freshness:
-        # Tooltips live on their own row of captions rather than in the strip
-        # markdown, because a single markdown block can only carry one `help`.
-        st.markdown(_strip_markdown(freshness))
-        tips = [f"{i.label}: {i.help}" for i in freshness if i.help]
-        if tips:
+    st.markdown(
+        f":small[**{AUTHOR_NAME}** · {_mark(AUTHOR_ROLE, INK_MUTED)} · "
+        f"[← portfolio]({PORTFOLIO_URL})]"
+    )
+    st.title(title, anchor=False)
+    if subtitle:
+        st.markdown(_mark(subtitle, INK_MUTED))
+    if facts:
+        st.markdown(_strip_markdown(facts))
+        tips = [f"{i.label}: {i.help}" for i in facts if i.help]
+        if explain_facts and tips:
             with st.expander("What these numbers mean", expanded=False):
                 for tip in tips:
                     st.markdown(f":small[{_mark('•', RUST_500)} {tip}]")
-
-    st.divider()
+    st.markdown("")
 
 
 def render_footer() -> None:

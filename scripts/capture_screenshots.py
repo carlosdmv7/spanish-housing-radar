@@ -25,10 +25,10 @@ OUT_DIR = Path(__file__).resolve().parents[1] / "docs" / "img"
 # (>10s), and a long settle there proved flaky — by the end the connection and
 # query caches are warm and home renders instantly.
 PAGES = [
-    ("opportunities", "opportunities", 8),
-    ("market", "market", 8),
-    ("mortgage", "mortgage", 5),
-    ("affordability", "affordability", 8),
+    ("deals", "opportunities", 8),
+    ("neighbourhoods", "market", 8),
+    ("budget", "mortgage", 5),
+    ("value-check", "affordability", 8),
     ("how-it-works", "how_it_works", 6),
     ("", "home", 12),
 ]

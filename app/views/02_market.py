@@ -12,18 +12,19 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from chrome import page_header
 from components.charts import bar_ppsqm_with_range, line_price_history
 from components.filters import load_municipalities, municipality_filter, operation_filter
 from config import PROPERTY_TYPE_LABELS
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import altair_chart, lede, page_hero, section
+from theme import altair_chart, lede, section
 
-page_hero(
-    "What does a m² cost here?",
-    "The benchmark every opportunity score is measured against: €/m² by "
-    "neighbourhood, how wide the spread is, and where prices are heading.",
+page_header(
+    "What does a m² cost, barrio by barrio?",
+    "The benchmark every score is measured against, and where official prices are "
+    "heading.",
 )
 
 

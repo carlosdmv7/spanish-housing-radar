@@ -85,6 +85,43 @@ def bar_ppsqm_with_range(df: pd.DataFrame, top_n: int = 18) -> alt.LayerChart:
     )
 
 
+def bar_barrio_ppsqm(df: pd.DataFrame, city_median: float) -> alt.LayerChart:
+    """
+    Median asking €/m² per barrio, cheapest to dearest, against the city median.
+
+    Only barrios the caller has already filtered to a reliable sample should reach
+    this. Bars run from the city median rather than from zero because the story
+    is the gap — "this barrio asks 30% under the city" — and a bar from zero makes
+    €3,100 and €3,700 look nearly the same.
+    """
+    d = df.copy()
+    d["area"] = d["neighborhood"].str.title()
+    d["city_median"] = city_median
+    d["side"] = (d["median_ppsqm"] >= city_median).map({True: "above", False: "below"})
+
+    base = alt.Chart(d).encode(
+        y=alt.Y("area:N", title=None, sort=alt.EncodingSortField("median_ppsqm")),
+    )
+    bars = base.mark_bar(cornerRadiusEnd=3).encode(
+        x=alt.X("median_ppsqm:Q", title="Median asking €/m²",
+                scale=alt.Scale(zero=False), axis=alt.Axis(format=",.0f")),
+        x2="city_median:Q",
+        color=alt.Color(
+            "side:N", legend=None,
+            scale=alt.Scale(domain=["below", "above"], range=[TEAL_700, RUST_500]),
+        ),
+        tooltip=[
+            alt.Tooltip("area:N", title="Barrio"),
+            alt.Tooltip("median_ppsqm:Q", title="Median €/m²", format=",.0f"),
+            alt.Tooltip("listings:Q", title="Listings behind it"),
+        ],
+    )
+    rule = alt.Chart(pd.DataFrame({"x": [city_median]})).mark_rule(
+        stroke=INK_MUTED, strokeDash=[4, 3],
+    ).encode(x="x:Q")
+    return (bars + rule).properties(height=_row_height(len(d), per_row=22, minimum=260))
+
+
 def line_price_history(df: pd.DataFrame) -> alt.Chart:
     """Median €/m² over time, one line per neighbourhood."""
     d = df.copy()

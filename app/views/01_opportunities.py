@@ -12,6 +12,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from chrome import page_header
 from components.charts import bar_deal_tiers, scatter_size_vs_price
 from components.filters import (
     load_municipalities,
@@ -26,14 +27,14 @@ from config import DEAL_TIER_LABELS
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import altair_chart, lede, page_hero, section
+from theme import altair_chart, lede, section
 
 TOP_N_DEFAULT = 10
 
-page_hero(
-    "Which flats are underpriced right now?",
-    "Every listing is scored 0–100 against comparable flats — its own barrio when "
-    "there are enough, otherwise its district or city. Higher means better deal.",
+page_header(
+    "Which flats are cheap for their area?",
+    "Every listing scored 0–100 against comparable flats nearby — its own barrio "
+    "when there are enough, otherwise its district or the city.",
 )
 
 
