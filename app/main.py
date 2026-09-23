@@ -26,10 +26,12 @@ st.set_page_config(
     page_title=PAGE_TITLE,
     page_icon=PAGE_ICON,
     layout="wide",
-    # Collapsed: the pages carry their controls inline now. A view that still
-    # puts a widget in the sidebar gets it on demand behind the arrow, instead of
-    # every page opening with an empty grey column.
-    initial_sidebar_state="collapsed",
+    # "auto", not "collapsed". Pages still being moved to inline controls keep
+    # their filters in the sidebar, and "collapsed" hid them behind a chevron a
+    # visitor has no reason to click — verified in the capture of the Deals page.
+    # A page with nothing in the sidebar shows no sidebar either way, so this
+    # stops mattering once the last page moves its controls inline.
+    initial_sidebar_state="auto",
 )
 
 # Nav labels are one or two words, to scan. Each page's H1 is the question it

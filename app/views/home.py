@@ -22,7 +22,7 @@ from components.charts import bar_barrio_ppsqm
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import altair_chart
+from theme import TEAL_700, altair_chart
 
 # transform/dbt_project.yml → vars.min_comps_for_benchmark. A barrio with fewer
 # listings than this has a median that describes a handful of flats, so it is
@@ -141,7 +141,7 @@ with deals_col:
     else:
         d = deals.assign(
             area=deals["neighborhood"].str.title(),
-            below=(deals["price_per_sqm"] / deals["neighborhood_median_ppsqm"] - 1),
+            below=(deals["price_per_sqm"] / deals["neighborhood_median_ppsqm"] - 1) * 100,
         )
         st.dataframe(
             d[["area", "price_eur", "size_sqm", "below", "opportunity_score", "url"]],
@@ -151,11 +151,16 @@ with deals_col:
                 "area": st.column_config.TextColumn("Barrio"),
                 "price_eur": st.column_config.NumberColumn("Price", format="€%,d"),
                 "size_sqm": st.column_config.NumberColumn("m²", format="%d"),
+                # Whole percent: "-34.56%" claimed a precision a median of a
+                # dozen asking prices does not have.
                 "below": st.column_config.NumberColumn(
-                    "vs barrio", format="percent",
+                    "vs barrio", format="%+.0f%%",
                     help="Price per m² against the median of its own barrio."),
+                # Teal, not the theme's rust primary: in this brand rust means
+                # *above* the benchmark, so a great deal drawn in rust said the
+                # opposite of the chart beside it.
                 "opportunity_score": st.column_config.ProgressColumn(
-                    "Score", min_value=0, max_value=100, format="%d"),
+                    "Score", min_value=0, max_value=100, format="%d", color=TEAL_700),
                 "url": st.column_config.LinkColumn("", display_text="open ↗"),
             },
         )
