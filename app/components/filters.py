@@ -4,7 +4,7 @@ Each function renders filters and returns the selected values.
 """
 from __future__ import annotations
 
-from config import OPERATION_LABELS, PROPERTY_TYPE_LABELS
+from config import OPERATION_LABELS
 from connection import query
 import streamlit as st
 
@@ -45,29 +45,4 @@ def municipality_filter(municipalities: list[str], default: str = "valència") -
         options=options,
         index=idx,
         format_func=lambda k: "All cities" if k == "all" else k.title(),
-    )
-
-
-def property_type_filter() -> str:
-    options = ["all"] + list(PROPERTY_TYPE_LABELS.keys())
-    return st.selectbox(
-        "Property type",
-        options=options,
-        format_func=lambda k: "All types" if k == "all" else PROPERTY_TYPE_LABELS[k],
-    )
-
-
-def price_range_filter(
-    min_val: float = 0,
-    max_val: float = 2_000_000,
-    step:    int   = 10_000,
-    label:   str   = "Price range (€)",
-) -> tuple[float, float]:
-    return st.slider(
-        label,
-        min_value=int(min_val),
-        max_value=int(max_val),
-        value=(int(min_val), int(max_val)),
-        step=step,
-        format="€%d",
     )

@@ -27,25 +27,69 @@ def _row_height(n: int, per_row: int = 24, minimum: int = 320) -> int:
     return max(minimum, per_row * n)
 
 
-def bar_deal_tiers(df: pd.DataFrame) -> alt.Chart:
-    """How the current result set splits across the five deal tiers."""
+def strip_deal_tiers(df: pd.DataFrame) -> alt.Chart:
+    """
+    One horizontal band, split by deal tier, cheapest-for-its-area on the left.
+
+    No text inside the band. White labels were illegible on the amber and
+    rust-500 segments — the brand allows white only on the 700-weight fills —
+    and the "great deal" segment is usually too narrow to hold its own count,
+    which is the one number a visitor wants. The caller prints a legend with
+    every count underneath instead (`tier_legend`).
+    """
     counts = (
         df["deal_tier"].value_counts()
         .reindex(_TIER_KEYS).fillna(0).astype(int)
         .rename(index=DEAL_TIER_LABELS)
         .rename_axis("tier").reset_index(name="listings")
     )
+    counts["order"] = counts["tier"].map({t: i for i, t in enumerate(_TIER_DOMAIN)})
     return (
-        alt.Chart(counts)
-        .mark_bar()
+        alt.Chart(counts[counts["listings"] > 0])
+        .mark_bar(height=22, cornerRadius=0)
         .encode(
-            x=alt.X("listings:Q", title="Listings"),
-            y=alt.Y("tier:N", title=None, sort=_TIER_DOMAIN),
+            x=alt.X("listings:Q", stack="normalize", axis=None),
+            order=alt.Order("order:Q"),
             color=alt.Color("tier:N", scale=TIER_SCALE, legend=None),
             tooltip=[alt.Tooltip("tier:N", title="Tier"),
-                     alt.Tooltip("listings:Q", title="Listings", format=",")],
+                     alt.Tooltip("listings:Q", title="Listings")],
         )
-        .properties(height=_row_height(len(counts), per_row=34, minimum=180))
+        .properties(height=26)
+    )
+
+
+def tier_legend(df: pd.DataFrame) -> str:
+    """The band's key, with a count per tier, as one line of native markdown."""
+    counts = df["deal_tier"].value_counts()
+    return "  ".join(
+        f":color[●]{{foreground=\"{DEAL_TIER_COLORS[k]}\"}} {DEAL_TIER_LABELS[k]} "
+        f"**{int(counts.get(k, 0))}**"
+        for k in _TIER_KEYS
+    )
+
+
+def bar_flat_vs_area(ppsqm: float, bench: float, bench_label: str) -> alt.Chart:
+    """This flat's €/m² against the benchmark it was scored on — two bars, no more."""
+    d = pd.DataFrame({
+        "what": ["This flat", bench_label],
+        "ppsqm": [ppsqm, bench],
+        "tone": ["flat", "bench"],
+    })
+    return (
+        alt.Chart(d)
+        .mark_bar(cornerRadiusEnd=3, height=18)
+        .encode(
+            y=alt.Y("what:N", title=None, sort=["This flat", bench_label]),
+            x=alt.X("ppsqm:Q", title=None, axis=alt.Axis(format=",.0f", tickCount=3)),
+            color=alt.Color(
+                "tone:N", legend=None,
+                scale=alt.Scale(domain=["flat", "bench"],
+                                range=[TEAL_700 if ppsqm <= bench else RUST_500, INK_MUTED]),
+            ),
+            tooltip=[alt.Tooltip("what:N", title=""),
+                     alt.Tooltip("ppsqm:Q", title="€/m²", format=",.0f")],
+        )
+        .properties(height=70)
     )
 
 
