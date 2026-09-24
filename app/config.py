@@ -51,9 +51,9 @@ OPERATION_LABELS: dict[str, str] = {
 # simulator running on undocumented constants would break that claim on the two
 # pages where a visitor is most likely to act on the output.
 #
-# The *_SOURCE strings are what the Mortgage and Affordability pages render in a
-# caption, so the citation and the constant it describes live in one place and
-# cannot drift apart. Refresh both together, and move the date.
+# The *_SOURCE strings are what the Budget page renders under "Where these
+# numbers come from", so the citation and the constant it describes live in one
+# place and cannot drift apart. Refresh both together, and move the date.
 SOURCES_CONSULTED_ON = "2026-07-30"
 
 # ── Mortgage defaults ─────────────────────────────────────────────────────────
@@ -137,7 +137,7 @@ AFFORDABILITY_SOURCE_NOTE = (
     f"Mortgage rate {MORTGAGE_DEFAULT_RATE_FIXED:.2f}%: Banco de España official reference rate "
     "for mortgages over 3 years (3.049%, June 2026, BOE-A-2026-15738). "
     f"Ratio {AFFORDABILITY_RATIO_MAX:.0f}%: Spanish lenders' debt-service guideline, not a legal "
-    f"cap. All consulted {SOURCES_CONSULTED_ON}. Override any of them in the sidebar."
+    f"cap. All consulted {SOURCES_CONSULTED_ON}. Override any of them above."
 )
 
 # ── UI ────────────────────────────────────────────────────────────────────────

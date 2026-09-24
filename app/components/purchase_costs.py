@@ -374,7 +374,10 @@ def buy_vs_invest(
 
     * Closing costs enter the buying branch as **spent**, never as equity. ITP
       buys nothing resaleable, and treating it as part of the asset is the most
-      common way these comparisons flatter buying.
+      common way these comparisons flatter buying. They are spent exactly once:
+      both paths start from the same cash, the renter invests all of it, and the
+      buyer's net worth is the equity alone — which already lacks the costs,
+      because they went to the notary and the tax office, not into the flat.
     * `property_growth_pct` and `investment_return_pct` are both required. A
       default on either would smuggle in a prediction, and the entire verdict is
       a function of two numbers nobody knows.
@@ -386,8 +389,12 @@ def buy_vs_invest(
     property_value = price * (1 + property_growth_pct / 100) ** horizon_years
     equity = property_value - outstanding_balance_at_horizon
     total_mortgage_paid = monthly_payment * months
-    # Cash gone: the deposit and every closing cost.
-    net_worth_buying = equity - costs.total_costs
+    # Equity alone. This used to subtract costs.total_costs as well, counting
+    # the closing costs twice: they were never in the equity to begin with, and
+    # the renting branch already holds them as invested cash. On a €250,000
+    # flat that tilted the verdict ~€25,000 towards renting, enough to call a
+    # ten-year horizon for renting when buying was ~€23,000 ahead.
+    net_worth_buying = equity
 
     # ── Renting and investing ─────────────────────────────────────────────────
     # The cash that would have been the deposit and costs is invested up front.
