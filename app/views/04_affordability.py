@@ -1,5 +1,15 @@
 """
-Affordability — income required per neighbourhood, years of salary, buy vs rent.
+Value check — is the area itself overpriced?
+
+Deals asks whether a flat is cheap *for its barrio*. This page asks whether the
+barrio is, and it measures that against the two things a price should answer
+to: what a flat rents for, and what the people who live there earn (ADR-0008).
+
+Nothing here depends on the visitor's own income. The old page asked for it
+and then drew every barrio as out of reach — the default was an average
+salary, so the person reading it was almost always under the line, which says
+something about them and nothing about the area. "Can I afford it?" is the
+Budget page's question.
 """
 from pathlib import Path
 import sys
@@ -7,432 +17,228 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from chrome import page_header
-from components.charts import bar_buy_vs_rent, bar_required_income, bar_years_of_salary
-from components.filters import load_municipalities, municipality_filter
-from components.mortgage import compute_mortgage, max_affordable_loan, required_income
-from config import (
-    AFFORDABILITY_RATIO_MAX,
-    AFFORDABILITY_SOURCE_NOTE,
-    MORTGAGE_DEFAULT_RATE_FIXED,
-    MORTGAGE_DEFAULT_YEARS,
-    OVERBURDEN_PCT,
-    VALENCIA_AVG_NET_SALARY_MONTHLY,
-)
+from components.charts import bar_district_burden, scatter_price_vs_yield
+from components.filters import load_municipalities
+from config import OVERBURDEN_PCT
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import altair_chart, section
+from theme import altair_chart
 
-# transform/dbt_project.yml → vars.min_listings_for_area_stat. Same threshold the
-# warehouse applies when it stamps rpt_district_affordability.low_sample_flag, so
-# the barrio figures this page computes itself and the district figures it reads
-# from gold disagree about nothing.
+# transform/dbt_project.yml → vars.min_listings_for_area_stat, the threshold
+# behind rpt_district_affordability.low_sample_flag. The barrio yields below use
+# the same bar on *both* sides — 8 flats for sale and 8 for rent — because a
+# yield is a ratio of two medians and is only as solid as the thinner one.
 MIN_LISTINGS = 8
+GOLD = "spanish_housing_radar.main_gold"
+MARKET_SQL = (Path(__file__).parent.parent / "queries" / "market.sql").read_text()
 
-# The counterpart to Deals. That page asks whether a flat is cheap *for its
-# area*; this one asks whether the area itself is expensive — the distinction
-# ADR-0008 exists for, and the reason the two titles are written as a pair.
 page_header(
     "Is the area itself overpriced?",
-    "A barrio can be cheap because it's a bargain or because nobody there can pay "
-    "more. Rents and local incomes tell the two apart.",
+    "What a barrio asks, against what its flats rent for and what its residents earn.",
 )
 
-# The verdict "this barrio is out of reach" is only as trustworthy as the income
-# and rate it was computed from, so both are cited before any verdict is shown.
-st.caption(AFFORDABILITY_SOURCE_NOTE)
-
-with st.sidebar:
-    st.header("Parameters")
-    net_income = st.number_input(
-        "Monthly net income (€)", min_value=500, max_value=20_000,
-        value=int(VALENCIA_AVG_NET_SALARY_MONTHLY), step=100, format="%d",
-        help="Defaults to the Comunitat Valenciana average, derived from INE's 2024 "
-             "salary survey — see the note under the page title.",
-    )
-    ltv = st.slider("LTV (%)", 50, 100, 80)
-    rate = st.number_input(
-        "Fixed mortgage rate (%)", min_value=0.5, max_value=10.0,
-        value=MORTGAGE_DEFAULT_RATE_FIXED, step=0.1, format="%.1f",
-    )
-    years = st.slider("Mortgage term (years)", 10, 40, MORTGAGE_DEFAULT_YEARS)
-    max_ratio = st.slider(
-        "Max payment/income ratio (%)", 20, 50, int(AFFORDABILITY_RATIO_MAX),
-        help="Spanish lenders rarely go past 35% of net income.",
-    )
-    # This list used to be hardcoded to valència/madrid/barcelona, so the five
-    # other cities in the warehouse -- bilbao, málaga, sevilla, valladolid,
-    # zaragoza -- were simply unreachable from this page. A filter that silently
-    # omits data is the same failure as dropping low-confidence rows: the visitor
-    # cannot see what is missing. Read the list from the warehouse instead, so it
-    # can never drift from what is actually there again.
-    muni = municipality_filter(load_municipalities())
-
-# ── Load data ─────────────────────────────────────────────────────────────────
-aff_sql = (Path(__file__).parent.parent / "queries" / "affordability.sql").read_text()
-
-
-@st.cache_data(ttl=600, show_spinner="Loading affordability data…")
-def load_data(muni):
-    sale = query(aff_sql, operation_type="sale", municipality=muni)
-    rent = query(aff_sql, operation_type="rent", municipality=muni)
-    return sale, rent
-
-
 try:
-    df_sale, df_rent = load_data(muni)
+    munis = load_municipalities()
 except Exception as exc:
     st.error(
-        "**Can't reach the warehouse, so affordability can't be computed.** Check "
-        "`MOTHERDUCK_TOKEN` in `.env` locally, or the app's Secrets on Streamlit Cloud."
+        "**Can't reach the warehouse.** Locally that needs `MOTHERDUCK_TOKEN` in "
+        "`.env`; on Streamlit Cloud it comes from the app's Secrets."
     )
     st.caption(f"Underlying error: {exc}")
     st.stop()
 
-if df_sale.empty:
-    st.info(
-        "**No sale listings for this city yet**, so there is nothing to price against "
-        "an income. Coverage is deepest in **Valencia** — or pick *All cities*."
+c_city, _ = st.columns([1.4, 4.6])
+with c_city:
+    cities = sorted(munis)
+    city = st.selectbox(
+        "City", cities,
+        index=cities.index("valència") if "valència" in cities else 0,
+        format_func=str.title,
     )
-    st.stop()
 
-# ── Per-neighbourhood affordability ───────────────────────────────────────────
-hood_stats = (
-    df_sale.groupby("neighborhood")
-    .agg(
-        median_price=("price_eur", "median"),
-        median_ppsqm=("price_per_sqm", "median"),
-        listings=("listing_pk", "count"),
+
+@st.cache_data(ttl=600, show_spinner="Loading prices and incomes…")
+def load(city: str) -> tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
+    medians = query(f"""
+        SELECT MEDIAN(price_per_sqm) FILTER (WHERE operation_type = 'sale') AS sale,
+               MEDIAN(price_per_sqm) FILTER (WHERE operation_type = 'rent') AS rent
+        FROM {GOLD}.rpt_opportunities
+        WHERE municipality = $city AND property_type = 'apartment'
+    """, city=city).iloc[0]
+
+    sale = query(MARKET_SQL, operation_type="sale", municipality=city)
+    rent = query(MARKET_SQL, operation_type="rent", municipality=city)
+    keep = ["neighborhood", "median_ppsqm", "total_listings"]
+    barrios = (
+        sale[sale["property_type"] == "apartment"][keep]
+        .merge(rent[rent["property_type"] == "apartment"][keep],
+               on="neighborhood", suffixes=("_sale", "_rent"))
+        .rename(columns={"median_ppsqm_sale": "sale_ppsqm",
+                         "median_ppsqm_rent": "rent_ppsqm"})
     )
-    .reset_index()
-)
-hood_stats["required_income"] = hood_stats["median_price"].apply(
-    lambda p: required_income(p * ltv / 100, rate, years, max_ratio)
-)
-hood_stats["affordable"] = hood_stats["required_income"] <= net_income
-hood_stats["years_of_salary"] = hood_stats["median_price"] / (net_income * 12)
-hood_stats["low_sample"] = hood_stats["listings"] < MIN_LISTINGS
-
-# The opportunity score refuses to benchmark a listing against fewer than
-# MIN_LISTINGS comparables, because a median of one flat is that flat. This page
-# was doing exactly that and calling it a barrio: "Within reach — 1 / 63" counted
-# 63 barrios of which 40 held fewer than eight listings and ten held exactly one,
-# each weighted the same as one built on 78.
-#
-# ADR-0005 says flag, never drop, so the thin barrios stay in the table and in the
-# charts. What changes is that the headline figures — the ones read without
-# scrolling — are computed on the barrios that can support them, and say how many
-# were set aside.
-confident = hood_stats[~hood_stats["low_sample"]]
-headline = confident if not confident.empty else hood_stats
-set_aside = len(hood_stats) - len(headline)
-
-# ── KPIs ──────────────────────────────────────────────────────────────────────
-max_budget = max_affordable_loan(net_income, max_ratio, rate, years) / (ltv / 100)
-
-sample_help = (
-    f" Computed on the {len(headline)} barrios with at least {MIN_LISTINGS} "
-    f"listings; {set_aside} thinner ones are shown below but left out of this "
-    "figure."
-    if set_aside else ""
-)
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Within reach", f"{int(headline['affordable'].sum())} / {len(headline)}",
-          help="Neighbourhoods whose median flat you could service at these terms."
-               + sample_help)
-c2.metric("Cheapest entry", f"€{headline['required_income'].min():,.0f}/mo",
-          help="Income needed in the most affordable neighbourhood." + sample_help)
-c3.metric("Median years of salary", f"{headline['years_of_salary'].median():.1f} yrs",
-          help="Median across those barrios." + sample_help)
-c4.metric("Your max budget", f"€{max_budget:,.0f}",
-          help=f"Highest property price you could finance at {ltv}% LTV.")
-
-st.markdown(
-    ":small[Based on **asking** prices, not transactions, and on the median flat in "
-    "each barrio — a barrio can be out of reach at the median and still hold something "
-    "you can afford.]"
-)
-if set_aside:
-    st.markdown(
-        f":small[{set_aside} of {len(hood_stats)} barrios hold fewer than "
-        f"{MIN_LISTINGS} listings each, so their median describes a handful of "
-        "flats rather than the barrio. They are kept in the charts below rather "
-        "than dropped — hiding them would make coverage look better than it is — "
-        "but they are excluded from the four figures above.]"
+    barrios = barrios[(barrios["total_listings_sale"] >= MIN_LISTINGS)
+                      & (barrios["total_listings_rent"] >= MIN_LISTINGS)]
+    barrios = barrios.assign(
+        yield_pct=barrios["rent_ppsqm"] * 12 / barrios["sale_ppsqm"] * 100,
+        listings=barrios["total_listings_sale"] + barrios["total_listings_rent"],
     )
-st.markdown("")
 
-# ── Charts ────────────────────────────────────────────────────────────────────
-col_l, col_r = st.columns(2)
-with col_l:
-    altair_chart(bar_required_income(hood_stats, net_income))
-with col_r:
-    altair_chart(bar_years_of_salary(hood_stats))
-
-# ── Against what the district actually earns ──────────────────────────────────
-# Everything above answers "can *I* afford this?" from the income in the sidebar.
-# This answers a different question the app could not previously ask at all: can
-# the people who already live there afford it? A barrio can be cheap because it
-# is a bargain or because nobody in it can pay more, and €/m² cannot tell those
-# apart. INE's household income is the denominator that can.
-st.markdown("")
-section("Priced against the people who live there")
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def load_district_income(muni):
-    return query(
-        "SELECT * FROM spanish_housing_radar.main_gold.rpt_district_affordability "
-        "WHERE ($m = 'all' OR municipality = $m) "
-        "AND property_type = 'apartment'",
-        m=muni,
-    )
+    districts = query(f"""
+        SELECT district, operation_type, listings, low_sample_flag, median_price_eur,
+               net_income_per_household, years_of_household_income,
+               rent_pct_of_household_income, income_reference_year
+        FROM {GOLD}.rpt_district_affordability
+        WHERE municipality = $city AND property_type = 'apartment'
+          AND net_income_per_household IS NOT NULL
+    """, city=city)
+    return medians, barrios, districts
 
 
 try:
-    dist_all = load_district_income(muni)
+    medians, barrios, districts = load(city)
 except Exception as exc:
-    dist_all = pd.DataFrame()
-    st.caption(f"District income is unavailable right now: {exc}")
+    st.error("**The price and income query failed.**")
+    st.caption(f"Underlying error: {exc}")
+    st.stop()
 
-# The rent half of this table has existed in gold since the model was written and
-# nothing read it, because this page hard-coded operation_type = 'sale'. With 73
-# València rentals in the warehouse that was defensible; at 308 it is a column
-# going to waste, and it carries the harder finding of the two.
-# Deploy-ordering guard, not defensive clutter. `low_sample_flag` is a new column
-# in gold, and gold is rebuilt by the weekly pipeline — so between this code
-# merging and the next Monday run, main_gold could still be serving the old
-# schema and every district table here would die on a KeyError. The flag is a
-# pure function of `listings`, and this page already knows the threshold, so it
-# can reconstruct it rather than require a manual `make deploy-prod` to be
-# sequenced correctly by a human. Gold stays the source of truth: when the column
-# is there it is used as-is, so any other consumer reads the same judgement.
-if not dist_all.empty and "low_sample_flag" not in dist_all.columns:
-    dist_all = dist_all.assign(low_sample_flag=dist_all["listings"] < MIN_LISTINGS)
+place = city.title()
+if pd.isna(medians["sale"]):
+    st.info(f"No flats for sale in {place} yet.")
+    st.stop()
 
-if dist_all.empty:
-    dist = dist_rent = dist_all
+city_yield = (medians["rent"] * 12 / medians["sale"] * 100
+              if pd.notna(medians["rent"]) else None)
+buy = districts[(districts["operation_type"] == "sale") & ~districts["low_sample_flag"]]
+rent = districts[(districts["operation_type"] == "rent") & ~districts["low_sample_flag"]]
+
+# ── Four numbers ──────────────────────────────────────────────────────────────
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Gross rental yield", f"{city_yield:.1f}%" if city_yield else "—",
+          help="A year's asking rent as a share of the asking price, per m², city "
+               "median. Before costs and tax. The lower it is, the further prices "
+               "have run ahead of what flats earn.")
+m2.metric("Years of local income to buy",
+          f"{buy['years_of_household_income'].median():.1f}" if not buy.empty else "—",
+          help="The median flat's asking price ÷ the median household's net income "
+               f"in its district, median across districts with {MIN_LISTINGS}+ listings.")
+m3.metric("Rent as a share of local income",
+          f"{rent['rent_pct_of_household_income'].median():.0f}%" if not rent.empty
+          else "—",
+          help="The median asking rent × 12 ÷ the median household's net income, "
+               f"median across districts with {MIN_LISTINGS}+ rentals.")
+if not rent.empty:
+    over = int((rent["rent_pct_of_household_income"] > OVERBURDEN_PCT).sum())
+    m4.metric(f"Districts where rent tops {OVERBURDEN_PCT:.0f}%", f"{over} of {len(rent)}",
+              help=f"Above {OVERBURDEN_PCT:.0f}% of income is what Eurostat and INE "
+                   "call housing-cost overburden.")
 else:
-    dist = (
-        dist_all[dist_all["years_of_household_income"].notna()]
-        .sort_values("years_of_household_income", ascending=False)
-    )
-    dist_rent = (
-        dist_all[dist_all["rent_pct_of_household_income"].notna()]
-        .sort_values("rent_pct_of_household_income", ascending=False)
-    )
+    m4.metric(f"Districts where rent tops {OVERBURDEN_PCT:.0f}%", "—")
 
-if dist.empty and dist_rent.empty:
-    st.info(
-        "**No official income figures for this city's districts yet.** The mapping "
-        "from INE's numbered districts to the names used here exists for València "
-        "only — every other city needs its own official district list before its "
-        "figures can be trusted."
-    )
-else:
-    ref_year = int(dist_all["income_reference_year"].max())
-    tab_buy, tab_rent = st.tabs(["To buy", "To rent"])
+st.divider()
 
-    with tab_buy:
-        if dist.empty:
-            st.info("**No sale listings in these districts yet.**")
-        else:
-            st.markdown(
-                ":small[Years of **median household income** to buy the median flat "
-                "outright, ignoring financing entirely. The moment a mortgage rate "
-                "enters, the number stops describing the district and starts "
-                "describing the borrower.]"
-            )
-            st.dataframe(
-                dist.assign(area=dist["district"].str.title())[[
-                    "area", "listings", "low_sample_flag", "median_price_eur",
-                    "median_ppsqm", "net_income_per_household",
-                    "years_of_household_income",
-                ]],
-                width="stretch",
-                hide_index=True,
-                column_config={
-                    "area": st.column_config.TextColumn("District", pinned=True),
-                    "listings": st.column_config.NumberColumn("Listings", format="%d"),
-                    "low_sample_flag": st.column_config.CheckboxColumn(
-                        "Thin",
-                        help=f"Fewer than {MIN_LISTINGS} listings, so this row's "
-                             "median describes a handful of flats rather than the "
-                             "district. Shown rather than dropped, and excluded "
-                             "from the summary above it.",
-                    ),
-                    "median_price_eur": st.column_config.NumberColumn(
-                        "Median price", format="€%,d"),
-                    "median_ppsqm": st.column_config.NumberColumn("€/m²", format="€%,d"),
-                    "net_income_per_household": st.column_config.NumberColumn(
-                        "Household income", format="€%,d",
-                        help=f"INE Atlas de Distribución de Renta, reference year {ref_year}.",
-                    ),
-                    "years_of_household_income": st.column_config.NumberColumn(
-                        "Years to buy", format="%.1f",
-                        help="Median asking price ÷ median net household income.",
-                    ),
-                },
-            )
+left, right = st.columns([3, 2], gap="large")
 
-            # The comparison that makes the point: the priciest per m² is not the
-            # least affordable, because the two are decoupled by income. Drawn from
-            # the districts that can carry it — naming a "priciest district" that is
-            # one expensive flat would undo the point rather than make it.
-            solid = dist[~dist["low_sample_flag"]]
-            if solid.empty:
-                solid = dist
-            dearest = solid.loc[solid["median_ppsqm"].idxmax()]
-            hardest = solid.loc[solid["years_of_household_income"].idxmax()]
-            if dearest["district"] != hardest["district"]:
-                st.markdown(
-                    f":small[**{dearest['district'].title()}** has the highest €/m² "
-                    f"(€{dearest['median_ppsqm']:,.0f}) yet takes "
-                    f"{dearest['years_of_household_income']:.1f} years of local "
-                    f"income, while **{hardest['district'].title()}** is cheaper per "
-                    f"m² (€{hardest['median_ppsqm']:,.0f}) and takes "
-                    f"{hardest['years_of_household_income']:.1f}. Price and "
-                    "affordability are not the same ranking — which is the whole "
-                    "reason this table exists.]"
-                )
-
-    with tab_rent:
-        if dist_rent.empty:
-            st.info(
-                "**No rental listings in these districts yet.** This is the same "
-                "question asked of renting, and it needs rent scraped in the same "
-                "districts the income figures cover."
-            )
-        else:
-            st.markdown(
-                f":small[Share of **median net household income** the median asking "
-                f"rent consumes. Above **{OVERBURDEN_PCT:.0f}%** is the threshold "
-                "Eurostat and INE treat as housing-cost overburden.]"
-            )
-            # Counted over districts with a real sample. The headline said
-            # "16 of 16 districts" while one of the sixteen was two listings, and a
-            # statement that strong should not rest on a row the table itself
-            # marks as thin.
-            solid_rent = dist_rent[~dist_rent["low_sample_flag"]]
-            counted = solid_rent if not solid_rent.empty else dist_rent
-            thin_rent = len(dist_rent) - len(counted)
-            over = counted[counted["rent_pct_of_household_income"] > OVERBURDEN_PCT]
-            if not over.empty:
-                thin_note = (
-                    f" A further {thin_rent} district"
-                    f"{'s are' if thin_rent > 1 else ' is'} listed below but built "
-                    f"on fewer than {MIN_LISTINGS} rentals, so "
-                    f"{'they are' if thin_rent > 1 else 'it is'} not counted here."
-                    if thin_rent else ""
-                )
-                st.warning(
-                    f"**{len(over)} of {len(counted)} districts sit above the "
-                    f"{OVERBURDEN_PCT:.0f}% overburden line**, from "
-                    f"{over['rent_pct_of_household_income'].min():.0f}% to "
-                    f"{over['rent_pct_of_household_income'].max():.0f}%. Read that as "
-                    "the gap between the market and the residents, not as what "
-                    "households pay: these are asking rents for flats available "
-                    "today, while the income is the district's median across "
-                    f"everyone — most of whom are not moving, and many of whom own."
-                    f"{thin_note}"
-                )
-            st.dataframe(
-                dist_rent.assign(area=dist_rent["district"].str.title())[[
-                    "area", "listings", "low_sample_flag", "median_price_eur",
-                    "median_ppsqm", "net_income_per_household",
-                    "rent_pct_of_household_income",
-                ]],
-                width="stretch",
-                hide_index=True,
-                column_config={
-                    "area": st.column_config.TextColumn("District", pinned=True),
-                    "listings": st.column_config.NumberColumn("Listings", format="%d"),
-                    "low_sample_flag": st.column_config.CheckboxColumn(
-                        "Thin",
-                        help=f"Fewer than {MIN_LISTINGS} rentals, so this row's "
-                             "median describes a handful of flats rather than the "
-                             "district. Shown rather than dropped, and excluded "
-                             "from the count above it.",
-                    ),
-                    "median_price_eur": st.column_config.NumberColumn(
-                        "Median rent", format="€%,d", help="Monthly asking rent."),
-                    "median_ppsqm": st.column_config.NumberColumn(
-                        "€/m²/mo", format="€%.1f"),
-                    "net_income_per_household": st.column_config.NumberColumn(
-                        "Household income", format="€%,d",
-                        help=f"INE Atlas de Distribución de Renta, reference year {ref_year}.",
-                    ),
-                    "rent_pct_of_household_income": st.column_config.ProgressColumn(
-                        "% of income", min_value=0, max_value=100, format="%.0f%%",
-                        help="Median asking rent × 12 ÷ median net household income.",
-                    ),
-                },
-            )
-
-    st.caption(
-        f"Income: INE Atlas de Distribución de Renta de los Hogares, table 30824, "
-        f"reference year {ref_year} — published with a ~2-year lag, so it is the "
-        "latest official figure, not a current one. Prices are asking prices from "
-        "today's listings, so the ratio mixes two dates and reads as a direction, "
-        "not a precise multiple."
-    )
-
-st.markdown("")
-section("Buy vs rent")
-
-if df_rent.empty:
-    st.info(
-        "**No rental listings for this city**, so buy-vs-rent can't be computed. The "
-        "comparison needs both operations scraped for the same neighbourhoods — switch "
-        "city, or pick *All cities*."
-    )
-else:
-    rent_stats = (
-        df_rent.groupby("neighborhood")
-        .agg(median_rent=("price_eur", "median"))
-        .reset_index()
-    )
-    hood_stats["monthly_mortgage"] = hood_stats["median_price"].apply(
-        lambda p: compute_mortgage(p * ltv / 100, rate, years).monthly_payment
-    )
-    merged = hood_stats.merge(rent_stats, on="neighborhood", how="inner")
-
-    if merged.empty:
-        st.info(
-            "**No neighbourhood has both sale and rental listings in this selection**, "
-            "so there is nothing to compare like-for-like."
-        )
+with left:
+    st.markdown("#### Is the price backed by rents?")
+    if barrios.empty or city_yield is None:
+        st.info(f"No barrio in {place} has {MIN_LISTINGS}+ flats both for sale and for "
+                "rent yet, so no yield can be drawn.")
     else:
-        merged["buy_vs_rent_ratio"] = merged["monthly_mortgage"] / merged["median_rent"]
-        altair_chart(bar_buy_vs_rent(merged))
+        altair_chart(scatter_price_vs_yield(barrios, float(medians["sale"]), city_yield))
+        st.caption(f"Each dot is a barrio with {MIN_LISTINGS}+ flats for sale and "
+                   f"{MIN_LISTINGS}+ for rent. Dashed lines: {place}. Low and to the "
+                   "right, the price has run ahead of what the flat rents for.")
 
-        st.markdown(
-            ":small[A ratio above 1 means the mortgage payment exceeds the median rent "
-            "for the same barrio — before service charges, tax and maintenance, which "
-            "fall on the owner.]"
+with right:
+    st.markdown("#### Against what residents earn")
+    if buy.empty and rent.empty:
+        st.info(f"No official income figures for {place}'s districts yet — the "
+                "district mapping exists for València only.")
+    else:
+        tab_buy, tab_rent = st.tabs(["Years to buy", "Share of income to rent"])
+        with tab_buy:
+            if buy.empty:
+                st.info("Not enough flats for sale per district yet.")
+            else:
+                ref = float(buy["years_of_household_income"].median())
+                altair_chart(bar_district_burden(
+                    buy, "years_of_household_income", ref, "Years of income", ".1f",
+                    axis_fmt=".0f"))
+                st.caption(f"Years of the district's median household income to buy "
+                           f"its median flat outright. Line: {place}, {ref:.1f} years.")
+        with tab_rent:
+            if rent.empty:
+                st.info("Not enough rentals per district yet.")
+            else:
+                altair_chart(bar_district_burden(
+                    rent.assign(share=rent["rent_pct_of_household_income"] / 100),
+                    "share", OVERBURDEN_PCT / 100, "Share of income", ".0%"))
+                st.caption(f"The median rent as a share of the district's median "
+                           f"household income. Line: the {OVERBURDEN_PCT:.0f}% "
+                           "overburden threshold.")
+
+# ── The detail ────────────────────────────────────────────────────────────────
+with st.expander("The numbers behind it"):
+    if not districts.empty:
+        wide = (
+            districts.pivot_table(
+                index=["district", "net_income_per_household"],
+                columns="operation_type",
+                values=["median_price_eur", "listings", "years_of_household_income",
+                        "rent_pct_of_household_income"],
+                aggfunc="first",
+            )
         )
+        wide.columns = [f"{a}_{b}" for a, b in wide.columns]
+        wide = wide.reset_index()
+        cols = ["district", "net_income_per_household", "median_price_eur_sale",
+                "years_of_household_income_sale", "median_price_eur_rent",
+                "rent_pct_of_household_income_rent", "listings_sale", "listings_rent"]
+        wide = wide.reindex(columns=cols)
         st.dataframe(
-            merged.assign(area=merged["neighborhood"].str.title())[[
-                "area", "median_price", "monthly_mortgage", "median_rent",
-                "buy_vs_rent_ratio", "years_of_salary", "required_income",
-            ]].sort_values("required_income"),
-            width="stretch",
-            hide_index=True,
+            wide.assign(district=wide["district"].str.title())
+                .sort_values("years_of_household_income_sale", ascending=False),
+            width="stretch", hide_index=True,
             column_config={
-                "area": st.column_config.TextColumn("Neighbourhood", pinned=True),
-                "median_price": st.column_config.NumberColumn("Median price", format="€%,d"),
-                "monthly_mortgage": st.column_config.NumberColumn(
-                    "Mortgage/mo", format="€%,d"),
-                "median_rent": st.column_config.NumberColumn("Rent/mo", format="€%,d"),
-                "buy_vs_rent_ratio": st.column_config.NumberColumn(
-                    "Buy/rent", format="%.2f×",
-                    help="Mortgage payment ÷ median rent. Above 1 favours renting on "
-                         "monthly cash flow alone.",
-                ),
-                "years_of_salary": st.column_config.NumberColumn(
-                    "Years of salary", format="%.1f"),
-                "required_income": st.column_config.NumberColumn(
-                    "Income needed", format="€%,d"),
+                "district": st.column_config.TextColumn("District", pinned=True),
+                "net_income_per_household": st.column_config.NumberColumn(
+                    "Household income", format="€%,d", help="Net, per year."),
+                "median_price_eur_sale": st.column_config.NumberColumn(
+                    "Median price", format="€%,d"),
+                "years_of_household_income_sale": st.column_config.NumberColumn(
+                    "Years to buy", format="%.1f"),
+                "median_price_eur_rent": st.column_config.NumberColumn(
+                    "Median rent", format="€%,d", help="A month."),
+                "rent_pct_of_household_income_rent": st.column_config.NumberColumn(
+                    "Rent / income", format="%.0f%%"),
+                "listings_sale": st.column_config.NumberColumn("For sale", format="%d"),
+                "listings_rent": st.column_config.NumberColumn("For rent", format="%d"),
             },
         )
+    if not barrios.empty:
+        st.dataframe(
+            barrios.assign(area=barrios["neighborhood"].str.title())[[
+                "area", "sale_ppsqm", "rent_ppsqm", "yield_pct",
+                "total_listings_sale", "total_listings_rent",
+            ]].sort_values("yield_pct"),
+            width="stretch", hide_index=True,
+            column_config={
+                "area": st.column_config.TextColumn("Barrio", pinned=True),
+                "sale_ppsqm": st.column_config.NumberColumn("Buy €/m²", format="€%,d"),
+                "rent_ppsqm": st.column_config.NumberColumn("Rent €/m²/mo",
+                                                            format="€%.1f"),
+                "yield_pct": st.column_config.NumberColumn("Gross yield",
+                                                           format="%.1f%%"),
+                "total_listings_sale": st.column_config.NumberColumn("For sale",
+                                                                     format="%d"),
+                "total_listings_rent": st.column_config.NumberColumn("For rent",
+                                                                     format="%d"),
+            },
+        )
+
+if not districts.empty:
+    year = int(districts["income_reference_year"].max())
+    st.caption(f"Prices: today's asking prices. Income: INE household income atlas, "
+               f"{year} — the latest published, so the ratios mix two dates and read "
+               "as a direction, not an exact multiple.")

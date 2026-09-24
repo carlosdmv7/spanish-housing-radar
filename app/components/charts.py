@@ -12,7 +12,7 @@ from __future__ import annotations
 import altair as alt
 from config import DEAL_TIER_COLORS, DEAL_TIER_LABELS
 import pandas as pd
-from theme import BORDER, INK, INK_MUTED, PETROL_900, RUST_500, RUST_900, TEAL_700
+from theme import BORDER, INK, INK_MUTED, PETROL_900, RUST_500, RUST_700, TEAL_700
 
 # Ordered tier axis, shared by the scatter and any other tier-coloured encoding,
 # so the legend reads best-deal-first and matches the map's colours.
@@ -230,6 +230,147 @@ def scatter_size_vs_price(df: pd.DataFrame) -> alt.Chart:
     )
 
 
+def scatter_price_vs_yield(df: pd.DataFrame, city_price: float,
+                           city_yield: float) -> alt.LayerChart:
+    """
+    Each barrio's asking €/m² against the gross yield its rents give on that
+    price, split by the city's two medians.
+
+    The yield is the question "is the area itself overpriced?" made measurable:
+    rent is what a flat is worth to live in, the price is what it costs to own,
+    and where the price has run ahead of the rent the yield falls. Bottom right
+    is dear *and* poorly backed by rents; top left is cheap and well backed.
+    """
+    d = df.copy()
+    d["area"] = d["neighborhood"].str.title()
+    d["reading"] = "Neither"
+    d.loc[(d["sale_ppsqm"] >= city_price) & (d["yield_pct"] < city_yield),
+          "reading"] = "Price ahead of rent"
+    d.loc[(d["sale_ppsqm"] < city_price) & (d["yield_pct"] >= city_yield),
+          "reading"] = "Rent backs the price"
+    # Only the readings that occur, so the legend never names an empty group.
+    readings = {"Rent backs the price": TEAL_700, "Neither": INK_MUTED,
+                "Price ahead of rent": RUST_700}
+    present = [k for k in readings if (d["reading"] == k).any()]
+    scale = alt.Scale(domain=present, range=[readings[k] for k in present])
+
+    # Explicit domains, padded, so the label placement below maps data to the
+    # same pixels the chart does — a "nice" domain would move every point.
+    xdom = _padded(pd.concat([d["sale_ppsqm"], pd.Series([city_price])]), 0.05)
+    ydom = _padded(pd.concat([d["yield_pct"], pd.Series([city_yield])]), 0.08)
+    x = alt.X("sale_ppsqm:Q", title="Asking price to buy, €/m²",
+              scale=alt.Scale(domain=xdom, nice=False), axis=alt.Axis(format=",.0f"))
+    y = alt.Y("yield_pct:Q", title="Gross rental yield",
+              scale=alt.Scale(domain=ydom, nice=False),
+              axis=alt.Axis(format=".1f", labelExpr="datum.label + '%'"))
+    base = alt.Chart(d).encode(x=x, y=y)
+    dots = base.mark_circle(size=140, opacity=0.95).encode(
+        color=alt.Color("reading:N", scale=scale, title=None,
+                        legend=alt.Legend(orient="top", direction="horizontal")),
+        tooltip=[
+            alt.Tooltip("area:N", title="Barrio"),
+            alt.Tooltip("sale_ppsqm:Q", title="Buy, €/m²", format=",.0f"),
+            alt.Tooltip("rent_ppsqm:Q", title="Rent, €/m² a month", format=",.1f"),
+            alt.Tooltip("yield_pct:Q", title="Gross yield %", format=".1f"),
+            alt.Tooltip("listings:Q", title="Listings behind it"),
+        ],
+    )
+    d = _place_labels(d, "sale_ppsqm", "yield_pct", xdom, ydom)
+    labels = [
+        alt.Chart(d).transform_filter(alt.datum.side == side)
+        .mark_text(align=side, dx=dx, baseline="middle", fontSize=11, color=INK)
+        .encode(x=x, y=alt.Y("label_y:Q", scale=alt.Scale(domain=ydom, nice=False)),
+                text="area:N")
+        for side, dx in (("left", 9), ("right", -9), ("center", 0))
+    ]
+    rules = (
+        alt.Chart(pd.DataFrame({"sale_ppsqm": [city_price]}))
+        .mark_rule(stroke=INK_MUTED, strokeDash=[4, 3]).encode(x=x)
+        + alt.Chart(pd.DataFrame({"yield_pct": [city_yield]}))
+        .mark_rule(stroke=INK_MUTED, strokeDash=[4, 3]).encode(y=y)
+    )
+    return alt.layer(rules, dots, *labels).properties(height=420)
+
+
+def _padded(values: pd.Series, share: float) -> list[float]:
+    lo, hi = float(values.min()), float(values.max())
+    pad = (hi - lo) * share or 1.0
+    return [lo - pad, hi + pad]
+
+
+def _place_labels(d: pd.DataFrame, x: str, y: str, xdom: list[float],
+                  ydom: list[float], width: int = 620, height: int = 400,
+                  char_px: float = 6.6, line_px: int = 13) -> pd.DataFrame:
+    """
+    Where each point's name goes, so no name overlaps another name or dot and
+    none runs off the plot.
+
+    Vega-Lite has no label collision handling, and two barrios a few euros
+    apart printed their names on top of each other. This works in approximate
+    pixels: each name tries right of its dot, then left, above and below, and
+    takes the first spot that clears everything already placed. Approximate is
+    enough — exact would need the browser.
+    """
+    d = d.copy()
+    (x0, x1), (y0, y1) = xdom, ydom
+    px = (d[x] - x0) / (x1 - x0) * width
+    py = (y1 - d[y]) / (y1 - y0) * height
+    boxes = [(px[i] - 6, py[i] - 6, px[i] + 6, py[i] + 6) for i in d.index]
+
+    def clear(box):
+        l_, t, r, b = box
+        inside = l_ >= 0 and r <= width and t >= 0 and b <= height
+        return inside and not any(l_ < r2 and r > l2 and t < b2 and b > t2
+                                  for l2, t2, r2, b2 in boxes)
+
+    align, offset = {}, {}
+    for i in py.sort_values().index:
+        w, h = len(str(d.at[i, "area"])) * char_px, line_px
+        cx, cy = px[i], py[i]
+        candidates = [
+            ("left", 0, (cx + 9, cy - h / 2, cx + 9 + w, cy + h / 2)),
+            ("right", 0, (cx - 9 - w, cy - h / 2, cx - 9, cy + h / 2)),
+            ("center", -h, (cx - w / 2, cy - 1.5 * h, cx + w / 2, cy - h / 2)),
+            ("center", h, (cx - w / 2, cy + h / 2, cx + w / 2, cy + 1.5 * h)),
+        ]
+        side, dy, box = next((c for c in candidates if clear(c[2])), candidates[0])
+        boxes.append(box)
+        align[i], offset[i] = side, dy
+    d["side"] = pd.Series(align)
+    d["label_y"] = d[y] - pd.Series(offset) * (y1 - y0) / height
+    return d
+
+
+def bar_district_burden(df: pd.DataFrame, value: str, line: float, line_label: str,
+                        fmt: str, axis_fmt: str | None = None) -> alt.LayerChart:
+    """
+    One bar per district for a housing-cost burden, with a reference line.
+
+    Teal under the line, rust over it — the same reading as every other chart
+    in the app: rust is where the price is the problem.
+    """
+    d = df.copy()
+    d["area"] = d["district"].str.title()
+    d["over"] = (d[value] > line).map({True: "over", False: "under"})
+    base = alt.Chart(d).encode(
+        y=alt.Y("area:N", title=None, sort=alt.EncodingSortField(value, order="descending")),
+    )
+    bars = base.mark_bar(cornerRadiusEnd=3).encode(
+        x=alt.X(f"{value}:Q", title=None, axis=alt.Axis(format=axis_fmt or fmt)),
+        color=alt.Color("over:N", legend=None,
+                        scale=alt.Scale(domain=["under", "over"],
+                                        range=[TEAL_700, RUST_500])),
+        tooltip=[alt.Tooltip("area:N", title="District"),
+                 alt.Tooltip(f"{value}:Q", title=line_label, format=fmt),
+                 alt.Tooltip("net_income_per_household:Q",
+                             title="Household income €/yr", format=",.0f"),
+                 alt.Tooltip("listings:Q", title="Listings behind it")],
+    )
+    rule = alt.Chart(pd.DataFrame({"x": [line]})).mark_rule(
+        stroke=INK, strokeDash=[4, 3], strokeWidth=1.5).encode(x="x:Q")
+    return (bars + rule).properties(height=_row_height(len(d), per_row=24, minimum=240))
+
+
 def bar_amortisation(schedule: list[dict]) -> alt.Chart:
     """Yearly split of each payment between interest and principal repaid."""
     agg = (
@@ -256,119 +397,6 @@ def bar_amortisation(schedule: list[dict]) -> alt.Chart:
             ],
         )
         .properties(title="Where each year's payments go")
-    )
-
-
-def bar_required_income(hood_stats: pd.DataFrame, net_income: float) -> alt.LayerChart:
-    """
-    Income needed per neighbourhood, with the user's own income as a rule — the
-    comparison the page exists to make, so it belongs in the chart, not a caption.
-    """
-    d = hood_stats.copy()
-    d["area"] = d["neighborhood"].str.title()
-    d["verdict"] = d["affordable"].map({True: "Within reach", False: "Out of reach"})
-
-    bars = (
-        alt.Chart(d)
-        .mark_bar()
-        .encode(
-            x=alt.X("required_income:Q", title="Net income needed (€/month)"),
-            y=alt.Y("area:N", title=None, sort="x"),
-            color=alt.Color(
-                "verdict:N", title=None,
-                scale=alt.Scale(domain=["Within reach", "Out of reach"],
-                                range=[TEAL_700, RUST_500]),
-            ),
-            tooltip=[
-                alt.Tooltip("area:N", title="Neighbourhood"),
-                alt.Tooltip("required_income:Q", title="Income needed €/mo", format=",.0f"),
-                alt.Tooltip("median_price:Q", title="Median price €", format=",.0f"),
-                alt.Tooltip("listings:Q", title="Listings"),
-            ],
-        )
-    )
-    yours = (
-        alt.Chart(pd.DataFrame({"x": [net_income]}))
-        .mark_rule(stroke=RUST_900, strokeWidth=2, strokeDash=[4, 3])
-        .encode(x="x:Q", tooltip=alt.Tooltip("x:Q", title="Your income", format=",.0f"))
-    )
-    return (
-        (bars + yours)
-        .properties(
-            height=_row_height(len(d)),
-            title=alt.Title(
-                "Minimum income by neighbourhood",
-                subtitle=f"Dashed line: your €{net_income:,.0f}/month",
-            ),
-        )
-    )
-
-
-def bar_years_of_salary(hood_stats: pd.DataFrame) -> alt.Chart:
-    """Median price expressed in years of net salary — the affordability gut check."""
-    d = hood_stats.copy()
-    d["area"] = d["neighborhood"].str.title()
-    return (
-        alt.Chart(d)
-        .mark_bar()
-        .encode(
-            x=alt.X("years_of_salary:Q", title="Years of net salary"),
-            y=alt.Y("area:N", title=None, sort="x"),
-            # Sequential ramp: more years = deeper rust. Ordered magnitude, so a
-            # categorical scale would be the wrong encoding here.
-            color=alt.Color("years_of_salary:Q", title="Years", legend=None),
-            tooltip=[
-                alt.Tooltip("area:N", title="Neighbourhood"),
-                alt.Tooltip("years_of_salary:Q", title="Years of salary", format=".1f"),
-                alt.Tooltip("median_price:Q", title="Median price €", format=",.0f"),
-            ],
-        )
-        .properties(
-            height=_row_height(len(d)),
-            title=alt.Title("Years of salary needed",
-                            subtitle="Median price ÷ annual net salary"),
-        )
-    )
-
-
-def bar_buy_vs_rent(merged: pd.DataFrame) -> alt.Chart:
-    """Monthly mortgage against median rent, per neighbourhood, side by side."""
-    d = merged.copy()
-    d["area"] = d["neighborhood"].str.title()
-    long = d.melt(
-        id_vars="area",
-        value_vars=["monthly_mortgage", "median_rent"],
-        var_name="kind", value_name="eur",
-    )
-    long["kind"] = long["kind"].map({
-        "monthly_mortgage": "Monthly mortgage",
-        "median_rent": "Median rent",
-    })
-    return (
-        alt.Chart(long)
-        .mark_bar()
-        .encode(
-            x=alt.X("eur:Q", title="€ / month"),
-            y=alt.Y("area:N", title=None, sort="-x"),
-            yOffset=alt.YOffset("kind:N", sort=["Monthly mortgage", "Median rent"]),
-            color=alt.Color(
-                "kind:N", title=None,
-                scale=alt.Scale(domain=["Monthly mortgage", "Median rent"],
-                                range=[RUST_500, TEAL_700]),
-            ),
-            tooltip=[
-                alt.Tooltip("area:N", title="Neighbourhood"),
-                alt.Tooltip("kind:N", title=None),
-                alt.Tooltip("eur:Q", title="€/month", format=",.0f"),
-            ],
-        )
-        .properties(
-            height=_row_height(len(d), per_row=42),
-            title=alt.Title(
-                "Buying vs renting the same neighbourhood",
-                subtitle="Mortgage payment at your terms against the median asking rent",
-            ),
-        )
     )
 
 
