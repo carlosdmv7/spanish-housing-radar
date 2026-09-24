@@ -54,18 +54,19 @@ sources:
       - name: ine_hpi
         description: >
           Official INE house-price index (IPV) by autonomous community, quarterly
-          (base 2015=100). Free Tempus3 API feed — grounds scraped asking prices
-          against transaction-based reality. One row per series × quarter.
+          (base 2025=100, INE table 79563). Free Tempus3 API feed — grounds
+          scraped asking prices against transaction-based reality. One row per
+          series × quarter.
 
           **What this threshold does and does not catch.** The loader replaces
           the whole table on every run, stamping a new `_loaded_at` on every row,
           so this gate detects a loader that has *stopped running* and nothing
           else. It cannot detect a feed that runs perfectly while the data inside
-          it stands still — and that is the live state: the newest quarter here
-          is well over a year old while this check returns a green PASS. Data
-          currency is a separate assertion,
-          `tests/assert_ine_hpi_period_is_current.sql`, which warns on
-          `period_date` rather than on load time.
+          it stands still — which is exactly what happened when INE rebased the
+          index to 2025 under a new table and the loader kept reading the frozen
+          base-2015 one, green all the way. Data currency is a separate
+          assertion, `tests/assert_ine_hpi_period_is_current.sql`, which warns on
+          `period_date` rather than on load time, and is what caught it.
         freshness:
           warn_after: {count: 7, period: day}
           error_after: {count: 10, period: day}

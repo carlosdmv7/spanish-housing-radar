@@ -13,7 +13,8 @@ Reference: https://servicios.ine.es/wstempus/js/ES/DATOS_TABLA/{table}?nult={n}
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import calendar
+from datetime import date
 import logging
 
 import requests
@@ -31,6 +32,27 @@ from extraction.schemas.ine_records import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# INE's own period codes for the four quarters of a year.
+_QUARTER_OF_PERIOD = {19: 1, 20: 2, 21: 3, 22: 4}
+
+
+def _quarter_end(year: int, period: int) -> date | None:
+    """
+    (2025, 22) → 2025-12-31: the last day of the quarter INE labels `period`.
+
+    Built from INE's explicit year and period code, never from the `Fecha`
+    timestamp. `Fecha` is local midnight (Europe/Madrid) on the quarter's first
+    day, so read as UTC it lands on the last day of the *previous* quarter:
+    Q4 2025 arrived as 2025-09-30, and every quarter in the warehouse — and the
+    "Q3 2025" the app printed — was one quarter early.
+    """
+    quarter = _QUARTER_OF_PERIOD.get(period)
+    if quarter is None:
+        return None
+    month = quarter * 3
+    return date(year, month, calendar.monthrange(year, month)[1])
 
 
 def _parse_series_name(nombre: str) -> tuple[str, str, str] | None:
@@ -80,10 +102,11 @@ def fetch_ine_hpi(
 
         for obs in series.get("Data", []):
             valor = obs.get("Valor")
-            fecha_ms = obs.get("Fecha")
-            if valor is None or fecha_ms is None:
+            if valor is None:
                 continue  # suppressed / secret value
-            period_date = datetime.fromtimestamp(fecha_ms / 1000, tz=UTC).date()
+            period_date = _quarter_end(obs.get("Anyo") or 0, obs.get("FK_Periodo") or 0)
+            if period_date is None:
+                continue  # not a quarterly observation
             try:
                 records.append(
                     IneHpiRecord(
