@@ -1,11 +1,14 @@
 """
-Opportunities — listings ranked by opportunity score, with filters, map and cards.
+Deals — which flats are cheap for their area.
 
-The page answers one question: *which flats are underpriced right now?* It loads
-with Valencia sale listings at full price range, so a visitor who touches no
-filter still sees the product work, and it names the single best deal in a
-sentence before showing any table. Four metrics are an input to that answer, not
-the answer — reducing them was work the page was leaving to the reader.
+Built to be read at a glance: a row of controls, four numbers, one colour band
+that is both the tier legend and the distribution, then a ranked table where the
+tier is a coloured label and the score a bar. Pick a row and its card shows the
+arithmetic. Everything the old page said in paragraphs is either in a tooltip,
+in the card for the one listing you are looking at, or on How it works.
+
+ADR-0005 still holds on every row: the "Compared with" column says which grain
+scored it, so a score never appears without the benchmark behind it.
 """
 from pathlib import Path
 import sys
@@ -13,274 +16,214 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from chrome import page_header
-from components.charts import bar_deal_tiers, scatter_size_vs_price
-from components.filters import (
-    load_municipalities,
-    municipality_filter,
-    operation_filter,
-    price_range_filter,
-    property_type_filter,
-)
-from components.listing_card import listing_card
+from components.charts import bar_flat_vs_area, scatter_size_vs_price, strip_deal_tiers
+from components.filters import load_municipalities
 from components.map_view import listings_map
-from config import DEAL_TIER_LABELS
+from components.provenance import GRAIN_WORDING, confidence_note
+from config import DEAL_TIER_COLORS, DEAL_TIER_LABELS, PROPERTY_TYPE_LABELS
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import altair_chart, lede, section
-
-TOP_N_DEFAULT = 10
+from theme import TEAL_700, altair_chart
 
 page_header(
     "Which flats are cheap for their area?",
-    "Every listing scored 0–100 against comparable flats nearby — its own barrio "
-    "when there are enough, otherwise its district or the city.",
+    "Every listing scored 0–100 against comparable flats nearby.",
 )
-
 
 try:
     munis = load_municipalities()
 except Exception as exc:
     st.error(
-        "**Can't reach the warehouse, so there is nothing to rank.** The app reads "
-        "from MotherDuck; if you're running it locally, check that `MOTHERDUCK_TOKEN` "
-        "is set in `.env`. On Streamlit Cloud it comes from the app's Secrets."
+        "**Can't reach the warehouse.** Locally that needs `MOTHERDUCK_TOKEN` in "
+        "`.env`; on Streamlit Cloud it comes from the app's Secrets."
     )
     st.caption(f"Underlying error: {exc}")
     st.stop()
 
-# ── Filters ───────────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.header("Filters")
-    op = operation_filter()
-    muni = municipality_filter(munis)
-    prop = property_type_filter()
-    min_p, max_p = price_range_filter(
-        min_val=0,
-        max_val=2_000_000 if op == "sale" else 5_000,
-        step=10_000 if op == "sale" else 100,
-        label="Price (€)" if op == "sale" else "Monthly rent (€)",
+# ── Controls, inline ──────────────────────────────────────────────────────────
+MAX_PRICE = {
+    "sale": [None, 200_000, 300_000, 400_000, 600_000, 1_000_000],
+    "rent": [None, 1_000, 1_500, 2_000, 3_000],
+}
+c_op, c_city, c_type, c_price, c_more = st.columns([1.2, 1.4, 1.4, 1.4, 1],
+                                                   vertical_alignment="bottom")
+with c_op:
+    op = st.segmented_control(
+        "Looking to", ["sale", "rent"], default="sale", required=True,
+        format_func=lambda k: {"sale": "Buy", "rent": "Rent"}[k],
     )
-    min_score = st.slider("Min opportunity score", 0, 100, 0)
-    hide_low_conf = st.toggle(
-        "Hide low-confidence scores",
-        value=False,
-        help="Hides listings whose benchmark had too few comparable flats. Off by "
-             "default: a weak score is still a fact about the market (ADR-0005).",
+with c_city:
+    cities = sorted(munis)
+    muni = st.selectbox(
+        "City", cities,
+        index=cities.index("valència") if "valència" in cities else 0,
+        format_func=str.title,
+    )
+with c_type:
+    prop = st.selectbox(
+        "Type", ["all", *PROPERTY_TYPE_LABELS],
+        format_func=lambda k: "Any" if k == "all" else PROPERTY_TYPE_LABELS[k],
+    )
+with c_price:
+    per = "/mo" if op == "rent" else ""
+    max_price = st.selectbox(
+        "Max price", MAX_PRICE[op],
+        format_func=lambda v: "Any" if v is None else f"€{v:,.0f}{per}",
+    )
+with c_more, st.popover("More filters", width="stretch"):
+    min_score = st.slider("Minimum score", 0, 100, 0, step=5)
+    own_barrio_only = st.toggle(
+        "Only scored against their own barrio",
+        help="The strongest comparison. Off by default so nothing is hidden.",
     )
     motivated_only = st.toggle(
         "Only motivated sellers",
-        value=False,
-        help="Keeps listings long on the market or with price cuts — a stronger "
-             "signal of a negotiable deal. Needs a city scraped more than once, so "
-             "it is populated for Valencia and empty almost everywhere else.",
+        help="Long on the market, or the price has already been cut.",
     )
 
-# ── Load data ─────────────────────────────────────────────────────────────────
-sql = (Path(__file__).parent.parent / "queries" / "opportunities.sql").read_text()
+# ── Data ──────────────────────────────────────────────────────────────────────
+SQL = (Path(__file__).parent.parent / "queries" / "opportunities.sql").read_text()
 
 
 @st.cache_data(ttl=600, show_spinner="Loading listings…")
-def load_opportunities(op, prop, muni, min_p, max_p):
-    return query(sql, operation_type=op, property_type=prop,
-                 municipality=muni, min_price=min_p, max_price=max_p)
+def load(op: str, prop: str, muni: str) -> pd.DataFrame:
+    return query(SQL, operation_type=op, property_type=prop, municipality=muni,
+                 min_price=0, max_price=10**12)
 
 
 try:
-    unfiltered = load_opportunities(op, prop, muni, min_p, max_p)
+    everything = load(op, prop, muni)
 except Exception as exc:
-    st.error(
-        "**The listings query failed.** The gold model `rpt_opportunities` may not "
-        "have been built yet — run `make transform` to populate it."
-    )
+    st.error("**The listings query failed.**")
     st.caption(f"Underlying error: {exc}")
     st.stop()
 
-if unfiltered.empty:
-    st.info(
-        f"**No {'listings' if op == 'sale' else 'rentals'} scraped for this city and "
-        "property type yet.** Coverage is deepest in **Valencia** for **sale** — pick "
-        "those in the sidebar, or choose *All cities* to see everything in the warehouse."
-    )
-    st.stop()
-
-df = unfiltered[unfiltered["opportunity_score"] >= min_score]
-if hide_low_conf:
-    df = df[~df["low_confidence_flag"].astype(bool)]
+df = everything
+if max_price is not None:
+    df = df[df["price_eur"] <= max_price]
+df = df[df["opportunity_score"] >= min_score]
+if own_barrio_only:
+    df = df[df["benchmark_level"] == "neighbourhood"]
 if motivated_only:
     df = df[df["seller_motivation"].isin(["medium", "high"])]
 
+if everything.empty:
+    st.info(f"No {'rentals' if op == 'rent' else 'listings'} for this city and type yet.")
+    st.stop()
 if df.empty:
-    # The data exists — the filters excluded it. Say which one is most likely, so
-    # the visitor has something to undo rather than a dead end.
-    culprits = []
-    if min_score > 0:
-        culprits.append(f"minimum score of **{min_score}**")
-    if hide_low_conf:
-        culprits.append("**hide low-confidence** toggle")
-    if motivated_only:
-        culprits.append("**motivated sellers only** toggle")
-    reason = " or the ".join(culprits) if culprits else "**price range**"
-    st.warning(
-        f"**{len(unfiltered):,} listings match this city and type, but none survive "
-        f"your filters.** Try relaxing the {reason}."
-    )
+    st.warning(f"{len(everything):,} listings match, but none pass your filters.")
     st.stop()
 
-# Rent is quoted per month; a sale price is not. The euro sign stays in front
-# either way — the metric beside this one is "€4,982", and "940,000 €" next to it
-# put the same currency on both sides of the number in one row.
-per = "/mo" if op == "rent" else ""
+# ── Four numbers ──────────────────────────────────────────────────────────────
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Listings", f"{len(df):,}")
+m2.metric("Great deals", f"{int((df['deal_tier'] == 'great_deal').sum()):,}",
+          help="Score 75+: well below what comparable flats ask.")
+m3.metric("Typical price", f"€{df['price_per_sqm'].median():,.0f}/m²"
+          + ("/mo" if op == "rent" else ""))
+m4.metric("Compared with their own barrio",
+          f"{(df['benchmark_level'] == 'neighbourhood').mean():.0%}",
+          help="The rest are compared with their district or the whole city, "
+               "because their barrio has too few listings to be a fair yardstick.")
 
-# ── The answer ────────────────────────────────────────────────────────────────
-# df arrives sorted by opportunity_score DESC (see queries/opportunities.sql), so
-# row zero is the best deal under the current filters.
-_GRAIN_WORDS = {
-    "neighbourhood": "its own barrio",
-    "district":      "its district",
-    "city":          "the city as a whole",
-}
+altair_chart(strip_deal_tiers(df))
 
-best = df.iloc[0]
-area = str(best["neighborhood"] or best["district"] or best["municipality"]).title()
-size = f"{best['size_sqm']:.0f} m² " if pd.notna(best["size_sqm"]) else ""
-grain = _GRAIN_WORDS.get(str(best["benchmark_level"]), str(best["benchmark_level"]))
-
-# ppsqm_vs_median is the absolute €/m² gap; as a share of the benchmark it becomes
-# the "how much cheaper" a person actually asks for.
-bench = best["neighborhood_median_ppsqm"]
-gap = best["ppsqm_vs_median"]
-if pd.notna(bench) and pd.notna(gap) and bench:
-    pct = gap / bench * 100
-    verdict = (
-        f"A {size}flat in {area} at €{best['price_eur']:,.0f}{per} — "
-        f"**{abs(pct):.0f}% {'below' if pct < 0 else 'above'}** the €/m² of {grain}."
-    )
-else:
-    verdict = f"A {size}flat in {area} at €{best['price_eur']:,.0f}{per} tops the ranking."
-
-comps = best["benchmark_comp_count"]
-# The listing card below warns whenever the benchmark fell back to a coarser
-# grain, but `low_confidence_flag` is only raised at *city* grain — so checking
-# the flag alone let the lede present a district-grain score without the caveat
-# its own card carried three lines further down.
-if bool(best["low_confidence_flag"]):
-    caveat = " Thin benchmark, so read it as a hint rather than a finding."
-elif str(best["benchmark_level"]) != "neighbourhood":
-    caveat = (
-        f" Too few comparables in {area} itself, so this is a wider comparison "
-        "than a barrio-level score."
-    )
-else:
-    caveat = ""
-lede(
-    verdict,
-    f"Best of {len(df):,} listings on screen. Scored {best['opportunity_score']:.0f}/100 "
-    f"against {int(comps) if pd.notna(comps) else 0} comparable flats in {grain}."
-    f"{caveat} These are asking prices: the score says a flat is cheap for its area, "
-    "never that the area is cheap.",
+# ── Ranked / map / size ───────────────────────────────────────────────────────
+tab_rank, tab_map, tab_size = st.tabs(
+    [":material/format_list_numbered: Ranked", ":material/map: Map",
+     ":material/scatter_plot: Size vs price"]
 )
 
-# ── Summary metrics ───────────────────────────────────────────────────────────
-great = int((df["deal_tier"] == "great_deal").sum())
-motivated = int(df["seller_motivation"].isin(["medium", "high"]).sum())
-barrio_grain = float((df["benchmark_level"] == "neighbourhood").mean() * 100)
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Listings", f"{len(df):,}")
-c2.metric("Median price", f"€{df['price_eur'].median():,.0f}{per}")
-c3.metric("Median €/m²", f"€{df['price_per_sqm'].median():,.0f}")
-c4.metric("Great deals", great, help="Listings scoring ≥ 75 — clearly below their benchmark.")
-st.markdown(
-    f":small[**{barrio_grain:.0f}%** of these scores were computed at barrio grain; "
-    f"the rest fall back to district or city. **{motivated:,}** show a motivated-seller "
-    "signal (long on market or price cuts).]"
-)
-
-st.markdown("")
-tab_list, tab_explore, tab_map = st.tabs(["Best deals", "Explore", "Map"])
-
-# ── Best deals ────────────────────────────────────────────────────────────────
-with tab_list:
-    section(f"Top {TOP_N_DEFAULT} right now")
-    st.markdown(
-        ":small[Sorted by opportunity score. Every card shows the benchmark it was "
-        "scored against and how many comparables backed it.]"
+with tab_rank:
+    tiers = list(DEAL_TIER_LABELS.values())
+    table = df.reset_index(drop=True).assign(
+        area=lambda d: (d["neighborhood"].fillna(d["district"])
+                        .fillna(d["municipality"]).str.title()),
+        # A one-item list, because MultiselectColumn is the one native column that
+        # renders a value as a coloured label — which is the whole point here.
+        tier=lambda d: d["deal_tier"].map(DEAL_TIER_LABELS).map(lambda t: [t]),
+        vs_area=lambda d: (d["price_per_sqm"] / d["neighborhood_median_ppsqm"] - 1) * 100,
+        compared=lambda d: d["benchmark_level"].map(
+            {"neighbourhood": "Its barrio", "district": "Its district",
+             "city": "The city"}),
     )
-    for _, row in df.head(TOP_N_DEFAULT).iterrows():
-        listing_card(row.to_dict())
+    left, right = st.columns([3, 2], gap="large")
+    with left:
+        event = st.dataframe(
+            table[["area", "tier", "opportunity_score", "vs_area", "price_eur",
+                   "size_sqm", "compared", "url"]],
+            hide_index=True,
+            height=520,
+            on_select="rerun",
+            selection_mode="single-row",
+            selection_default={"selection": {"rows": [0], "columns": []}},
+            key=f"deals-{op}-{muni}-{prop}",
+            column_config={
+                "area": st.column_config.TextColumn("Barrio", pinned=True),
+                "tier": st.column_config.MultiselectColumn(
+                    "Verdict", options=tiers,
+                    color=[DEAL_TIER_COLORS[k] for k in DEAL_TIER_LABELS],
+                ),
+                "opportunity_score": st.column_config.ProgressColumn(
+                    "Score", min_value=0, max_value=100, format="%d", color=TEAL_700,
+                    help="50 = exactly the price of comparable flats. Higher is cheaper.",
+                ),
+                "vs_area": st.column_config.NumberColumn(
+                    "vs area", format="%+.0f%%",
+                    help="Price per m² against the flats it was compared with."),
+                "price_eur": st.column_config.NumberColumn(
+                    "Price", format=f"€%,d{per}"),
+                "size_sqm": st.column_config.NumberColumn("m²", format="%d"),
+                "compared": st.column_config.TextColumn(
+                    "Compared with",
+                    help="The finest area with at least 8 comparable flats."),
+                "url": st.column_config.LinkColumn("", display_text="open ↗"),
+            },
+        )
+        st.caption("Pick a row to see why it scored what it did.")
 
-    section("Deal tier breakdown")
-    altair_chart(bar_deal_tiers(df))
+    rows = event.selection.rows if event and event.selection else []
+    pick = table.iloc[rows[0] if rows else 0]
 
-    section(f"All {len(df):,} results")
-    table = df.assign(
-        tier=df["deal_tier"].map(DEAL_TIER_LABELS).fillna(df["deal_tier"]),
-        area=df["neighborhood"].str.title(),
-        district_name=df["district"].str.title(),
-        delta_pct=(df["ppsqm_vs_median"] / df["neighborhood_median_ppsqm"] * 100),
-    )[[
-        "area", "district_name", "price_eur", "size_sqm", "rooms",
-        "price_per_sqm", "neighborhood_median_ppsqm", "delta_pct",
-        "opportunity_score", "tier", "benchmark_level", "benchmark_comp_count",
-        "low_confidence_flag", "days_on_market", "n_price_changes", "url",
-    ]]
-    st.dataframe(
-        table,
-        width="stretch",
-        hide_index=True,
-        column_config={
-            "area": st.column_config.TextColumn("Barrio", pinned=True),
-            "district_name": st.column_config.TextColumn("District"),
-            "price_eur": st.column_config.NumberColumn(
-                "Price", format="€%,d",
-                help="Asking price, not a transaction price.",
-            ),
-            "size_sqm": st.column_config.NumberColumn("Size", format="%.0f m²"),
-            "rooms": st.column_config.NumberColumn("Beds", format="%.0f"),
-            "price_per_sqm": st.column_config.NumberColumn("€/m²", format="€%,d"),
-            "neighborhood_median_ppsqm": st.column_config.NumberColumn(
-                "Benchmark €/m²", format="€%,d",
-                help="Median €/m² of the comparables this listing was scored against.",
-            ),
-            "delta_pct": st.column_config.NumberColumn(
-                "Δ vs benchmark", format="%+.1f%%",
-                help="Negative means cheaper per m² than its comparables.",
-            ),
-            "opportunity_score": st.column_config.ProgressColumn(
-                "Score", min_value=0, max_value=100, format="%.0f",
-                help="0–100. 50 sits exactly at the benchmark median.",
-            ),
-            "tier": st.column_config.TextColumn("Tier"),
-            "benchmark_level": st.column_config.TextColumn(
-                "Scored vs",
-                help="Grain of the comparison: barrio, district or city. "
-                     "Coarser means less local, so less confident.",
-            ),
-            "benchmark_comp_count": st.column_config.NumberColumn(
-                "Comparables", format="%.0f",
-                help="How many listings formed the benchmark. Below 8 at city "
-                     "grain is flagged low-confidence.",
-            ),
-            "low_confidence_flag": st.column_config.CheckboxColumn(
-                "Low confidence", help="Thin city-wide benchmark — read the score as a hint.",
-            ),
-            "days_on_market": st.column_config.NumberColumn("Days listed", format="%.0f"),
-            "n_price_changes": st.column_config.NumberColumn("Price cuts", format="%.0f"),
-            "url": st.column_config.LinkColumn("Listing", display_text="Open ↗"),
-        },
-    )
+    with right, st.container(border=True):
+        tier_key = str(pick["deal_tier"])
+        badge_color = {"great_deal": "green", "good_deal": "green", "fair": "orange",
+                       "overpriced": "red", "very_overpriced": "red"}.get(tier_key, "gray")
+        st.badge(DEAL_TIER_LABELS.get(tier_key, tier_key), color=badge_color)
+        beds = f"{int(pick['rooms'])} bed · " if pd.notna(pick["rooms"]) else ""
+        st.markdown(f"### €{pick['price_eur']:,.0f}{per}")
+        st.markdown(f"{beds}{pick['size_sqm']:.0f} m² · **{pick['area']}**")
 
-# ── Explore ───────────────────────────────────────────────────────────────────
-with tab_explore:
-    section("Size vs price")
-    st.markdown(
-        ":small[Each dot is a listing, coloured by deal tier. Flats that are cheap "
-        "for their size sit below the cloud. Drag to pan, scroll to zoom.]"
-    )
-    altair_chart(scatter_size_vs_price(df))
+        k1, k2 = st.columns(2)
+        k1.metric("Score", f"{pick['opportunity_score']:.0f}/100")
+        k2.metric("vs area", f"{pick['vs_area']:+.0f}%")
 
-# ── Map ───────────────────────────────────────────────────────────────────────
+        bench_label = GRAIN_WORDING.get(str(pick["benchmark_level"]),
+                                        ("", "Benchmark"))[1]
+        if pd.notna(pick["neighborhood_median_ppsqm"]):
+            altair_chart(bar_flat_vs_area(float(pick["price_per_sqm"]),
+                                          float(pick["neighborhood_median_ppsqm"]),
+                                          bench_label))
+        st.caption(f"€/m² · compared with {int(pick['benchmark_comp_count'] or 0)} "
+                   "comparable flats.")
+
+        note = confidence_note(pick.to_dict())
+        if note:
+            st.caption(note)
+        if pick.get("seller_motivation") in ("medium", "high"):
+            cut = pick.get("price_change_pct")
+            st.caption(
+                ":material/trending_down: Price already cut "
+                f"{abs(cut):.0f}%" if pd.notna(cut) and cut < 0
+                else ":material/schedule: Long on the market"
+            )
+        st.link_button("Open the listing", str(pick["url"]),
+                       icon=":material/open_in_new:", width="stretch")
+
 with tab_map:
-    section("Geographic view")
     listings_map(df)
+
+with tab_size:
+    altair_chart(scatter_size_vs_price(df))
+    st.caption("Each dot is a listing. Cheap for its size sits below the cloud.")

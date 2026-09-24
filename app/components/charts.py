@@ -27,25 +27,66 @@ def _row_height(n: int, per_row: int = 24, minimum: int = 320) -> int:
     return max(minimum, per_row * n)
 
 
-def bar_deal_tiers(df: pd.DataFrame) -> alt.Chart:
-    """How the current result set splits across the five deal tiers."""
+def strip_deal_tiers(df: pd.DataFrame) -> alt.LayerChart:
+    """
+    One horizontal band, split by deal tier, cheapest-for-its-area on the left.
+
+    The colour key and the distribution in a single glance — replacing a bar chart
+    that needed its own section heading to say the same thing. Counts sit inside
+    each segment wide enough to hold them.
+    """
     counts = (
         df["deal_tier"].value_counts()
         .reindex(_TIER_KEYS).fillna(0).astype(int)
         .rename(index=DEAL_TIER_LABELS)
         .rename_axis("tier").reset_index(name="listings")
     )
+    counts = counts[counts["listings"] > 0]
+    counts["order"] = counts["tier"].map({t: i for i, t in enumerate(_TIER_DOMAIN)})
+    total = counts["listings"].sum()
+    counts["label"] = counts.apply(
+        lambda r: f"{r['tier']} · {r['listings']}" if r["listings"] / total >= 0.12
+        else (str(r["listings"]) if r["listings"] / total >= 0.04 else ""),
+        axis=1,
+    )
+    base = alt.Chart(counts).encode(
+        x=alt.X("listings:Q", stack="normalize", axis=None),
+        order=alt.Order("order:Q"),
+    )
+    bars = base.mark_bar(height=34, cornerRadius=0).encode(
+        color=alt.Color("tier:N", scale=TIER_SCALE, legend=None),
+        tooltip=[alt.Tooltip("tier:N", title="Tier"),
+                 alt.Tooltip("listings:Q", title="Listings")],
+    )
+    text = base.mark_text(align="left", dx=6, color="white", fontWeight=600).encode(
+        x=alt.X("listings:Q", stack="normalize", bandPosition=0),
+        text="label:N",
+    )
+    return (bars + text).properties(height=40)
+
+
+def bar_flat_vs_area(ppsqm: float, bench: float, bench_label: str) -> alt.Chart:
+    """This flat's €/m² against the benchmark it was scored on — two bars, no more."""
+    d = pd.DataFrame({
+        "what": ["This flat", bench_label],
+        "ppsqm": [ppsqm, bench],
+        "tone": ["flat", "bench"],
+    })
     return (
-        alt.Chart(counts)
-        .mark_bar()
+        alt.Chart(d)
+        .mark_bar(cornerRadiusEnd=3, height=18)
         .encode(
-            x=alt.X("listings:Q", title="Listings"),
-            y=alt.Y("tier:N", title=None, sort=_TIER_DOMAIN),
-            color=alt.Color("tier:N", scale=TIER_SCALE, legend=None),
-            tooltip=[alt.Tooltip("tier:N", title="Tier"),
-                     alt.Tooltip("listings:Q", title="Listings", format=",")],
+            y=alt.Y("what:N", title=None, sort=["This flat", bench_label]),
+            x=alt.X("ppsqm:Q", title=None, axis=alt.Axis(format=",.0f", tickCount=3)),
+            color=alt.Color(
+                "tone:N", legend=None,
+                scale=alt.Scale(domain=["flat", "bench"],
+                                range=[TEAL_700 if ppsqm <= bench else RUST_500, INK_MUTED]),
+            ),
+            tooltip=[alt.Tooltip("what:N", title=""),
+                     alt.Tooltip("ppsqm:Q", title="€/m²", format=",.0f")],
         )
-        .properties(height=_row_height(len(counts), per_row=34, minimum=180))
+        .properties(height=70)
     )
 
 

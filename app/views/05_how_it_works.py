@@ -25,6 +25,7 @@ page_header(
     "How it works",
     "Where the numbers come from, how a flat gets its score, and what this data "
     "cannot tell you.",
+    explain_facts=True,
 )
 
 # ── Lineage ───────────────────────────────────────────────────────────────────
