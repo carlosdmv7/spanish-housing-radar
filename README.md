@@ -184,6 +184,31 @@ score     = clamp(50 − z_clamped × (50/3), 0, 100)
 | **50** | exactly at the median | `good_deal` (≥55) · `fair` (≥45) |
 | **0** | far above market | `overpriced` (≥25) · `very_overpriced` |
 
+### How a listing actually gets its score
+
+```mermaid
+flowchart TD
+    L["<b>A listing</b><br/>€225,000 · 120 m² · Patraix"] --> P["Its price per m²<br/><b>€1,875</b>"]
+    P --> Q1{"Does its own barrio hold<br/>≥ 8 comparable flats?<br/><i>same operation, same property type</i>"}
+
+    Q1 -->|"yes — 9 found"| B["Benchmark: <b>Patraix</b><br/>median €2,865/m²<br/><code>benchmark_level = neighbourhood</code>"]
+    Q1 -->|no| Q2{"Does its district?"}
+    Q2 -->|yes| D["Benchmark: <b>the district</b><br/><code>benchmark_level = district</code>"]
+    Q2 -->|no| C["Benchmark: <b>the whole city</b><br/><code>benchmark_level = city</code>"]
+    C -.->|"only if even the city holds &lt; 8"| W["⚠ <b>low_confidence_flag</b>"]
+
+    B --> S["<b>34.6% below its benchmark</b><br/>z-score → <b>80 / 100</b> · great deal"]
+    D --> S
+    C --> S
+
+    S --> U["Shown with the grain it was scored at,<br/>and the number of comparables behind it —<br/><i>always, on every screen</i>"]
+```
+
+The last box is the point. A score of 80 measured against 9 flats in the same barrio and a score of
+80 measured against the whole city are not the same claim, so the app never shows one without the
+other. That rule comes from [ADR-0004](docs/adr/0004-hierarchical-benchmark-grain.md) and it is the
+reason `benchmark_level` is a column in the gold contract rather than an implementation detail.
+
 **Hierarchical benchmark.** Spanish listings are sparse at the neighbourhood level, so comparing a
 flat only against its own barrio would mean comparing it against itself (z-score 0 → a meaningless
 "fair" 50). Instead the score picks the **finest grain with enough comparables**: neighbourhood →
