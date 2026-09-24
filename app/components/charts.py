@@ -254,10 +254,14 @@ def scatter_price_vs_yield(df: pd.DataFrame, city_price: float,
     present = [k for k in readings if (d["reading"] == k).any()]
     scale = alt.Scale(domain=present, range=[readings[k] for k in present])
 
+    # Explicit domains, padded, so the label placement below maps data to the
+    # same pixels the chart does — a "nice" domain would move every point.
+    xdom = _padded(pd.concat([d["sale_ppsqm"], pd.Series([city_price])]), 0.05)
+    ydom = _padded(pd.concat([d["yield_pct"], pd.Series([city_yield])]), 0.08)
     x = alt.X("sale_ppsqm:Q", title="Asking price to buy, €/m²",
-              scale=alt.Scale(zero=False, nice=True), axis=alt.Axis(format=",.0f"))
+              scale=alt.Scale(domain=xdom, nice=False), axis=alt.Axis(format=",.0f"))
     y = alt.Y("yield_pct:Q", title="Gross rental yield",
-              scale=alt.Scale(zero=False, nice=True),
+              scale=alt.Scale(domain=ydom, nice=False),
               axis=alt.Axis(format=".1f", labelExpr="datum.label + '%'"))
     base = alt.Chart(d).encode(x=x, y=y)
     dots = base.mark_circle(size=140, opacity=0.95).encode(
@@ -271,15 +275,70 @@ def scatter_price_vs_yield(df: pd.DataFrame, city_price: float,
             alt.Tooltip("listings:Q", title="Listings behind it"),
         ],
     )
-    labels = base.mark_text(align="left", dx=9, dy=0, fontSize=11, color=INK).encode(
-        text="area:N")
+    d = _place_labels(d, "sale_ppsqm", "yield_pct", xdom, ydom)
+    labels = [
+        alt.Chart(d).transform_filter(alt.datum.side == side)
+        .mark_text(align=side, dx=dx, baseline="middle", fontSize=11, color=INK)
+        .encode(x=x, y=alt.Y("label_y:Q", scale=alt.Scale(domain=ydom, nice=False)),
+                text="area:N")
+        for side, dx in (("left", 9), ("right", -9), ("center", 0))
+    ]
     rules = (
-        alt.Chart(pd.DataFrame({"x": [city_price]}))
-        .mark_rule(stroke=INK_MUTED, strokeDash=[4, 3]).encode(x="x:Q")
-        + alt.Chart(pd.DataFrame({"y": [city_yield]}))
-        .mark_rule(stroke=INK_MUTED, strokeDash=[4, 3]).encode(y="y:Q")
+        alt.Chart(pd.DataFrame({"sale_ppsqm": [city_price]}))
+        .mark_rule(stroke=INK_MUTED, strokeDash=[4, 3]).encode(x=x)
+        + alt.Chart(pd.DataFrame({"yield_pct": [city_yield]}))
+        .mark_rule(stroke=INK_MUTED, strokeDash=[4, 3]).encode(y=y)
     )
-    return (rules + dots + labels).properties(height=420)
+    return alt.layer(rules, dots, *labels).properties(height=420)
+
+
+def _padded(values: pd.Series, share: float) -> list[float]:
+    lo, hi = float(values.min()), float(values.max())
+    pad = (hi - lo) * share or 1.0
+    return [lo - pad, hi + pad]
+
+
+def _place_labels(d: pd.DataFrame, x: str, y: str, xdom: list[float],
+                  ydom: list[float], width: int = 620, height: int = 400,
+                  char_px: float = 6.6, line_px: int = 13) -> pd.DataFrame:
+    """
+    Where each point's name goes, so no name overlaps another name or dot and
+    none runs off the plot.
+
+    Vega-Lite has no label collision handling, and two barrios a few euros
+    apart printed their names on top of each other. This works in approximate
+    pixels: each name tries right of its dot, then left, above and below, and
+    takes the first spot that clears everything already placed. Approximate is
+    enough — exact would need the browser.
+    """
+    d = d.copy()
+    (x0, x1), (y0, y1) = xdom, ydom
+    px = (d[x] - x0) / (x1 - x0) * width
+    py = (y1 - d[y]) / (y1 - y0) * height
+    boxes = [(px[i] - 6, py[i] - 6, px[i] + 6, py[i] + 6) for i in d.index]
+
+    def clear(box):
+        l_, t, r, b = box
+        inside = l_ >= 0 and r <= width and t >= 0 and b <= height
+        return inside and not any(l_ < r2 and r > l2 and t < b2 and b > t2
+                                  for l2, t2, r2, b2 in boxes)
+
+    align, offset = {}, {}
+    for i in py.sort_values().index:
+        w, h = len(str(d.at[i, "area"])) * char_px, line_px
+        cx, cy = px[i], py[i]
+        candidates = [
+            ("left", 0, (cx + 9, cy - h / 2, cx + 9 + w, cy + h / 2)),
+            ("right", 0, (cx - 9 - w, cy - h / 2, cx - 9, cy + h / 2)),
+            ("center", -h, (cx - w / 2, cy - 1.5 * h, cx + w / 2, cy - h / 2)),
+            ("center", h, (cx - w / 2, cy + h / 2, cx + w / 2, cy + 1.5 * h)),
+        ]
+        side, dy, box = next((c for c in candidates if clear(c[2])), candidates[0])
+        boxes.append(box)
+        align[i], offset[i] = side, dy
+    d["side"] = pd.Series(align)
+    d["label_y"] = d[y] - pd.Series(offset) * (y1 - y0) / height
+    return d
 
 
 def bar_district_burden(df: pd.DataFrame, value: str, line: float, line_label: str,
