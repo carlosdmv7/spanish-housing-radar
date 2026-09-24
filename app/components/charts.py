@@ -12,7 +12,7 @@ from __future__ import annotations
 import altair as alt
 from config import DEAL_TIER_COLORS, DEAL_TIER_LABELS
 import pandas as pd
-from theme import BORDER, INK_MUTED, PETROL_900, RUST_500, RUST_900, TEAL_700
+from theme import BORDER, INK, INK_MUTED, PETROL_900, RUST_500, RUST_900, TEAL_700
 
 # Ordered tier axis, shared by the scatter and any other tier-coloured encoding,
 # so the legend reads best-deal-first and matches the map's colours.
@@ -230,44 +230,6 @@ def scatter_size_vs_price(df: pd.DataFrame) -> alt.Chart:
     )
 
 
-def bar_mortgage_cost(result) -> alt.Chart:
-    """
-    What the loan actually costs: principal against interest, stacked to the
-    total paid. A waterfall said the same thing with more ink.
-    """
-    d = pd.DataFrame([
-        {"part": "Principal", "eur": result.principal},
-        {"part": "Interest", "eur": result.total_interest},
-    ])
-    d["share"] = d["eur"] / d["eur"].sum()
-    return (
-        alt.Chart(d)
-        .mark_bar()
-        .encode(
-            x=alt.X("eur:Q", title="€", stack="zero"),
-            y=alt.Y("part:N", title=None, sort=["Principal", "Interest"]),
-            color=alt.Color(
-                "part:N", title=None,
-                scale=alt.Scale(domain=["Principal", "Interest"],
-                                range=[TEAL_700, RUST_500]),
-                legend=None,
-            ),
-            tooltip=[
-                alt.Tooltip("part:N", title=None),
-                alt.Tooltip("eur:Q", title="€", format=",.0f"),
-                alt.Tooltip("share:Q", title="Share of total", format=".1%"),
-            ],
-        )
-        .properties(
-            height=180,
-            title=alt.Title(
-                "Total cost of the loan",
-                subtitle=f"€{result.total_paid:,.0f} paid over the full term",
-            ),
-        )
-    )
-
-
 def bar_amortisation(schedule: list[dict]) -> alt.Chart:
     """Yearly split of each payment between interest and principal repaid."""
     agg = (
@@ -434,3 +396,62 @@ def bar_benchmark_grain(counts: pd.DataFrame) -> alt.Chart:
         )
         .properties(height=180)
     )
+
+
+def bar_signing_day(items: pd.DataFrame) -> alt.LayerChart:
+    """
+    Signing-day cash, one bar per item, coloured by whether it stays yours.
+
+    The deposit becomes equity; tax and fees buy nothing that can be sold. That
+    distinction is the whole reason first-time buyers get the number wrong, so
+    it is the colour rather than a footnote.
+    """
+    d = items[items["eur"] > 0].sort_values("eur", ascending=False).copy()
+    d["kind"] = d["item"].eq("Deposit").map({True: "Stays yours",
+                                             False: "Gone on the day"})
+    d["label"] = d["eur"].map(lambda v: f"€{v:,.0f}")
+    base = alt.Chart(d).encode(
+        # An explicit order: a sort field on a layered chart falls back to
+        # alphabetical, which put Appraisal on top of a €36,000 deposit.
+        y=alt.Y("item:N", title=None, sort=list(d["item"])),
+        x=alt.X("eur:Q", title=None, axis=alt.Axis(format="~s", labelExpr="'€' + datum.label")),
+    )
+    bars = base.mark_bar(cornerRadiusEnd=3, height=20).encode(
+        color=alt.Color("kind:N", title=None,
+                        scale=alt.Scale(domain=["Stays yours", "Gone on the day"],
+                                        range=[TEAL_700, RUST_500]),
+                        legend=alt.Legend(orient="top", direction="horizontal")),
+        tooltip=[alt.Tooltip("item:N", title=None),
+                 alt.Tooltip("eur:Q", title="€", format=",.0f"),
+                 alt.Tooltip("note:N", title="What it is")],
+    )
+    labels = base.mark_text(align="left", dx=5, color=INK, fontSize=12).encode(
+        text="label:N")
+    return (bars + labels).properties(height=_row_height(len(d), per_row=34, minimum=150))
+
+
+def line_buy_vs_rent(series: pd.DataFrame, breakeven: int | None) -> alt.LayerChart:
+    """
+    Net worth year by year down each path, so the reader sees *when* buying
+    starts to pay rather than a verdict for one horizon they had to pick.
+    """
+    long = series.melt(id_vars="year", value_vars=["Buy", "Rent and invest"],
+                       var_name="path", value_name="eur")
+    scale = alt.Scale(domain=["Buy", "Rent and invest"], range=[PETROL_900, RUST_500])
+    lines = alt.Chart(long).mark_line(strokeWidth=2.5).encode(
+        x=alt.X("year:Q", title="Years after buying", axis=alt.Axis(format="d")),
+        y=alt.Y("eur:Q", title=None,
+                axis=alt.Axis(format="~s", labelExpr="'€' + datum.label")),
+        color=alt.Color("path:N", title=None, scale=scale,
+                        legend=alt.Legend(orient="top", direction="horizontal")),
+        tooltip=[alt.Tooltip("year:Q", title="Year"),
+                 alt.Tooltip("path:N", title=None),
+                 alt.Tooltip("eur:Q", title="Net worth €", format=",.0f")],
+    )
+    layers = [lines]
+    if breakeven is not None:
+        layers.append(
+            alt.Chart(pd.DataFrame({"x": [breakeven]}))
+            .mark_rule(stroke=INK_MUTED, strokeDash=[4, 3]).encode(x="x:Q")
+        )
+    return alt.layer(*layers).properties(height=300)

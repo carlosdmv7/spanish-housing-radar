@@ -1,12 +1,11 @@
 """
-Mortgage — what it really costs to buy, and whether buying is the better use of
-the money at all.
+Budget — what buying really costs, and whether it beats renting.
 
-The page answers one question — *can I afford this, and should I?* — and is laid
-out so that question is answered before any control is touched. Everything a
-buyer does not need to change lives behind `st.expander`: the previous version
-put fourteen inputs in a single column, which asks a visitor to have opinions
-about the Euribor stress delta before it will tell them anything.
+Answer first: four inputs in one row, then a verdict, four numbers and two
+charts before anything else asks for attention. Everything a buyer rarely
+changes — loan terms, fees, bank tie-ins, the full schedule, where each default
+comes from — sits behind a popover or an expander instead of in a sidebar of
+fourteen inputs that had to be filled in before the page would say anything.
 """
 from pathlib import Path
 import sys
@@ -14,14 +13,9 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from chrome import page_header
-from components.charts import bar_amortisation, bar_mortgage_cost
+from components.charts import bar_amortisation, bar_signing_day, line_buy_vs_rent
 from components.filters import load_municipalities
-from components.mortgage import (
-    compute_mortgage,
-    compute_variable_mortgage,
-    max_affordable_loan,
-    required_income,
-)
+from components.mortgage import compute_mortgage, compute_variable_mortgage, max_affordable_loan
 from components.purchase_costs import (
     DEFAULT_BONIFICATIONS,
     ITP_BY_CCAA,
@@ -33,390 +27,294 @@ from components.purchase_costs import (
 )
 from config import (
     AFFORDABILITY_RATIO_MAX,
+    AFFORDABILITY_SOURCE_NOTE,
     EURIBOR_CURRENT,
     MORTGAGE_DEFAULT_LTV,
     MORTGAGE_DEFAULT_RATE_FIXED,
     MORTGAGE_DEFAULT_RATE_VARIABLE,
     MORTGAGE_DEFAULT_YEARS,
     MORTGAGE_SOURCE_NOTE,
+    VALENCIA_AVG_NET_SALARY_MONTHLY,
 )
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import INK_MUTED, RUST_700, TEAL_700, altair_chart, section
+from theme import altair_chart
 
 page_header(
     "What will buying really cost me?",
-    "The instalment, the cash due on signing day, and whether renting and "
-    "investing the difference would leave you better off.",
+    "The cash to sign, the monthly payment, and when buying starts to beat renting.",
 )
-st.caption(MORTGAGE_SOURCE_NOTE)
 
 
-# ── Region ────────────────────────────────────────────────────────────────────
-# ITP is ceded to the comunidades and varies from 4% to 11%, which on a €400,000
-# flat is a €28,000 swing — larger than every other closing cost combined. The
-# region is derived from the city rather than asked for: the listing already
-# knows where it is, and one more dropdown is one more thing to get wrong.
+# ITP is ceded to the comunidades and runs from 4% to 11% — on a €400,000 flat a
+# €28,000 swing, bigger than every other closing cost combined. The region comes
+# from the city, because the visitor knows their city and not always which
+# regime it falls under.
 @st.cache_data(ttl=3600)
-def load_region_map() -> dict[str, str]:
-    try:
-        df = query("SELECT municipality, ine_region FROM spanish_housing_radar.main_silver.ccaa_by_municipality")
-        return dict(zip(df["municipality"], df["ine_region"], strict=True))
-    except Exception:
-        return {}
+def load_city_facts() -> pd.DataFrame:
+    """Each city's region and its median asking €/m² to buy and to rent."""
+    return query("""
+        SELECT c.municipality, c.ine_region,
+               MEDIAN(o.price_per_sqm) FILTER (WHERE o.operation_type = 'sale') AS sale_ppsqm,
+               MEDIAN(o.price_per_sqm) FILTER (WHERE o.operation_type = 'rent') AS rent_ppsqm
+        FROM spanish_housing_radar.main_silver.ccaa_by_municipality c
+        LEFT JOIN spanish_housing_radar.main_gold.rpt_opportunities o
+          ON o.municipality = c.municipality AND o.property_type = 'apartment'
+        GROUP BY 1, 2
+    """).set_index("municipality")
 
 
-region_map = load_region_map()
+try:
+    facts = load_city_facts()
+except Exception:
+    facts = pd.DataFrame(columns=["ine_region", "sale_ppsqm", "rent_ppsqm"])
 try:
     cities = load_municipalities()
 except Exception:
-    cities = sorted(region_map) or ["valència"]
+    cities = sorted(facts.index) or ["valència"]
 
-with st.sidebar:
-    st.header("Your purchase")
+# ── Inputs: four in a row, the rest one click away ────────────────────────────
+c_city, c_price, c_savings, c_income, c_more = st.columns(
+    [1.2, 1.2, 1.2, 1.2, 1], vertical_alignment="bottom")
+with c_city:
     city = st.selectbox(
-        "City",
-        options=cities,
-        index=cities.index("valència") if "valència" in cities else 0,
-        format_func=str.title,
-        help="Sets the transfer tax: it is a regional tax, not a national one.",
-    )
+        "City", cities, index=cities.index("valència") if "valència" in cities else 0,
+        format_func=str.title, help="Sets the transfer tax, which is regional.")
+with c_price:
+    # €180,000 is where València's under-35 transfer-tax cut stops, so the
+    # opening example shows the one lever most first-time buyers miss.
     price = st.number_input(
-        "Property price (€)", min_value=30_000, max_value=5_000_000,
-        value=250_000, step=5_000, format="%d",
-    )
+        "Price (€)", 30_000, 5_000_000, 180_000, 5_000, "%d",
+        help="€180,000 is the ceiling for València's reduced 6% transfer tax "
+             "for buyers under 35.")
+with c_savings:
     savings = st.number_input(
-        "Savings available (€)", min_value=0, max_value=2_000_000,
-        value=70_000, step=5_000, format="%d",
-        help="Everything you can put in, including what the tax and fees will eat.",
-    )
+        "Savings (€)", 0, 2_000_000, 50_000, 5_000, "%d",
+        help="Everything you can put in, including what tax and fees will take.")
+with c_income:
     net_income = st.number_input(
-        "Monthly net income (€)", min_value=500, max_value=20_000,
-        value=2_000, step=100, format="%d",
-    )
+        "Net income (€/month)", 500, 20_000, int(VALENCIA_AVG_NET_SALARY_MONTHLY), 100,
+        "%d", help="Defaults to the Comunitat Valenciana average — see the sources "
+                   "at the bottom.")
+with c_more, st.popover("Loan terms", icon=":material/tune:", width="stretch"):
     young_first_home = st.toggle(
-        "Under 35, first habitual residence",
-        value=True,
-        help="Several regions cut the transfer tax sharply for this. Valencia "
-             "charges 6% instead of 9% below €180,000.",
-    )
+        "Under 35, first home", value=True,
+        help="Several regions cut the transfer tax for this. València charges 6% "
+             "instead of 9% below €180,000.")
+    include_gestoria = st.toggle("Use a gestoría", value=True)
+    ltv = st.slider("Share financed (LTV %)", 50, 100, int(MORTGAGE_DEFAULT_LTV))
+    years = st.slider("Term (years)", 5, 40, MORTGAGE_DEFAULT_YEARS)
+    fixed_rate = st.number_input("Fixed rate (%)", 0.1, 15.0,
+                                 MORTGAGE_DEFAULT_RATE_FIXED, 0.05, "%.2f")
+    euribor = st.number_input("Euribor 12m (%)", -2.0, 10.0, EURIBOR_CURRENT, 0.05, "%.2f")
+    spread = st.number_input("Bank spread (%)", 0.1, 5.0,
+                             MORTGAGE_DEFAULT_RATE_VARIABLE, 0.05, "%.2f")
+    stress = st.number_input("Stress: Euribor + (%)", 0.0, 5.0, 1.0, 0.25, "%.2f",
+                             help="What the variable payment becomes if rates rise "
+                                  "this much.")
 
-    with st.expander("Loan terms"):
-        ltv = st.slider("LTV — % financed", 50, 100, int(MORTGAGE_DEFAULT_LTV))
-        years = st.slider("Term (years)", 5, 40, MORTGAGE_DEFAULT_YEARS)
-        fixed_rate = st.number_input(
-            "Fixed rate (%)", 0.1, 15.0, MORTGAGE_DEFAULT_RATE_FIXED, 0.05, "%.2f",
-        )
-        euribor = st.number_input(
-            "Euribor 12m (%)", -2.0, 10.0, EURIBOR_CURRENT, 0.05, "%.2f",
-        )
-        spread = st.number_input(
-            "Bank spread (%)", 0.1, 5.0, MORTGAGE_DEFAULT_RATE_VARIABLE, 0.05, "%.2f",
-        )
-        stress = st.number_input(
-            "Stress · Euribor +(%)", 0.0, 5.0, 1.0, 0.25, "%.2f",
-            help="What the variable instalment becomes if rates rise by this much.",
-        )
-
-    with st.expander("Fees"):
-        include_gestoria = st.toggle("Use a gestoría", value=True)
-
-    with st.expander("Buying vs investing"):
-        horizon = st.slider("How long you'd stay (years)", 3, 40, 15)
-        monthly_rent = st.number_input(
-            "Rent for a similar home (€/mo)", 200, 10_000, 1_000, 50, "%d",
-        )
-        invest_return = st.slider(
-            "Return if you invested instead (%/yr)", 0.0, 12.0, 7.0, 0.5,
-            help="Nobody knows this number. It is the single biggest driver of "
-                 "the verdict below, which is why it is yours to set.",
-        )
-        property_growth = st.slider(
-            "House price growth (%/yr)", -3.0, 10.0, 2.0, 0.5,
-            help="Also unknowable. Rents are indexed at this same rate.",
-        )
-
-ine_region = region_map.get(city)
+ine_region = facts["ine_region"].get(city) if not facts.empty else None
 principal = price * ltv / 100
 
-costs = purchase_costs(
-    price,
-    ltv_pct=ltv,
-    ine_region=ine_region,
-    young_first_home=young_first_home,
-    include_gestoria=include_gestoria,
-)
+
+def costs_at(p: float):
+    return purchase_costs(p, ltv_pct=ltv, ine_region=ine_region,
+                          young_first_home=young_first_home,
+                          include_gestoria=include_gestoria)
+
+
+costs = costs_at(price)
 fixed = compute_mortgage(principal, fixed_rate, years)
 var_base, var_stress = compute_variable_mortgage(principal, spread, euribor, years, stress)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# The answer, before any detail
-# ══════════════════════════════════════════════════════════════════════════════
+def most_you_could_buy() -> tuple[float, str]:
+    """The dearest home both your savings and your income can carry."""
+    by_income = max_affordable_loan(net_income, AFFORDABILITY_RATIO_MAX,
+                                    fixed_rate, years) / (ltv / 100)
+    # Cash needed rises with price but not linearly (the ITP band can step), so
+    # search rather than invert.
+    lo, hi = 0.0, 5_000_000.0
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if costs_at(mid).cash_needed <= savings else (lo, mid)
+    by_savings = lo
+    return ((by_income, "your income") if by_income < by_savings
+            else (by_savings, "your savings"))
+
+
+# ── The answer ────────────────────────────────────────────────────────────────
 shortfall = costs.cash_needed - savings
 ratio = fixed.monthly_payment / net_income * 100
-affordable_monthly = ratio <= AFFORDABILITY_RATIO_MAX
-have_the_cash = shortfall <= 0
-
-if have_the_cash and affordable_monthly:
-    st.success(
-        f"**On these numbers, yes.** You need **€{costs.cash_needed:,.0f}** on the "
-        f"day you sign and the instalment is **€{fixed.monthly_payment:,.0f}/month**, "
-        f"which is {ratio:.0f}% of your net income."
-    )
-elif not have_the_cash:
-    st.error(
-        f"**You are €{shortfall:,.0f} short of signing day.** Buying at "
-        f"€{price:,.0f} needs **€{costs.cash_needed:,.0f}** in cash — "
-        f"€{costs.deposit:,.0f} deposit plus €{costs.total_costs:,.0f} of tax and "
-        f"fees — and you have €{savings:,.0f}."
-    )
+if shortfall > 0:
+    st.badge(f"€{shortfall:,.0f} short of signing day", icon=":material/block:",
+             color="red")
+elif ratio > AFFORDABILITY_RATIO_MAX:
+    st.badge(f"The cash works; the payment is {ratio:.0f}% of your income",
+             icon=":material/warning:", color="orange")
 else:
-    st.warning(
-        f"**The cash works, the monthly does not.** €{fixed.monthly_payment:,.0f}/month "
-        f"is {ratio:.0f}% of your net income, above the {AFFORDABILITY_RATIO_MAX:.0f}% "
-        "guideline Spanish lenders apply."
-    )
+    st.badge("Within reach on these numbers", icon=":material/check_circle:",
+             color="green")
 
-c1, c2, c3 = st.columns(3)
-c1.metric("Cash needed to sign", f"€{costs.cash_needed:,.0f}",
-          help="Deposit plus every tax and fee. This is the number that surprises people.")
-c2.metric("Monthly payment", f"€{fixed.monthly_payment:,.0f}",
-          help=f"Fixed at {fixed_rate:.2f}% over {years} years.")
-c3.metric("Tax and fees", f"€{costs.total_costs:,.0f}",
-          delta=f"{costs.costs_pct_of_price:.1f}% of the price", delta_color="off")
+most, limit = most_you_could_buy()
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Cash to sign", f"€{costs.cash_needed:,.0f}",
+          delta=f"you have €{savings:,.0f}", delta_color="off", delta_arrow="off",
+          help="Deposit plus every tax and fee, paid on or around the day of the deed.")
+m2.metric("Monthly payment", f"€{fixed.monthly_payment:,.0f}",
+          delta=f"{ratio:.0f}% of your income", delta_color="off", delta_arrow="off",
+          help=f"Fixed at {fixed_rate:.2f}% over {years} years. Lenders rarely go past "
+               f"{AFFORDABILITY_RATIO_MAX:.0f}%.")
+m3.metric("Tax and fees", f"€{costs.total_costs:,.0f}",
+          delta=f"{costs.costs_pct_of_price:.1f}% of the price", delta_color="off",
+          delta_arrow="off", help="Money that buys nothing you can later sell.")
+m4.metric("The most you could buy", f"€{most:,.0f}",
+          delta=f"limited by {limit}", delta_color="off", delta_arrow="off",
+          help=f"The dearest home your savings cover the cash for and your income "
+               f"covers the payment on, at {ltv}% financed and "
+               f"{AFFORDABILITY_RATIO_MAX:.0f}% of income.")
 
-st.markdown("")
+st.divider()
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-tab_costs, tab_loan, tab_bank, tab_invest = st.tabs(
-    ["What it costs to buy", "The loan", "Bank tie-ins", "Buy or invest?"]
-)
-
-# ── What it costs to buy ──────────────────────────────────────────────────────
-with tab_costs:
-    section("Cash needed on signing day")
-    st.markdown(
-        ":small[A mortgage covers a share of the *price*. It covers none of the "
-        "tax and none of the fees, and those are paid in cash within 30 days of "
-        "the deed.]"
-    )
-
-    breakdown = pd.DataFrame([
-        {"item": "Deposit", "amount": costs.deposit,
-         "note": f"{100 - ltv:.0f}% of the price — the part the bank will not lend"},
-        {"item": "Transfer tax (ITP)", "amount": costs.itp,
-         "note": f"{costs.itp_rate:.1f}% · {costs.itp_reason}"},
-        {"item": "Notary", "amount": costs.notary, "note": "Witnessing the deed"},
-        {"item": "Land registry", "amount": costs.registry, "note": "Recording you as owner"},
-        {"item": "Appraisal", "amount": costs.appraisal, "note": "Required by the lender"},
-        {"item": "Gestoría", "amount": costs.gestoria,
-         "note": "Optional — handles the paperwork" if include_gestoria else "Not used"},
+# ── Where the cash goes · the loan ────────────────────────────────────────────
+left, right = st.columns(2, gap="large")
+with left:
+    st.markdown("#### Where the cash goes")
+    items = pd.DataFrame([
+        {"item": "Deposit", "eur": costs.deposit,
+         "note": f"{100 - ltv}% of the price, the part the bank will not lend"},
+        {"item": "Transfer tax", "eur": costs.itp,
+         "note": f"{costs.itp_rate:.1f}%, {costs.itp_reason}"},
+        {"item": "Notary", "eur": costs.notary, "note": "Witnessing the deed"},
+        {"item": "Land registry", "eur": costs.registry, "note": "Recording you as owner"},
+        {"item": "Appraisal", "eur": costs.appraisal, "note": "Required by the lender"},
+        {"item": "Gestoría", "eur": costs.gestoria, "note": "Handles the paperwork"},
     ])
+    altair_chart(bar_signing_day(items))
+    st.caption(f"The mortgage covers {ltv}% of the price and none of the tax or fees.")
+
+with right:
+    st.markdown("#### The loan")
+    scenarios = [
+        ("Fixed", fixed_rate, fixed),
+        ("Variable", euribor + spread, var_base),
+        ("If Euribor rises", euribor + spread + stress, var_stress),
+    ]
+    for col, (label, rate, result) in zip(st.columns(3), scenarios, strict=True):
+        col.metric(f"{label} · {rate:.2f}%", f"€{result.monthly_payment:,.0f}/mo",
+                   help=f"€{result.total_interest:,.0f} of interest over {years} years.")
+    altair_chart(bar_amortisation(fixed.schedule).properties(height=220, title=""))
+    st.caption(f"Fixed rate: €{fixed.total_interest:,.0f} of interest on a "
+               f"€{principal:,.0f} loan. Early payments are mostly interest.")
+
+st.divider()
+
+# ── Buy, or rent and invest ───────────────────────────────────────────────────
+st.markdown("#### When does buying beat renting?")
+
+# The rent for a comparable home, from this city's own asking prices: the price
+# times the city's rent-to-price ratio per m². A made-up round number here would
+# decide the verdict below more than anything the visitor typed.
+sale_ppsqm = facts["sale_ppsqm"].get(city) if not facts.empty else None
+rent_ppsqm = facts["rent_ppsqm"].get(city) if not facts.empty else None
+default_rent = (int(round(price * rent_ppsqm / sale_ppsqm, -1))
+                if pd.notna(sale_ppsqm) and pd.notna(rent_ppsqm) else 1_000)
+
+r1, r2, r3 = st.columns(3)
+monthly_rent = r1.number_input(
+    "Rent for a similar home (€/month)", 200, 10_000, default_rent, 50, "%d",
+    help=f"Suggested from {city.title()}'s asking rents and prices per m²."
+    if default_rent != 1_000 else None)
+invest_return = r2.slider(
+    "Return if you invested instead (%/yr)", 0.0, 12.0, 7.0, 0.5,
+    help="Nobody knows this. It moves the answer more than anything else here.")
+property_growth = r3.slider(
+    "House prices and rents grow (%/yr)", -3.0, 10.0, 2.0, 0.5,
+    help="Also unknowable. Rents are indexed at the same rate.")
+
+
+def compare(horizon: int):
+    return buy_vs_invest(
+        price=price, costs=costs, monthly_payment=fixed.monthly_payment, years=years,
+        horizon_years=horizon, monthly_rent=monthly_rent,
+        investment_return_pct=invest_return, property_growth_pct=property_growth,
+        outstanding_balance_at_horizon=balance_after(fixed.schedule, horizon))
+
+
+runs = [compare(h) for h in range(1, years + 1)]
+series = pd.DataFrame({
+    "year": range(1, years + 1),
+    "Buy": [c.net_worth_buying for c in runs],
+    "Rent and invest": [c.net_worth_renting for c in runs],
+})
+# The year from which buying *stays* ahead, not the first year it touches: a
+# path that crosses and falls back again has not broken even.
+behind = series.loc[series["Buy"] < series["Rent and invest"], "year"]
+breakeven = (1 if behind.empty
+             else int(behind.max()) + 1 if behind.max() < years else None)
+
+altair_chart(line_buy_vs_rent(series, breakeven))
+if breakeven is None:
+    st.caption(f"On these assumptions renting and investing stays ahead for the whole "
+               f"{years}-year term.")
+elif breakeven == 1:
+    st.caption("On these assumptions buying is ahead from the first year.")
+else:
+    st.caption(f"On these assumptions buying pulls ahead after **{breakeven} years** — "
+               "sell sooner and the tax and fees have not been earned back. Move either "
+               "slider and the year moves: it is a sensitivity, not a forecast.")
+
+# ── The detail, for whoever wants it ──────────────────────────────────────────
+with st.expander("Bank tie-ins: are the discounts worth it?"):
+    st.caption("A bonificación trades a lower rate for products that cost money. "
+               "Tick what you would sign up for.")
+    chosen = [
+        bon for i, bon in enumerate(DEFAULT_BONIFICATIONS)
+        if st.checkbox(
+            f"{bon.label} · −{bon.rate_cut_pct:.2f}% · "
+            + ("free" if bon.annual_cost_eur == 0 else f"€{bon.annual_cost_eur:,.0f}/yr"),
+            value=bon.annual_cost_eur == 0, key=f"bon_{i}", help=bon.note or None)
+    ]
+    outcome = apply_bonifications(principal, fixed_rate, years, chosen)
+    b1, b2, b3 = st.columns(3)
+    b1.metric("Rate after tie-ins", f"{outcome.final_rate:.2f}%")
+    b2.metric("Saved on the payment", f"€{outcome.monthly_saving:,.0f}/mo")
+    b3.metric("Cost of the products", f"€{outcome.monthly_tie_in_cost:,.0f}/mo")
+    if chosen:
+        if outcome.worth_it:
+            st.badge(f"Worth it: €{outcome.net_monthly_benefit:,.0f}/month better off",
+                     icon=":material/check_circle:", color="green")
+        else:
+            st.badge(f"Not worth it: €{abs(outcome.net_monthly_benefit):,.0f}/month "
+                     "worse off", icon=":material/block:", color="red")
+    st.caption("Insurance premiums are indicative, not quotes. Use your bank's.")
+
+with st.expander("Full amortisation schedule"):
     st.dataframe(
-        breakdown, width="stretch", hide_index=True,
+        pd.DataFrame(fixed.schedule), width="stretch", hide_index=True,
         column_config={
-            "item": st.column_config.TextColumn("Item", pinned=True),
-            "amount": st.column_config.NumberColumn("Amount", format="€%,d"),
-            "note": st.column_config.TextColumn("What it is"),
+            "month": st.column_config.NumberColumn("Month", format="%d"),
+            "year": st.column_config.NumberColumn("Year", format="%d"),
+            "payment": st.column_config.NumberColumn("Payment", format="€%,.2f"),
+            "interest": st.column_config.NumberColumn("Interest", format="€%,.2f"),
+            "amortisation": st.column_config.NumberColumn("Principal", format="€%,.2f"),
+            "balance": st.column_config.NumberColumn("Balance", format="€%,.0f"),
         },
     )
 
+with st.expander("Where these numbers come from"):
+    st.markdown(MORTGAGE_SOURCE_NOTE)
+    st.markdown(AFFORDABILITY_SOURCE_NOTE)
     regime = ITP_BY_CCAA.get((ine_region or "").lower())
     if regime is not None:
-        note = f" {regime.notes}" if regime.notes else ""
-        st.caption(
-            f"Transfer tax for **{regime.ccaa}**: {costs.itp_rate:.1f}% "
-            f"({costs.itp_reason}).{note} Source: {regime.source}. "
-            f"Checked {TAX_SOURCES_CONSULTED_ON}."
-        )
+        st.markdown(f"**Transfer tax, {regime.ccaa}** — {costs.itp_rate:.1f}% "
+                    f"({costs.itp_reason}). {regime.notes} Source: {regime.source}. "
+                    f"Checked {TAX_SOURCES_CONSULTED_ON}.")
     else:
-        st.caption(
-            f"No transfer-tax rate on file for {city.title()}, so this uses the "
-            f"{costs.itp_rate:.0f}% national median. Treat the total as indicative."
-        )
-    st.caption(
-        "Notary, registry, appraisal and gestoría are midpoints of the ranges "
-        "published for 2026 — they barely move with price, so they are modelled "
-        "in euros rather than as a percentage. Your quotes will differ."
-    )
-
-# ── The loan ──────────────────────────────────────────────────────────────────
-with tab_loan:
-    section("Fixed, variable, and variable if rates rise")
-    scenarios = [
-        (f"Fixed · {fixed_rate:.2f}%", fixed),
-        (f"Variable · {euribor + spread:.2f}%", var_base),
-        (f"Stressed · {euribor + spread + stress:.2f}%", var_stress),
-    ]
-    for col, (label, result) in zip(st.columns(3), scenarios, strict=True):
-        with col.container(border=True):
-            st.markdown(f"**{label}**")
-            st.metric("Monthly payment", f"€{result.monthly_payment:,.0f}",
-                      label_visibility="collapsed")
-            st.markdown(
-                f":small[Total paid €{result.total_paid:,.0f}  ·  "
-                f"of which interest €{result.total_interest:,.0f}]"
-            )
-
-    section("Against your income")
-    for label, result in scenarios:
-        pct = result.monthly_payment / net_income * 100
-        within = pct <= AFFORDABILITY_RATIO_MAX
-        colour = TEAL_700 if within else RUST_700
-        st.markdown(
-            f"**{label}** · €{result.monthly_payment:,.0f}/month = "
-            f":color[{pct:.1f}% of your net income]{{foreground=\"{colour}\"}} "
-            f"— {'within' if within else 'over'} the "
-            f"{AFFORDABILITY_RATIO_MAX:.0f}% guideline."
-        )
-
-    max_loan = max_affordable_loan(net_income, AFFORDABILITY_RATIO_MAX, fixed_rate, years)
-    min_income = required_income(principal, fixed_rate, years, AFFORDABILITY_RATIO_MAX)
-    st.info(
-        f"On €{net_income:,}/month you can service a loan of about "
-        f"**€{max_loan:,.0f}** at {fixed_rate:.2f}% over {years} years — a home of "
-        f"roughly **€{max_loan / (ltv / 100):,.0f}** at {ltv:.0f}% LTV. The "
-        f"€{principal:,.0f} loan above needs at least **€{min_income:,.0f}/month net**."
-    )
-
-    st.markdown("")
-    altair_chart(bar_mortgage_cost(fixed))
-    altair_chart(bar_amortisation(fixed.schedule))
-
-    with st.expander("Full amortisation schedule (fixed rate)"):
-        st.dataframe(
-            pd.DataFrame(fixed.schedule), width="stretch", hide_index=True,
-            column_config={
-                "month": st.column_config.NumberColumn("Month", format="%d"),
-                "year": st.column_config.NumberColumn("Year", format="%d"),
-                "payment": st.column_config.NumberColumn("Payment", format="€%,.2f"),
-                "interest": st.column_config.NumberColumn("Interest", format="€%,.2f"),
-                "amortisation": st.column_config.NumberColumn("Principal", format="€%,.2f"),
-                "balance": st.column_config.NumberColumn("Balance", format="€%,.0f"),
-            },
-        )
-
-# ── Bank tie-ins ──────────────────────────────────────────────────────────────
-with tab_bank:
-    section("What the bank's discounts are actually worth")
-    st.markdown(
-        ":small[A bonificación is a trade, not a gift: the bank cuts the rate in "
-        "exchange for products that cost money. Every bank simulator shows the "
-        "cut and hides the price. Tick what you would sign up for.]"
-    )
-
-    chosen = []
-    for i, bon in enumerate(DEFAULT_BONIFICATIONS):
-        cols = st.columns([3, 1])
-        with cols[0]:
-            take = st.checkbox(
-                f"{bon.label} · −{bon.rate_cut_pct:.2f}%",
-                value=bon.annual_cost_eur == 0,
-                key=f"bon_{i}",
-                help=bon.note or None,
-            )
-        with cols[1]:
-            st.markdown(
-                f":small[{'free' if bon.annual_cost_eur == 0 else f'€{bon.annual_cost_eur:,.0f}/yr'}]"
-            )
-        if take:
-            chosen.append(bon)
-
-    outcome = apply_bonifications(principal, fixed_rate, years, chosen)
-
-    b1, b2, b3 = st.columns(3)
-    b1.metric("Rate after tie-ins", f"{outcome.final_rate:.2f}%",
-              delta=f"−{outcome.total_rate_cut:.2f}pp" if outcome.total_rate_cut else None,
-              delta_color="inverse")
-    b2.metric("Saved on the instalment", f"€{outcome.monthly_saving:,.0f}/mo")
-    b3.metric("Cost of the products", f"€{outcome.monthly_tie_in_cost:,.0f}/mo")
-
-    if not chosen:
-        st.info("No tie-ins selected — the rate stays at the headline figure.")
-    elif outcome.worth_it:
-        st.success(
-            f"**Worth it: €{outcome.net_monthly_benefit:,.0f}/month better off.** "
-            f"The rate cut saves more than the products cost, over "
-            f"€{outcome.net_monthly_benefit * 12 * years:,.0f} across {years} years."
-        )
-    else:
-        st.error(
-            f"**Not worth it: €{abs(outcome.net_monthly_benefit):,.0f}/month worse off.** "
-            "The products cost more than the rate cut saves — the headline rate "
-            "looks better while you pay for the privilege."
-        )
-    st.caption(
-        "Insurance premiums are indicative placeholders, not quotes: real ones "
-        "depend on your age, the property and the insurer. Replace them with the "
-        "figures your bank actually offers before deciding anything."
-    )
-
-# ── Buy or invest ─────────────────────────────────────────────────────────────
-with tab_invest:
-    section(f"Buying versus renting and investing, over {horizon} years")
-    st.markdown(
-        ":small[The deposit and the tax are not spent if you rent — they are "
-        "capital that could be invested. This compares where you end up either "
-        "way, and it is the only view here whose answer can be *don't buy*.]"
-    )
-
-    cmp = buy_vs_invest(
-        price=price,
-        costs=costs,
-        monthly_payment=fixed.monthly_payment,
-        years=years,
-        horizon_years=horizon,
-        monthly_rent=monthly_rent,
-        investment_return_pct=invest_return,
-        property_growth_pct=property_growth,
-        outstanding_balance_at_horizon=balance_after(fixed.schedule, horizon),
-    )
-
-    left, right = st.columns(2)
-    with left.container(border=True):
-        st.markdown("**Buy**")
-        st.metric("Net worth after " + f"{horizon}y", f"€{cmp.net_worth_buying:,.0f}",
-                  label_visibility="collapsed")
-        st.markdown(
-            f":small[Home worth €{cmp.property_value_at_horizon:,.0f}, "
-            f"€{cmp.outstanding_balance:,.0f} still owed, "
-            f"€{costs.total_costs:,.0f} of tax and fees gone for good.]"
-        )
-    with right.container(border=True):
-        st.markdown("**Rent and invest**")
-        st.metric("Net worth after " + f"{horizon}y", f"€{cmp.net_worth_renting:,.0f}",
-                  label_visibility="collapsed")
-        st.markdown(
-            f":small[€{cmp.cash_invested:,.0f} invested up front at "
-            f"{invest_return:.1f}%/yr, €{cmp.total_rent_paid:,.0f} paid in rent.]"
-        )
-
-    if cmp.buying_wins:
-        st.success(
-            f"**Buying comes out €{abs(cmp.difference):,.0f} ahead** over "
-            f"{horizon} years, assuming {property_growth:.1f}% house-price growth "
-            f"and {invest_return:.1f}% on investments."
-        )
-    else:
-        st.warning(
-            f"**Renting and investing comes out €{abs(cmp.difference):,.0f} ahead** "
-            f"over {horizon} years at {invest_return:.1f}% returns against "
-            f"{property_growth:.1f}% house-price growth."
-        )
-
-    st.markdown(
-        f":small[:color[This verdict is a function of two numbers nobody knows — "
-        f"the {invest_return:.1f}% return and the {property_growth:.1f}% growth. "
-        f"Move either slider and it can flip. Treat it as a way to see how much "
-        f"the answer depends on your assumptions, not as a "
-        f"forecast.]{{foreground=\"{INK_MUTED}\"}}]"
-    )
-    st.caption(
-        "Not modelled: IBI and community fees, maintenance, the tax treatment of "
-        "investment gains, transaction costs on selling, or the value of not "
-        "having a landlord. The first three favour renting; the last does not "
-        "have a number."
-    )
+        st.markdown(f"**Transfer tax** — no rate on file for {city.title()}, so the "
+                    f"{costs.itp_rate:.0f}% national median is used.")
+    st.markdown("**Notary, registry, appraisal, gestoría** — midpoints of the ranges "
+                "published for 2026, in euros rather than a percentage because they "
+                "barely move with price. **Not modelled:** IBI and community fees, "
+                "maintenance, tax on investment gains, the cost of selling.")

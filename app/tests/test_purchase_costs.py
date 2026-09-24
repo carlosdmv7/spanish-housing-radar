@@ -168,14 +168,25 @@ class TestBuyVsInvest:
             investment_return_pct=1.0, property_growth_pct=5.0
         ).buying_wins
 
-    def test_closing_costs_are_spent_never_counted_as_equity(self):
-        c = self._compare(investment_return_pct=5.0, property_growth_pct=2.0)
-        # Net worth from buying is equity minus the costs, so it must sit below
-        # the raw equity by exactly the sunk amount.
-        costs = purchase_costs(300_000, ltv_pct=80, ine_region="comunitat valenciana")
-        assert c.net_worth_buying == pytest.approx(
-            c.equity_at_horizon - costs.total_costs, abs=1
+    def test_closing_costs_are_spent_once_not_twice(self):
+        # Both paths pay the same every month (rent = instalment), nothing grows
+        # and nothing earns. Then the only differences are the principal the
+        # buyer has repaid and the closing costs the buyer lost on day one — so
+        # buying must lead by exactly one minus the other. This test used to
+        # assert equity minus costs, which charged the buyer for them twice.
+        price, ltv, rate, years, horizon = 300_000, 80.0, 3.0, 30, 10
+        costs = purchase_costs(price, ltv_pct=ltv, ine_region="comunitat valenciana")
+        loan = price * ltv / 100
+        m = compute_mortgage(loan, rate, years)
+        balance = balance_after(m.schedule, horizon)
+        c = buy_vs_invest(
+            price=price, costs=costs, monthly_payment=m.monthly_payment,
+            years=years, horizon_years=horizon, monthly_rent=m.monthly_payment,
+            investment_return_pct=0.0, property_growth_pct=0.0,
+            outstanding_balance_at_horizon=balance,
         )
+        assert c.net_worth_buying == pytest.approx(c.equity_at_horizon)
+        assert c.difference == pytest.approx((loan - balance) - costs.total_costs, abs=1)
 
     def test_the_renting_branch_starts_by_investing_the_deposit_and_costs(self):
         # Pin the seeding directly: no returns, no growth, and a rent set equal
