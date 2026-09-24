@@ -16,7 +16,12 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from chrome import page_header
-from components.charts import bar_flat_vs_area, scatter_size_vs_price, strip_deal_tiers
+from components.charts import (
+    bar_flat_vs_area,
+    scatter_size_vs_price,
+    strip_deal_tiers,
+    tier_legend,
+)
 from components.filters import load_municipalities
 from components.map_view import listings_map
 from components.provenance import GRAIN_WORDING, confidence_note
@@ -128,6 +133,7 @@ m4.metric("Compared with their own barrio",
                "because their barrio has too few listings to be a fair yardstick.")
 
 altair_chart(strip_deal_tiers(df))
+st.markdown(f":small[{tier_legend(df)}]")
 
 # ── Ranked / map / size ───────────────────────────────────────────────────────
 tab_rank, tab_map, tab_size = st.tabs(
@@ -145,8 +151,7 @@ with tab_rank:
         tier=lambda d: d["deal_tier"].map(DEAL_TIER_LABELS).map(lambda t: [t]),
         vs_area=lambda d: (d["price_per_sqm"] / d["neighborhood_median_ppsqm"] - 1) * 100,
         compared=lambda d: d["benchmark_level"].map(
-            {"neighbourhood": "Its barrio", "district": "Its district",
-             "city": "The city"}),
+            {"neighbourhood": "Barrio", "district": "District", "city": "City"}),
     )
     left, right = st.columns([3, 2], gap="large")
     with left:
@@ -160,7 +165,7 @@ with tab_rank:
             selection_default={"selection": {"rows": [0], "columns": []}},
             key=f"deals-{op}-{muni}-{prop}",
             column_config={
-                "area": st.column_config.TextColumn("Barrio", pinned=True),
+                "area": st.column_config.TextColumn("Barrio", pinned=True, width="medium"),
                 "tier": st.column_config.MultiselectColumn(
                     "Verdict", options=tiers,
                     color=[DEAL_TIER_COLORS[k] for k in DEAL_TIER_LABELS],
@@ -176,8 +181,10 @@ with tab_rank:
                     "Price", format=f"€%,d{per}"),
                 "size_sqm": st.column_config.NumberColumn("m²", format="%d"),
                 "compared": st.column_config.TextColumn(
-                    "Compared with",
-                    help="The finest area with at least 8 comparable flats."),
+                    "Scored vs", width="small",
+                    help="What the flat was compared with: the finest area with at "
+                         "least 8 comparable flats — its barrio, its district or the "
+                         "whole city."),
                 "url": st.column_config.LinkColumn("", display_text="open ↗"),
             },
         )
