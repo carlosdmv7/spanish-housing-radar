@@ -1,11 +1,15 @@
 """
-Market — neighbourhood €/m² benchmarks, price spread, historical evolution.
+Neighbourhoods — what a m² costs, barrio by barrio, and where prices are heading.
 
-The page answers one question: *how much does a m² cost here, and how far apart
-are the barrios?* The spread is the part worth leading with — a city median is a
-number anyone can look up, whereas "the priciest barrio costs 2.3× the cheapest"
-is the thing that decides where to look, and it was previously left implicit in
-two `st.metric` labels the reader had to divide themselves.
+Two sources, kept visibly apart because they answer different questions:
+
+* Scraped asking prices are the only data at barrio grain. They are drawn only
+  where a barrio has enough listings to mean something, as a median with the
+  middle half of its listings around it, so a barrio built on four flats never
+  looks as solid as one built on forty. The thin ones stay in the table.
+* The INE house-price index is transaction-based but regional and quarterly.
+  It is the trend line — replacing a per-barrio line drawn from scraped
+  snapshots, which mostly traced which flats happened to be listed that week.
 """
 from pathlib import Path
 import sys
@@ -13,232 +17,219 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from chrome import page_header
-from components.charts import bar_ppsqm_with_range, line_price_history
-from components.filters import load_municipalities, municipality_filter, operation_filter
-from config import PROPERTY_TYPE_LABELS
+from components.charts import dot_barrio_range, line_official_trend
+from components.filters import load_municipalities
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import altair_chart, lede, section
+from theme import altair_chart
+
+# transform/dbt_project.yml → vars.min_comps_for_benchmark: the same bar a barrio
+# must clear before the score will use it as a benchmark.
+MIN_LISTINGS = 8
+GOLD = "spanish_housing_radar.main_gold"
+VIEWS = Path(__file__).parent  # absolute page_link targets; see views/home.py
 
 page_header(
     "What does a m² cost, barrio by barrio?",
-    "The benchmark every score is measured against, and where official prices are "
-    "heading.",
+    "Asking prices for flats in every barrio, and where official prices are heading.",
 )
-
 
 try:
     munis = load_municipalities()
 except Exception as exc:
     st.error(
-        "**Can't reach the warehouse.** The app reads from MotherDuck — check that "
-        "`MOTHERDUCK_TOKEN` is set in `.env` locally, or in the app's Secrets on "
-        "Streamlit Cloud."
+        "**Can't reach the warehouse.** Locally that needs `MOTHERDUCK_TOKEN` in "
+        "`.env`; on Streamlit Cloud it comes from the app's Secrets."
     )
     st.caption(f"Underlying error: {exc}")
     st.stop()
 
-with st.sidebar:
-    st.header("Filters")
-    op = operation_filter()
-    muni = municipality_filter(munis)
-    prop = st.selectbox(
-        "Property type",
-        ["apartment", "house", "other"],
-        format_func=lambda k: PROPERTY_TYPE_LABELS[k],
+c_op, c_city, _ = st.columns([1.2, 1.4, 3.4], vertical_alignment="bottom")
+with c_op:
+    op = st.segmented_control(
+        "Prices to", ["sale", "rent"], default="sale", required=True,
+        format_func=lambda k: {"sale": "Buy", "rent": "Rent"}[k],
+    )
+with c_city:
+    cities = sorted(munis)
+    city = st.selectbox(
+        "City", cities,
+        index=cities.index("valència") if "valència" in cities else 0,
+        format_func=str.title,
     )
 
-# ── Load data ─────────────────────────────────────────────────────────────────
-market_sql = (Path(__file__).parent.parent / "queries" / "market.sql").read_text()
+MARKET_SQL = (Path(__file__).parent.parent / "queries" / "market.sql").read_text()
 
 
-@st.cache_data(ttl=600, show_spinner="Loading market data…")
-def load_market(op, muni):
-    return query(market_sql, operation_type=op, municipality=muni)
+@st.cache_data(ttl=600, show_spinner="Loading prices…")
+def load_asking(op: str, city: str) -> tuple[pd.Series, pd.DataFrame]:
+    summary = query(f"""
+        SELECT MEDIAN(price_per_sqm)                          AS median_ppsqm,
+               COUNT(*)                                       AS listings,
+               COUNT(*) FILTER (WHERE price_dropped)          AS cuts,
+               MEDIAN(price_change_pct) FILTER (WHERE price_dropped) AS median_cut,
+               MAX(days_on_market)                            AS max_days
+        FROM {GOLD}.rpt_opportunities
+        WHERE municipality = $city AND operation_type = $op
+          AND property_type = 'apartment'
+    """, city=city, op=op).iloc[0]
+    barrios = query(MARKET_SQL, operation_type=op, municipality=city)
+    return summary, barrios[barrios["property_type"] == "apartment"]
 
 
-df = load_market(op, muni)
-df = df[df["property_type"] == prop]
-
-if df.empty:
-    st.info(
-        f"**No {PROPERTY_TYPE_LABELS[prop].lower()} benchmarks for this city yet.** "
-        "Benchmarks need enough listings per neighbourhood to be meaningful. Coverage "
-        "is deepest for **apartments** in **Valencia** — or pick *All cities*."
-    )
-    st.stop()
-
-# ── The answer ────────────────────────────────────────────────────────────────
-# df arrives sorted by median_ppsqm DESC (see queries/market.sql).
-unit = "€/m²" if op == "sale" else "€/m² rent"
-_place = "these cities" if muni == "all" else str(muni).title()
-
-top, bottom = df.iloc[0], df.iloc[-1]
-_median = df["median_ppsqm"].median()
-_ratio = top["median_ppsqm"] / bottom["median_ppsqm"] if bottom["median_ppsqm"] else None
-
-if len(df) > 1 and _ratio:
-    answer = (
-        f"In {_place}, the median barrio asks **€{_median:,.0f}/m²** — but "
-        f"{top['neighborhood'].title()} costs **{_ratio:.1f}×** what "
-        f"{bottom['neighborhood'].title()} does."
-    )
-else:
-    answer = f"In {_place}, the median barrio asks **€{_median:,.0f}/m²**."
-
-lede(
-    answer,
-    f"Across {len(df):,} barrio benchmarks "
-    f"(€{bottom['median_ppsqm']:,.0f}–€{top['median_ppsqm']:,.0f}/m²). Each is a "
-    "median of asking prices, so it tracks what sellers want rather than what "
-    "buyers paid — the INE index below is the transaction-based check on that.",
-)
-
-# ── KPIs ──────────────────────────────────────────────────────────────────────
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Neighbourhoods", len(df))
-c2.metric(f"Median {unit}", f"€{df['median_ppsqm'].median():,.0f}")
-c3.metric("Cheapest area", df.loc[df["median_ppsqm"].idxmin(), "neighborhood"].title(),
-          help=f"€{df['median_ppsqm'].min():,.0f}/m²")
-c4.metric("Priciest area", df.loc[df["median_ppsqm"].idxmax(), "neighborhood"].title(),
-          help=f"€{df['median_ppsqm'].max():,.0f}/m²")
-
-st.markdown("")
-
-
-# ── Official market context (INE house-price index) ───────────────────────────
-# Grounds the scraped ASKING prices against the official, transaction-based index.
 @st.cache_data(ttl=3600)
-def load_market_context(muni):
-    return query(
-        "SELECT * FROM spanish_housing_radar.main_gold.rpt_market_context "
-        "WHERE ($m = 'all' OR municipality = $m)",
-        m=muni,
-    )
+def load_latest(city: str) -> pd.DataFrame:
+    return query(f"SELECT * FROM {GOLD}.rpt_market_context WHERE municipality = $city",
+                 city=city)
+
+
+@st.cache_data(ttl=3600)
+def load_trend(city: str) -> pd.DataFrame:
+    return query(f"""
+        SELECT period_date, hpi_index, hpi_yoy_pct
+        FROM {GOLD}.rpt_market_trend
+        WHERE municipality = $city AND housing_type = 'general'
+        ORDER BY period_date
+    """, city=city)
+
+
+def _or_empty(load, city: str) -> pd.DataFrame:
+    try:
+        return load(city)
+    except Exception:
+        return pd.DataFrame()
 
 
 try:
-    ctx = load_market_context(muni)
-    ctx = ctx[ctx["hpi_yoy_general"].notna()]
-    if not ctx.empty:
-        section("Official market context · INE house-price index")
-        st.markdown(
-            ":small[Transaction-based reality check (INE IPV). The prices above are "
-            "*asking* prices; this is where the market actually cleared. Regional "
-            "grain, so it reads direction, never a per-flat value — and it is the "
-            "newest quarter in the warehouse, which is not the same as this quarter.]"
-        )
-        row = ctx.iloc[0] if muni != "all" else None
-        if row is not None:
-            region = str(row["region"]).title()
-            k1, k2, k3 = st.columns(3)
-            k1.metric(f"{region} · index (2015=100)", f"{row['hpi_index_general']:.1f}")
-            k2.metric("YoY · all housing", f"{row['hpi_yoy_general']:+.1f}%")
-            sh = row["hpi_yoy_second_hand"]
-            k3.metric("YoY · second-hand", f"{sh:+.1f}%" if pd.notna(sh) else "—")
-            # This printed "2025-09-30 00:00:00" — a raw pandas Timestamp whose
-            # midnight implies a precision a quarterly index does not have, under a
-            # caption that said "latest quarter" and left the reader to assume it
-            # meant the current one. It did not: the figures above were four
-            # quarters old. The quarter is now named, and its age stated, because a
-            # YoY number read as current when it is a year old is worse than no
-            # number.
-            period = pd.Timestamp(row["latest_period"])
-            months_behind = (
-                (pd.Timestamp.today().year - period.year) * 12
-                + pd.Timestamp.today().month - period.month
-            )
-            age = (
-                f" — **{months_behind} months** behind today"
-                if months_behind >= 9
-                else f" — {months_behind} months behind today"
-            )
-            st.markdown(
-                f":small[Reference quarter: **Q{period.quarter} {period.year}** "
-                f"(quarter ending {period.date().isoformat()}){age}. The IPV is "
-                "published about a quarter in arrears, so some lag is normal; this "
-                "is the newest quarter INE has released into the warehouse.]"
-            )
-        else:
-            st.dataframe(
-                ctx.assign(region_name=ctx["region"].str.title())
-                   [["municipality", "region_name", "hpi_yoy_general", "hpi_yoy_second_hand"]],
-                width="stretch", hide_index=True,
-                column_config={
-                    "municipality": st.column_config.TextColumn("City"),
-                    "region_name": st.column_config.TextColumn("Region"),
-                    "hpi_yoy_general": st.column_config.NumberColumn(
-                        "YoY · all", format="%+.1f%%"),
-                    "hpi_yoy_second_hand": st.column_config.NumberColumn(
-                        "YoY · 2nd hand", format="%+.1f%%"),
-                },
-            )
-        st.markdown("")
-except Exception as exc:  # market context is a nice-to-have, never block the page
-    st.markdown(f":small[Official market context is unavailable right now: {exc}]")
+    summary, barrios = load_asking(op, city)
+except Exception as exc:
+    st.error("**The price query failed.**")
+    st.caption(f"Underlying error: {exc}")
+    st.stop()
 
-# ── Ranked €/m² chart ─────────────────────────────────────────────────────────
-section("Price per m² by neighbourhood")
-altair_chart(bar_ppsqm_with_range(df))
+# The INE feed is context, not the page: if it is unavailable the barrios still
+# render, and the gap is said out loud rather than left blank.
+latest, trend = _or_empty(load_latest, city), _or_empty(load_trend, city)
 
-# ── Benchmark table ───────────────────────────────────────────────────────────
-section("Neighbourhood benchmark")
-st.markdown(
-    ":small[These medians are the denominators of the opportunity score. A wide "
-    "P25–P75 spread means the barrio is heterogeneous, so its median is a weaker "
-    "reference — worth checking before trusting a score built on it.]"
-)
-st.dataframe(
-    df.assign(area=df["neighborhood"].str.title())[[
-        "area", "total_listings", "median_ppsqm", "p25_ppsqm", "p75_ppsqm",
-        "avg_ppsqm", "stddev_ppsqm", "median_size_sqm",
-    ]].sort_values("median_ppsqm", ascending=False),
-    width="stretch",
-    hide_index=True,
-    column_config={
-        "area": st.column_config.TextColumn("Neighbourhood", pinned=True),
-        "total_listings": st.column_config.NumberColumn(
-            "Listings", format="%,d",
-            help="Comparables behind this benchmark. Fewer than 8 and the score "
-                 "falls back to a coarser grain.",
-        ),
-        "median_ppsqm": st.column_config.NumberColumn("Median €/m²", format="€%,d"),
-        "p25_ppsqm": st.column_config.NumberColumn("P25", format="€%,d"),
-        "p75_ppsqm": st.column_config.NumberColumn("P75", format="€%,d"),
-        "avg_ppsqm": st.column_config.NumberColumn("Mean €/m²", format="€%,d"),
-        "stddev_ppsqm": st.column_config.NumberColumn(
-            "Std dev", format="€%,d",
-            help="Denominator of the z-score. A large spread compresses scores "
-                 "towards 50.",
-        ),
-        "median_size_sqm": st.column_config.NumberColumn("Median size", format="%.0f m²"),
-    },
-)
+place = city.title()
+rent = op == "rent"
+unit = "€/m²/mo" if rent else "€/m²"
+money = (lambda v: f"€{v:,.1f}") if rent else (lambda v: f"€{v:,.0f}")
 
-# ── Price history ─────────────────────────────────────────────────────────────
-st.markdown("")
-section("Price evolution over time")
+if barrios.empty or pd.isna(summary["median_ppsqm"]):
+    st.info(f"No flats {'for rent' if rent else 'for sale'} in {place} yet.")
+    st.stop()
 
-history_sql = (Path(__file__).parent.parent / "queries" / "price_history.sql").read_text()
+solid = barrios[barrios["total_listings"] >= MIN_LISTINGS]
+city_median = float(summary["median_ppsqm"])
 
+# ── Four numbers ──────────────────────────────────────────────────────────────
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Typical asking rent" if rent else "Typical asking price",
+          f"{money(city_median)}{unit[1:]}",
+          help=f"Median across {int(summary['listings']):,} flats "
+               f"{'for rent' if rent else 'for sale'} in {place}.")
 
-@st.cache_data(ttl=600)
-def load_history(op, muni):
-    return query(history_sql, operation_type=op, municipality=muni)
-
-
-hist = load_history(op, muni)
-hist = hist[hist["property_type"] == prop]
-
-if hist["scraped_date"].nunique() > 1:
-    top_hoods = hist.groupby("neighborhood")["total_listings"].sum().nlargest(8).index
-    altair_chart(line_price_history(hist[hist["neighborhood"].isin(top_hoods)]))
+if len(solid) >= 2:
+    lo = solid.loc[solid["median_ppsqm"].idxmin()]
+    hi = solid.loc[solid["median_ppsqm"].idxmax()]
+    m2.metric("Priciest vs cheapest barrio",
+              f"{hi['median_ppsqm'] / lo['median_ppsqm']:.1f}×",
+              help=f"{hi['neighborhood'].title()} ({money(hi['median_ppsqm'])}) against "
+                   f"{lo['neighborhood'].title()} ({money(lo['median_ppsqm'])}), among "
+                   f"barrios with {MIN_LISTINGS}+ listings.")
 else:
-    st.info(
-        "**Only one snapshot for this city, so there is no trend to draw.** Price "
-        "history is accumulated, not backfilled — `int_listings_history` keeps every "
-        "observation, and this chart fills in once the pipeline has scraped the same "
-        "city more than once. València has been revisited and does draw; scraping "
-        "runs on a metered credit budget, so depth arrives one city at a time."
+    m2.metric("Priciest vs cheapest barrio", "—",
+              help=f"Needs two barrios with {MIN_LISTINGS}+ listings.")
+
+if not latest.empty and pd.notna(latest.iloc[0]["hpi_yoy_general"]):
+    row = latest.iloc[0]
+    period = pd.Timestamp(row["latest_period"])
+    m3.metric("Official prices, last 12 months", f"{row['hpi_yoy_general']:+.1f}%",
+              help=f"INE house price index for {str(row['region']).title()}, "
+                   f"Q{period.quarter} {period.year} against a year earlier. Prices "
+                   "of real sales, not asking prices — and regional, not per barrio.")
+else:
+    m3.metric("Official prices, last 12 months", "—",
+              help="The INE index is unavailable right now.")
+
+if summary["max_days"] and int(summary["max_days"]) > 0:
+    cuts = int(summary["cuts"])
+    m4.metric("Sellers who cut the price", f"{cuts:,}",
+              delta=f"{cuts / int(summary['listings']):.0%} of listings",
+              delta_color="off", delta_arrow="off",
+              help="Listings whose asking price dropped since the scraper first saw "
+                   "them" + (f". Median cut: {summary['median_cut']:.0f}%."
+                             if cuts else "."))
+else:
+    m4.metric("Sellers who cut the price", "—",
+              help=f"{place} has been scraped once, so no price has had the chance "
+                   "to move yet.")
+
+st.divider()
+
+# ── Barrios · official trend ──────────────────────────────────────────────────
+left, right = st.columns([3, 2], gap="large")
+
+with left:
+    st.markdown("#### Where each barrio sits")
+    if solid.empty:
+        st.info(f"No barrio in {place} has {MIN_LISTINGS}+ listings yet, so none is "
+                "drawn. The table below has what there is.")
+    else:
+        altair_chart(dot_barrio_range(solid, city_median, unit))
+        thin = len(barrios) - len(solid)
+        st.caption(
+            f"Dot: the barrio's median. Band: where the middle half of its listings "
+            f"sit. Dashed: {place}. Only barrios with {MIN_LISTINGS}+ listings"
+            + (f" — {thin} thinner ones are in the table below." if thin else ".")
+        )
+    st.page_link(str(VIEWS / "01_opportunities.py"), label="See the flats behind these",
+                 icon=":material/arrow_forward:")
+
+with right:
+    if trend.empty:
+        st.markdown("#### Official prices")
+        st.info("The INE index is unavailable right now.")
+    else:
+        first = pd.Timestamp(trend["period_date"].iloc[0])
+        last = pd.Timestamp(trend["period_date"].iloc[-1])
+        region = str(latest.iloc[0]["region"]).title() if not latest.empty else "the region"
+        st.markdown(f"#### Official prices since {first.year}")
+        altair_chart(line_official_trend(trend))
+        st.caption(
+            f"INE house price index for {region}, to Q{last.quarter} {last.year}. "
+            "What homes actually sold for, region-wide: the direction of the market, "
+            "not a barrio's price."
+        )
+
+# ── The detail, for whoever wants it ──────────────────────────────────────────
+with st.expander(f"Every barrio in {place}, in numbers"):
+    fmt = "€%.1f" if rent else "€%,d"
+    st.dataframe(
+        barrios.assign(
+            area=barrios["neighborhood"].str.title(),
+            district_name=barrios["district"].str.title(),
+            solid=barrios["total_listings"] >= MIN_LISTINGS,
+        )[["area", "district_name", "total_listings", "solid", "median_ppsqm",
+           "p25_ppsqm", "p75_ppsqm", "median_size_sqm"]]
+        .sort_values("median_ppsqm", ascending=False),
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "area": st.column_config.TextColumn("Barrio", pinned=True),
+            "district_name": st.column_config.TextColumn("District"),
+            "total_listings": st.column_config.NumberColumn("Listings", format="%d"),
+            "solid": st.column_config.CheckboxColumn(
+                f"{MIN_LISTINGS}+", help="Enough listings to be drawn above and to "
+                "serve as a benchmark for the score."),
+            "median_ppsqm": st.column_config.NumberColumn(f"Median {unit}", format=fmt),
+            "p25_ppsqm": st.column_config.NumberColumn(
+                "P25", format=fmt, help="A quarter of listings ask less than this."),
+            "p75_ppsqm": st.column_config.NumberColumn(
+                "P75", format=fmt, help="A quarter of listings ask more than this."),
+            "median_size_sqm": st.column_config.NumberColumn("Typical size",
+                                                             format="%.0f m²"),
+        },
     )

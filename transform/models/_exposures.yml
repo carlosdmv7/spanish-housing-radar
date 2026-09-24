@@ -17,12 +17,12 @@ exposures:
     # radius of a change to the other four — which is the one thing an exposure
     # exists to prevent.
     depends_on:
-      - ref('rpt_opportunities')          # Opportunities: the contracted view
+      - ref('rpt_opportunities')          # Overview + Deals: the contracted view
       - ref('fct_listings_scored')        # freshness strip + grain distribution
-      - ref('rpt_market_context')         # Market: official INE context
-      - ref('rpt_district_affordability') # Affordability: income denominators
-      - ref('int_neighborhood_stats')     # Market: €/m² benchmarks
-      - ref('int_listings_history')       # Market: price evolution
+      - ref('rpt_market_context')         # Neighbourhoods: latest INE quarter
+      - ref('rpt_market_trend')           # Neighbourhoods: INE series
+      - ref('rpt_district_affordability') # Value check: income denominators
+      - ref('int_neighborhood_stats')     # Neighbourhoods: €/m² benchmarks
       - ref('int_listings_current')       # freshness strip, city filters
       - ref('ccaa_by_municipality')       # seed bridging municipality → CCAA
     owner:

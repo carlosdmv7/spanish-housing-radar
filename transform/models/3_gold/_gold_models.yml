@@ -57,6 +57,34 @@ models:
       - name: municipality
         tests: [unique, not_null]
 
+  - name: rpt_market_trend
+    description: >
+      The INE house-price index as a quarterly series for each served
+      municipality — every quarter in the warehouse, where rpt_market_context
+      keeps only the latest. The app draws it as the official trend beside the
+      scraped asking prices. Regional grain: every city in one autonomous
+      community shares one line.
+      Grain: one row per (municipality, housing_type, period_date).
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [municipality, housing_type, period_date]
+    columns:
+      - name: municipality
+        tests: [not_null]
+      - name: housing_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: [general, new, second_hand]
+      - name: period_date
+        description: Last day of the quarter the index refers to.
+        tests: [not_null]
+      - name: hpi_index
+        description: Index level, base 2025 = 100.
+        tests: [not_null]
+      - name: hpi_yoy_pct
+        description: Change against the same quarter a year earlier, in percent.
+
   - name: rpt_opportunities
     description: >
       Reporting view over fct_listings_scored — the table the Streamlit app reads.
