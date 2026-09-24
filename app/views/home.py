@@ -1,144 +1,199 @@
 """
-Home — what the tool is, what's actually in the warehouse, and where to go next.
+Overview — the answer first, then where to go.
 
-The page answers one question: *what can this actually tell me?* The honest
-answer depends on depth, not on totals — a listing scored against its own barrio
-is worth far more than one scored against a whole city — so the lede leads with
-the share at barrio grain rather than with the row count, which is the flattering
-number and the less informative one.
+Laid out like the sibling job-market-intelligence app: a title, one line, four
+numbers, and a chart on the first screen. The previous landing page opened with
+a strip of warehouse metadata, a box of prose and a coverage table, and a
+visitor had to scroll before seeing a single price.
+
+Scoped to one city on purpose — the one the scheduled pipeline actually
+scrapes. The other cities in the warehouse hold a single older snapshot; mixing
+them into the headline numbers made the first screen look like a pile of
+unrelated figures, which is the fastest way to make good data look like junk.
+They are named in a caption, not hidden.
 """
-from datetime import date
 from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from chrome import page_header
+from components.charts import bar_barrio_ppsqm
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import lede, page_hero, section
+from theme import TEAL_700, altair_chart
 
-page_hero(
+# transform/dbt_project.yml → vars.min_comps_for_benchmark. A barrio with fewer
+# listings than this has a median that describes a handful of flats, so it is
+# left off the chart rather than drawn as if it were as solid as the rest.
+MIN_LISTINGS = 8
+RPT = "spanish_housing_radar.main_gold.rpt_opportunities"
+
+# Absolute, not "views/…". st.page_link resolves a relative path against the
+# *main script's* directory, so a relative link only works when app/main.py is
+# the entry point — the render tests run each page inside a navigation harness
+# whose main script lives elsewhere, and the relative form 404'd there.
+VIEWS = Path(__file__).parent
+
+
+@st.cache_data(ttl=600)
+def load_city() -> tuple[str, pd.DataFrame]:
+    """The live city, and the other cities with how old their snapshot is."""
+    cities = query(f"""
+        SELECT municipality, COUNT(*) AS listings,
+               MAX(_loaded_at::date) AS last_seen
+        FROM {RPT}
+        GROUP BY 1 ORDER BY listings DESC
+    """)
+    return str(cities.iloc[0]["municipality"]), cities.iloc[1:]
+
+
+@st.cache_data(ttl=600)
+def load_overview(city: str) -> tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
+    kpis = query(f"""
+        SELECT
+            COUNT(*)                                             AS scored,
+            COUNT(*) FILTER (WHERE deal_tier = 'great_deal')     AS great_deals,
+            MEDIAN(price_per_sqm) FILTER (WHERE property_type = 'apartment')
+                                                                 AS median_ppsqm,
+            COUNT(*) FILTER (WHERE benchmark_level = 'neighbourhood')
+                                                                 AS at_barrio
+        FROM {RPT}
+        WHERE municipality = $city AND operation_type = 'sale'
+    """, city=city).iloc[0]
+
+    barrios = query(f"""
+        SELECT neighborhood, COUNT(*) AS listings, MEDIAN(price_per_sqm) AS median_ppsqm
+        FROM {RPT}
+        WHERE municipality = $city AND operation_type = 'sale'
+          AND property_type = 'apartment' AND neighborhood IS NOT NULL
+        GROUP BY 1
+        HAVING COUNT(*) >= $min_n
+    """, city=city, min_n=MIN_LISTINGS)
+
+    # Barrio-grain scores only. A "great deal" measured against the whole city is
+    # the weakest claim the app makes, and the landing page is the wrong place to
+    # lead with a weak claim. The Deals page shows every grain, labelled.
+    deals = query(f"""
+        SELECT neighborhood, price_eur, size_sqm, price_per_sqm,
+               neighborhood_median_ppsqm, opportunity_score, url
+        FROM {RPT}
+        WHERE municipality = $city AND operation_type = 'sale'
+          AND benchmark_level = 'neighbourhood'
+        ORDER BY opportunity_score DESC
+        LIMIT 6
+    """, city=city)
+    return kpis, barrios, deals
+
+
+page_header(
     "Spanish Housing Radar",
-    "Spanish portals tell you a flat's price, never whether it's a good one. This "
-    "scores every listing against comparable flats in its own barrio, so a cheap flat "
-    "in an expensive area rises to the top.",
+    "Portals tell you what a flat costs. This tells you whether that's cheap for "
+    "where it is — every listing scored against the flats around it.",
+    explain_facts=True,
 )
 
-
-# ── What this can currently answer ────────────────────────────────────────────
-# Deliberately separate from the snapshot below and deliberately about grain. A
-# score computed against a whole city barely answers the question the app asks,
-# so quoting the total row count as the headline would overstate what is here.
-@st.cache_data(ttl=600)
-def load_grain():
-    return query("""
-        SELECT
-            municipality,
-            COUNT(*)                                                AS scored,
-            COUNT(*) FILTER (WHERE benchmark_level = 'neighbourhood') AS at_barrio
-        FROM spanish_housing_radar.main_gold.rpt_opportunities
-        GROUP BY 1
-    """)
-
-
 try:
-    grain = load_grain()
-    total_scored = int(grain["scored"].sum())
-    total_barrio = int(grain["at_barrio"].sum())
-    deepest = grain.sort_values("at_barrio", ascending=False).iloc[0]
-    lede(
-        f"**{total_barrio:,}** of {total_scored:,} listings are priced against their "
-        f"own barrio — deepest in **{str(deepest['municipality']).title()}**, with "
-        f"{int(deepest['at_barrio']):,}.",
-        "The rest fall back to their district or the whole city, which is a weaker "
-        "comparison and is labelled as such on every listing. Depth is the "
-        "constraint here, not coverage: one city scraped properly answers the "
-        "question that ten cities scraped thinly cannot.",
-    )
-except Exception:
-    # The snapshot below reports the connection failure in full; repeating it here
-    # would put the same error on screen twice.
-    pass
-
-# ── Live data snapshot ────────────────────────────────────────────────────────
-try:
-    row = query("""
-        SELECT
-            COUNT(DISTINCT listing_pk)    AS total_listings,
-            COUNT(DISTINCT municipality)  AS cities,
-            COUNT(DISTINCT neighborhood)  AS neighborhoods,
-            MAX(_loaded_at::date)         AS last_run
-        FROM spanish_housing_radar.main_silver.int_listings_current
-    """).iloc[0]
-
-    section("What's in the warehouse")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Active listings", f"{int(row['total_listings']):,}")
-    c2.metric("Cities", int(row["cities"]))
-    c3.metric("Neighbourhoods", int(row["neighborhoods"]))
-    # An ISO date set at metric size is both the widest value in the row — it was
-    # being truncated to "2026-06-26…" — and the least useful, since the number a
-    # visitor actually wants from a freshness figure is how *old* it is. The age
-    # answers that in three characters; the date itself stays one hover away.
-    # `::date` in the SQL does not survive the round trip: DuckDB hands pandas a
-    # datetime64 column, so this arrives as a Timestamp and subtracting a
-    # date.today() from it raises. Normalise on the Python side rather than trust
-    # the cast.
-    last_run = pd.to_datetime(row["last_run"]).date() if pd.notna(row["last_run"]) else None
-    age_days = (date.today() - last_run).days if last_run is not None else None
-    c4.metric(
-        "Last ingest",
-        "—" if age_days is None else f"{age_days}d ago",
-        help=None if last_run is None else f"Most recent load: {last_run}.",
-    )
-
-    cov = query("""
-        SELECT
-            municipality                                        AS city,
-            COUNT(*) FILTER (WHERE operation_type = 'sale')     AS for_sale,
-            COUNT(*) FILTER (WHERE operation_type = 'rent')     AS for_rent
-        FROM spanish_housing_radar.main_silver.int_listings_current
-        GROUP BY 1
-        ORDER BY (for_sale + for_rent) DESC
-    """)
-
-    section("Coverage by city")
-    st.markdown(
-        ":small[Depth per city is what decides whether a score is computed against a "
-        "barrio or falls back to the whole city.]"
-    )
-    st.dataframe(
-        cov.assign(city=cov["city"].str.title()),
-        width="stretch",
-        hide_index=True,
-        column_config={
-            "city": st.column_config.TextColumn("City", pinned=True),
-            "for_sale": st.column_config.NumberColumn("For sale", format="%,d"),
-            "for_rent": st.column_config.NumberColumn("For rent", format="%,d"),
-        },
-    )
+    city, others = load_city()
+    kpis, barrios, deals = load_overview(city)
 except Exception as exc:
     st.error(
-        "**Can't reach the warehouse, so the live snapshot is empty.** The app reads "
-        "from MotherDuck — locally that needs `MOTHERDUCK_TOKEN` in `.env`; on "
-        "Streamlit Cloud it comes from the app's Secrets. The pages below will show "
-        "the same error until the connection works."
+        "**Can't reach the warehouse.** Locally that needs `MOTHERDUCK_TOKEN` in "
+        "`.env`; on Streamlit Cloud it comes from the app's Secrets."
     )
     st.caption(f"Underlying error: {exc}")
+    st.stop()
 
-st.markdown("")
-section("Where to go")
-st.markdown("""
-| Page | What you'll find |
-|---|---|
-| :material/search: **Opportunities** | Listings ranked by opportunity score, each showing the benchmark it was scored against. |
-| :material/bar_chart: **Market** | €/m² benchmarks per neighbourhood, price spread, official INE market context. |
-| :material/calculate: **Mortgage** | Fixed vs variable simulator with a full French amortisation schedule. |
-| :material/savings: **Affordability** | The income each neighbourhood demands, plus buy-vs-rent. |
-| :material/science: **How it works** | The pipeline, the score's arithmetic, and what this data can't tell you. |
-""")
-st.markdown(
-    ":small[Coverage is deepest in **Valencia**, which is why it's the default city "
-    "on every page.]"
-)
+place = city.title()
+scored = int(kpis["scored"])
+
+m1, m2, m3, m4 = st.columns(4)
+m1.metric(f"Flats for sale in {place}", f"{scored:,}",
+          help="Every one scored against comparable flats nearby.")
+m2.metric("Great deals right now", f"{int(kpis['great_deals']):,}",
+          help="Score of 75 or more: well below what comparable flats ask.")
+m3.metric("Barrios with a solid benchmark", f"{len(barrios):,}",
+          help=f"Barrios with at least {MIN_LISTINGS} flats for sale — enough for "
+               "their median to describe the barrio rather than a handful of flats.")
+m4.metric("Typical asking price", f"€{kpis['median_ppsqm']:,.0f}/m²",
+          help=f"Median across apartments for sale in {place}.")
+
+st.divider()
+
+chart_col, deals_col = st.columns([3, 2], gap="large")
+
+with chart_col:
+    st.markdown("#### What a m² costs, barrio by barrio")
+    if barrios.empty:
+        st.info(f"No barrio in {place} has {MIN_LISTINGS}+ listings yet.")
+    else:
+        altair_chart(bar_barrio_ppsqm(barrios, float(kpis["median_ppsqm"])))
+        st.caption(
+            f"Bars run from the {place} median (dashed): teal asks less, rust asks "
+            f"more. Only barrios with {MIN_LISTINGS}+ flats for sale are drawn."
+        )
+
+with deals_col:
+    st.markdown("#### Best deals right now")
+    if deals.empty:
+        st.info("No listing is scored against its own barrio yet.")
+    else:
+        d = deals.assign(
+            area=deals["neighborhood"].str.title(),
+            below=(deals["price_per_sqm"] / deals["neighborhood_median_ppsqm"] - 1) * 100,
+        )
+        st.dataframe(
+            d[["area", "price_eur", "size_sqm", "below", "opportunity_score", "url"]],
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "area": st.column_config.TextColumn("Barrio"),
+                "price_eur": st.column_config.NumberColumn("Price", format="€%,d"),
+                "size_sqm": st.column_config.NumberColumn("m²", format="%d"),
+                # Whole percent: "-34.56%" claimed a precision a median of a
+                # dozen asking prices does not have.
+                "below": st.column_config.NumberColumn(
+                    "vs barrio", format="%+.0f%%",
+                    help="Price per m² against the median of its own barrio."),
+                # Teal, not the theme's rust primary: in this brand rust means
+                # *above* the benchmark, so a great deal drawn in rust said the
+                # opposite of the chart beside it.
+                "opportunity_score": st.column_config.ProgressColumn(
+                    "Score", min_value=0, max_value=100, format="%d", color=TEAL_700),
+                "url": st.column_config.LinkColumn("", display_text="open ↗"),
+            },
+        )
+        st.caption("Scored against their own barrio — the strongest comparison the "
+                   "app makes.")
+    st.page_link(str(VIEWS / "01_opportunities.py"), label="See every deal",
+                 icon=":material/arrow_forward:")
+
+st.divider()
+
+n1, n2 = st.columns(2, gap="large")
+with n1:
+    st.markdown("#### :material/balance: Is the area itself overpriced?")
+    st.markdown(
+        "A cheap flat in an expensive barrio is still expensive. Compare what a "
+        "barrio asks with what it rents for and what its residents earn."
+    )
+    st.page_link(str(VIEWS / "04_affordability.py"), label="Open Value check",
+                 icon=":material/arrow_forward:")
+with n2:
+    st.markdown("#### :material/calculate: What would it cost me?")
+    st.markdown(
+        "The monthly payment, the cash due on signing day, and whether renting and "
+        "investing the difference would leave you better off."
+    )
+    st.page_link(str(VIEWS / "03_mortgage.py"), label="Open Budget",
+                 icon=":material/arrow_forward:")
+
+if not others.empty:
+    oldest = pd.to_datetime(others["last_seen"]).min().date()
+    names = ", ".join(others["municipality"].str.title())
+    st.caption(
+        f"{place} is scraped on a schedule. The warehouse also holds a single older "
+        f"snapshot of {names} (from {oldest:%B %Y}), browsable on the Deals page — "
+        "too thin for barrio-level benchmarks, so they stay out of the headline."
+    )

@@ -13,6 +13,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from chrome import page_header
 from components.charts import bar_amortisation, bar_mortgage_cost
 from components.filters import load_municipalities
 from components.mortgage import (
@@ -42,13 +43,12 @@ from config import (
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import INK_MUTED, RUST_700, TEAL_700, altair_chart, page_hero, section
+from theme import INK_MUTED, RUST_700, TEAL_700, altair_chart, section
 
-page_hero(
-    "Can I afford this?",
-    "The instalment is the easy part. This adds the transfer tax and fees that "
-    "buying really costs, prices what a bank's tie-ins are worth, and checks the "
-    "whole thing against simply renting and investing the difference.",
+page_header(
+    "What will buying really cost me?",
+    "The instalment, the cash due on signing day, and whether renting and "
+    "investing the difference would leave you better off.",
 )
 st.caption(MORTGAGE_SOURCE_NOTE)
 

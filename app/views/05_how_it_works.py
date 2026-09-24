@@ -11,19 +11,20 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from chrome import page_header
 from components.charts import bar_benchmark_grain
 from freshness import get_benchmark_grain_counts, get_snapshot_coverage
 import streamlit as st
-from theme import altair_chart, page_hero, section
+from theme import altair_chart, section
 
 MIN_COMPS = 8  # transform/dbt_project.yml → vars.min_comps_for_benchmark
 DBT_DOCS_URL = "https://carlosdmv7.github.io/spanish-housing-radar/"
 REPO_URL = "https://github.com/carlosdmv7/spanish-housing-radar"
 
-page_hero(
-    "How it works & data quality",
-    "Where the numbers come from, how the opportunity score is computed, and the "
-    "questions this data honestly cannot answer.",
+page_header(
+    "How it works",
+    "Where the numbers come from, how a flat gets its score, and what this data "
+    "cannot tell you.",
 )
 
 # ── Lineage ───────────────────────────────────────────────────────────────────

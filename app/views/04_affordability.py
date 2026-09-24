@@ -6,6 +6,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from chrome import page_header
 from components.charts import bar_buy_vs_rent, bar_required_income, bar_years_of_salary
 from components.filters import load_municipalities, municipality_filter
 from components.mortgage import compute_mortgage, max_affordable_loan, required_income
@@ -20,7 +21,7 @@ from config import (
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import altair_chart, page_hero, section
+from theme import altair_chart, section
 
 # transform/dbt_project.yml → vars.min_listings_for_area_stat. Same threshold the
 # warehouse applies when it stamps rpt_district_affordability.low_sample_flag, so
@@ -28,15 +29,13 @@ from theme import altair_chart, page_hero, section
 # from gold disagree about nothing.
 MIN_LISTINGS = 8
 
-# Every other page hero is the question that page answers — that was the point of
-# the one-question-per-page pass. This one kept a noun and sat there as the odd
-# one out in the sidebar. It asks two things, so the hero has to cover both: what
-# the barrio demands of *your* income, and what it demands of the people already
-# living in it.
-page_hero(
-    "Who can afford to live here?",
-    "What you need to earn to buy in each neighbourhood, how many years of salary a "
-    "flat costs, and whether buying beats renting the same street.",
+# The counterpart to Deals. That page asks whether a flat is cheap *for its
+# area*; this one asks whether the area itself is expensive — the distinction
+# ADR-0008 exists for, and the reason the two titles are written as a pair.
+page_header(
+    "Is the area itself overpriced?",
+    "A barrio can be cheap because it's a bargain or because nobody there can pay "
+    "more. Rents and local incomes tell the two apart.",
 )
 
 # The verdict "this barrio is out of reach" is only as trustworthy as the income

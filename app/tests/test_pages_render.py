@@ -46,6 +46,37 @@ PAGES = [
     "app/views/05_how_it_works.py",
 ]
 
+
+def _inside_navigation(page: str) -> str:
+    """
+    A throwaway entry script that registers every view and lands on `page`.
+
+    Rendering a view file directly — how this test used to work — runs it
+    outside `st.navigation`, which is not how it ever runs in production, and
+    anything that depends on the router breaks only in the test or only in prod.
+    `st.page_link` is the concrete case: it raised KeyError: 'url_pathname' on a
+    bare view.
+
+    AppTest.switch_page looked like the fix and is not: with `st.navigation` it
+    accepts the path and keeps rendering the default page, so a loop over
+    switch_page asserts the landing page N times and passes. Verified by
+    checking which title actually rendered. Making the target the default page
+    of a real navigation is the one way that provably runs it.
+    """
+    app = REPO_ROOT / "app"
+    lines = [
+        "import sys",
+        f"sys.path.insert(0, {str(app)!r})",
+        "import streamlit as st",
+        "st.navigation([",
+    ]
+    lines += [
+        f"    st.Page({str(REPO_ROOT / p)!r}, default={p == page}),"
+        for p in PAGES
+    ]
+    lines += ["], position='top').run()"]
+    return "\n".join(lines)
+
 # Wording that only ever appears when something is broken, never in a verdict.
 BROKEN = re.compile(
     r"can'?t reach|could not|failed|exception|traceback|unavailable|"
@@ -94,9 +125,12 @@ pytestmark = pytest.mark.skipif(
 def test_page_renders_without_diagnostics(page: str) -> None:
     from streamlit.testing.v1 import AppTest
 
-    at = AppTest.from_file(str(REPO_ROOT / page), default_timeout=180).run()
+    at = AppTest.from_string(_inside_navigation(page), default_timeout=180).run()
 
     assert not at.exception, [e.value for e in at.exception]
+    # Proof the harness rendered *this* page and not the default one — the check
+    # whose absence let a switch_page loop pass without testing anything.
+    assert at.title, f"{page} rendered no title"
 
     diagnostics = [e.value for e in at.error if BROKEN.search(e.value)]
     assert not diagnostics, diagnostics
@@ -110,3 +144,28 @@ def test_every_view_is_covered() -> None:
         if not p.name.startswith("_")
     }
     assert on_disk == set(PAGES), on_disk.symmetric_difference(PAGES)
+
+
+def test_the_harness_really_renders_each_page() -> None:
+    """
+    Six pages, six different titles — or the harness is testing one page six times.
+
+    This is the assertion a switch_page loop is missing: it would pass every
+    parametrised case above while rendering the landing page each time.
+    """
+    from streamlit.testing.v1 import AppTest
+
+    titles = {
+        AppTest.from_string(_inside_navigation(p), default_timeout=180).run().title[0].value
+        for p in PAGES
+    }
+    assert len(titles) == len(PAGES), titles
+
+
+def test_the_real_entry_point_renders() -> None:
+    """app/main.py is what Streamlit Cloud launches; the harness is not."""
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_file(str(REPO_ROOT / "app" / "main.py"), default_timeout=180).run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.title and at.title[0].value == "Spanish Housing Radar"
