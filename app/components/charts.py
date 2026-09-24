@@ -383,8 +383,11 @@ def bar_amortisation(schedule: list[dict]) -> alt.Chart:
         alt.Chart(agg)
         .mark_bar()
         .encode(
-            x=alt.X("year:O", title="Year", axis=alt.Axis(labelAngle=0)),
-            y=alt.Y("eur:Q", title="€", stack="zero"),
+            x=alt.X("year:O", title="Year",
+                    axis=alt.Axis(labelAngle=0,
+                                  values=[1, *range(5, int(agg["year"].max()) + 1, 5)])),
+            y=alt.Y("eur:Q", title=None, stack="zero",
+                    axis=alt.Axis(format="~s", labelExpr="'€' + datum.label")),
             color=alt.Color(
                 "part:N", title=None,
                 scale=alt.Scale(domain=["Principal repaid", "Interest"],
@@ -442,7 +445,9 @@ def bar_signing_day(items: pd.DataFrame) -> alt.LayerChart:
         # An explicit order: a sort field on a layered chart falls back to
         # alphabetical, which put Appraisal on top of a €36,000 deposit.
         y=alt.Y("item:N", title=None, sort=list(d["item"])),
-        x=alt.X("eur:Q", title=None, axis=alt.Axis(format="~s", labelExpr="'€' + datum.label")),
+        # Headroom past the longest bar, or its own label runs off the edge.
+        x=alt.X("eur:Q", title=None, scale=alt.Scale(domain=[0, d["eur"].max() * 1.22]),
+                axis=alt.Axis(format="~s", labelExpr="'€' + datum.label")),
     )
     bars = base.mark_bar(cornerRadiusEnd=3, height=20).encode(
         color=alt.Color("kind:N", title=None,
