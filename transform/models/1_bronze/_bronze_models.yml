@@ -43,7 +43,7 @@ models:
       observation; silver picks the grains and metrics it needs.
       Grain: one row per (series_cod, period_date).
 
-      The IPV is a *regional* index, base 2015 = 100, published quarterly and in
+      The IPV is a *regional* index, base 2025 = 100, published quarterly and in
       arrears. It is the transaction-based counterweight to the scraped asking
       prices, and it is never a per-flat valuation — the finest grain it has is
       the autonomous community.
@@ -63,7 +63,7 @@ models:
           - accepted_values:
               values: [general, new, second_hand]
       - name: metric
-        description: index (level, 2015=100), yoy / qoq / ytd (percentage changes).
+        description: index (level, 2025=100), yoy / qoq / ytd (percentage changes).
         tests:
           - not_null
           - accepted_values:

@@ -12,11 +12,15 @@
 --   * the loader runs, data is stale  → this test on `period_date`
 -- Neither substitutes for the other, and only the first one existed.
 --
--- WARN, not ERROR, and deliberately: the IPV advancing is INE's business, not
--- this pipeline's. A red build would assert a fault in code that is working
--- correctly, which is the same lie in the opposite direction. The app states
--- the reference quarter and its age on the Market page, so a visitor sees the
--- lag rather than inferring currency from a green badge.
+-- The first time it fired, the fault was ours, not INE's: INE had rebased the
+-- IPV to 2025 = 100 under a new table, and the loader was still reading the old
+-- base-2015 one, which will never move again. So when it warns, check the
+-- table ID in extraction/config.py against INE before blaming the publisher.
+--
+-- Still WARN, not ERROR: a quarter published late is INE's business, and a red
+-- build would assert a fault in code that may be working correctly. The
+-- Neighbourhoods page names the reference quarter next to every INE figure, so
+-- a visitor sees the lag rather than inferring currency from a green badge.
 {{ config(severity='warn') }}
 
 with newest as (

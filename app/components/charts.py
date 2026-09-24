@@ -12,7 +12,7 @@ from __future__ import annotations
 import altair as alt
 from config import DEAL_TIER_COLORS, DEAL_TIER_LABELS
 import pandas as pd
-from theme import BORDER, INK_MUTED, RUST_500, RUST_900, TEAL_700
+from theme import BORDER, INK_MUTED, PETROL_900, RUST_500, RUST_900, TEAL_700
 
 # Ordered tier axis, shared by the scatter and any other tier-coloured encoding,
 # so the legend reads best-deal-first and matches the map's colours.
@@ -93,42 +93,6 @@ def bar_flat_vs_area(ppsqm: float, bench: float, bench_label: str) -> alt.Chart:
     )
 
 
-def bar_ppsqm_with_range(df: pd.DataFrame, top_n: int = 18) -> alt.LayerChart:
-    """
-    Median €/m² per neighbourhood with a P25–P75 whisker, so the reader sees both
-    the typical price and how much it varies — a median alone hides a wide spread.
-    """
-    d = df.nlargest(top_n, "median_ppsqm").copy()
-    d["area"] = d["neighborhood"].str.title()
-
-    base = alt.Chart(d).encode(
-        y=alt.Y("area:N", title=None, sort="-x"),
-    )
-    bars = base.mark_bar().encode(
-        x=alt.X("median_ppsqm:Q", title="€/m²"),
-        tooltip=[
-            alt.Tooltip("area:N", title="Neighbourhood"),
-            alt.Tooltip("median_ppsqm:Q", title="Median €/m²", format=",.0f"),
-            alt.Tooltip("p25_ppsqm:Q", title="P25", format=",.0f"),
-            alt.Tooltip("p75_ppsqm:Q", title="P75", format=",.0f"),
-            alt.Tooltip("total_listings:Q", title="Listings"),
-        ],
-    )
-    spread = base.mark_rule(stroke=INK_MUTED, strokeWidth=1.4, opacity=0.8).encode(
-        x="p25_ppsqm:Q", x2="p75_ppsqm:Q",
-    )
-    return (
-        (bars + spread)
-        .properties(
-            height=_row_height(len(d)),
-            title=alt.Title(
-                "Median €/m² by neighbourhood",
-                subtitle="Whisker spans the P25–P75 spread of listings in the area",
-            ),
-        )
-    )
-
-
 def bar_barrio_ppsqm(df: pd.DataFrame, city_median: float) -> alt.LayerChart:
     """
     Median asking €/m² per barrio, cheapest to dearest, against the city median.
@@ -166,25 +130,78 @@ def bar_barrio_ppsqm(df: pd.DataFrame, city_median: float) -> alt.LayerChart:
     return (bars + rule).properties(height=_row_height(len(d), per_row=22, minimum=260))
 
 
-def line_price_history(df: pd.DataFrame) -> alt.Chart:
-    """Median €/m² over time, one line per neighbourhood."""
+def dot_barrio_range(df: pd.DataFrame, city_median: float, unit: str) -> alt.LayerChart:
+    """
+    Each barrio as a dot on its median, with a band over the middle half of its
+    listings (P25–P75), against the city median.
+
+    Replaces a bar per barrio. A bar says "this is the price"; the band says
+    "most flats here ask between these two", which is the honest reading of a
+    median of a dozen asking prices — and it shows at a glance when two barrios
+    whose medians differ are really the same market.
+    """
     d = df.copy()
     d["area"] = d["neighborhood"].str.title()
-    return (
-        alt.Chart(d)
-        .mark_line(point=True)
-        .encode(
-            x=alt.X("scraped_date:T", title=None),
-            y=alt.Y("median_ppsqm:Q", title="€/m²", scale=alt.Scale(zero=False)),
-            color=alt.Color("area:N", title="Neighbourhood"),
-            tooltip=[
-                alt.Tooltip("area:N", title="Neighbourhood"),
-                alt.Tooltip("scraped_date:T", title="Date"),
-                alt.Tooltip("median_ppsqm:Q", title="€/m²", format=",.0f"),
-            ],
-        )
-        .properties(title="Median €/m² over time")
+    d["side"] = (d["median_ppsqm"] >= city_median).map({True: "above", False: "below"})
+    fmt = ",.1f" if unit.endswith("/mo") else ",.0f"
+
+    base = alt.Chart(d).encode(
+        y=alt.Y("area:N", title=None, sort=alt.EncodingSortField("median_ppsqm")),
+        tooltip=[
+            alt.Tooltip("area:N", title="Barrio"),
+            alt.Tooltip("median_ppsqm:Q", title=f"Median {unit}", format=fmt),
+            alt.Tooltip("p25_ppsqm:Q", title="Cheaper quarter below", format=fmt),
+            alt.Tooltip("p75_ppsqm:Q", title="Dearer quarter above", format=fmt),
+            alt.Tooltip("total_listings:Q", title="Listings behind it"),
+        ],
     )
+    band = base.mark_bar(height=8, cornerRadius=4, color=INK_MUTED, opacity=0.28).encode(
+        x=alt.X("p25_ppsqm:Q", title=unit, scale=alt.Scale(zero=False),
+                axis=alt.Axis(format=fmt)),
+        x2="p75_ppsqm:Q",
+    )
+    dots = base.mark_circle(size=110, opacity=1).encode(
+        x="median_ppsqm:Q",
+        color=alt.Color(
+            "side:N", legend=None,
+            scale=alt.Scale(domain=["below", "above"], range=[TEAL_700, RUST_500]),
+        ),
+    )
+    rule = alt.Chart(pd.DataFrame({"x": [city_median]})).mark_rule(
+        stroke=INK_MUTED, strokeDash=[4, 3],
+    ).encode(x="x:Q")
+    return (band + rule + dots).properties(
+        height=_row_height(len(d), per_row=24, minimum=260))
+
+
+def line_official_trend(df: pd.DataFrame) -> alt.LayerChart:
+    """
+    The INE index as the change since the first quarter shown, with the latest
+    quarter labelled.
+
+    Rebased because "index 111.7, base 2025" means nothing to a buyer, whereas
+    "+37% since 2021" is the sentence they would say out loud.
+    """
+    d = df.sort_values("period_date").copy()
+    d["change"] = d["hpi_index"] / d["hpi_index"].iloc[0] - 1
+    d["quarter"] = (pd.to_datetime(d["period_date"]).dt.year.astype(str) + " Q"
+                    + pd.to_datetime(d["period_date"]).dt.quarter.astype(str))
+    last = d.tail(1)
+
+    line = alt.Chart(d).mark_line(color=PETROL_900, strokeWidth=2.5).encode(
+        x=alt.X("period_date:T", title=None, axis=alt.Axis(format="%Y", tickCount="year")),
+        y=alt.Y("change:Q", title=None, axis=alt.Axis(format="+.0%")),
+        tooltip=[alt.Tooltip("quarter:N", title="Quarter"),
+                 alt.Tooltip("change:Q", title="Since start", format="+.1%"),
+                 alt.Tooltip("hpi_yoy_pct:Q", title="Year on year %", format="+.1f")],
+    )
+    dot = alt.Chart(last).mark_circle(size=80, color=PETROL_900).encode(
+        x="period_date:T", y="change:Q")
+    label = alt.Chart(last).mark_text(
+        align="right", dx=-8, dy=-12, fontWeight="bold", color=PETROL_900,
+    ).encode(x="period_date:T", y="change:Q",
+             text=alt.Text("change:Q", format="+.0%"))
+    return (line + dot + label).properties(height=260)
 
 
 def scatter_size_vs_price(df: pd.DataFrame) -> alt.Chart:

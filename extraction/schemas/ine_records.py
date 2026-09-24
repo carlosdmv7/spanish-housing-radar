@@ -32,9 +32,9 @@ class IneHpiRecord(BaseModel):
     region: str = Field(..., description="Verbatim INE region name, e.g. 'Comunitat Valenciana'")
     housing_type: str = Field(..., description="general | new | second_hand")
     metric: str = Field(..., description="index | qoq | yoy | ytd")
-    period_date: date = Field(..., description="Reference date of the quarter")
+    period_date: date = Field(..., description="Last day of the quarter")
     year: int = Field(..., ge=2000, le=2100)
-    value: float = Field(..., description="Index level (base 2015=100) or % variation")
+    value: float = Field(..., description="Index level (base 2025=100) or % variation")
 
 
 class IneIncomeRecord(BaseModel):

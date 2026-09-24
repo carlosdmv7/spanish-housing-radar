@@ -170,15 +170,21 @@ class MotherDuckLoader:
     );
     """
 
-    _UPSERT_INE_SQL = """
-    INSERT OR REPLACE INTO {table}
+    # A full snapshot, not an upsert. The IPV is re-fetched whole on every run,
+    # and INE revises past quarters and occasionally rebases the whole index — in
+    # 2026 it moved to base 2025 under new series codes. Upserting on
+    # (series_cod, period_date) kept every base-2015 row beside the new ones, so
+    # one region's line would have mixed two bases that differ by ~80 points.
+    _REPLACE_INE_SQL = """
+    DELETE FROM {table};
+    INSERT INTO {table}
         SELECT series_cod, region, housing_type, metric,
                period_date, year, value, _loaded_at, _run_id
         FROM df;
     """
 
     def load_ine_hpi(self, records: list[IneHpiRecord]) -> int:
-        """Upsert INE IPV records into raw.ine_hpi. Idempotent on (series, quarter)."""
+        """Replace raw.ine_hpi with this fetch, in one transaction. Idempotent."""
         if not records:
             logger.warning("[loader] No INE records — nothing to write.")
             return 0
@@ -199,8 +205,15 @@ class MotherDuckLoader:
 
         self._conn.register("df", df)
         self._conn.execute(self._CREATE_INE_TABLE_SQL.format(table=INE_HPI_RAW_TABLE))
-        self._conn.execute(self._UPSERT_INE_SQL.format(table=INE_HPI_RAW_TABLE))
-        self._conn.unregister("df")
+        self._conn.execute("BEGIN TRANSACTION")
+        try:
+            self._conn.execute(self._REPLACE_INE_SQL.format(table=INE_HPI_RAW_TABLE))
+            self._conn.execute("COMMIT")
+        except Exception:
+            self._conn.execute("ROLLBACK")
+            raise
+        finally:
+            self._conn.unregister("df")
 
         logger.info("[loader] ✓  %d rows → %s", len(df), INE_HPI_RAW_TABLE)
         return len(df)
