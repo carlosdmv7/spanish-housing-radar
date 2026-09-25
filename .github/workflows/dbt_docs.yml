@@ -37,15 +37,32 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --no-dev
 
+      # transform/profiles.yml is git-ignored (it held a local token), and this
+      # step still pointed at it: every docs build failed from 2026-07-24 until
+      # this fix, and the published site sat on the July 19 lineage. Same
+      # approach as ci.yml — a profile in the runner's temp dir — except the token
+      # stays an env_var() reference, so it is never written to disk at all.
+      - name: Write prod profile
+        run: |
+          mkdir -p "$RUNNER_TEMP/dbt"
+          cat > "$RUNNER_TEMP/dbt/profiles.yml" <<'EOF'
+          spanish_housing_radar:
+            target: prod
+            outputs:
+              prod:
+                type: duckdb
+                path: "md:spanish_housing_radar?motherduck_token={{ env_var('MOTHERDUCK_TOKEN') }}"
+                threads: 4
+          EOF
+
       - name: dbt deps
-        run: uv run dbt deps
+        run: uv run dbt deps --profiles-dir "$RUNNER_TEMP/dbt"
 
       # Reads prod catalog metadata (read-only) so docs reflect the live schemas.
       - name: dbt docs generate
-        run: uv run dbt docs generate --target prod
+        run: uv run dbt docs generate --target prod --profiles-dir "$RUNNER_TEMP/dbt"
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
-          DBT_PROFILES_DIR: .
 
       # Only the four files the static docs site needs — never the whole target/
       # (compiled SQL there can embed resolved profile strings).
