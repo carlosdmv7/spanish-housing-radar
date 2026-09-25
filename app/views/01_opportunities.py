@@ -7,7 +7,7 @@ tier is a coloured label and the score a bar. Pick a row and its card shows the
 arithmetic. Everything the old page said in paragraphs is either in a tooltip,
 in the card for the one listing you are looking at, or on How it works.
 
-ADR-0005 still holds on every row: the "Compared with" column says which grain
+ADR-0005 still holds on every row: the "Scored vs" column says which grain
 scored it, so a score never appears without the benchmark behind it.
 """
 from pathlib import Path
@@ -156,8 +156,10 @@ with tab_rank:
     left, right = st.columns([3, 2], gap="large")
     with left:
         event = st.dataframe(
+            # No link column: the card beside the table has "Open the listing",
+            # and the link was the column that pushed "Scored vs" off the edge.
             table[["area", "tier", "opportunity_score", "vs_area", "price_eur",
-                   "size_sqm", "compared", "url"]],
+                   "size_sqm", "compared"]],
             hide_index=True,
             height=520,
             on_select="rerun",
@@ -165,27 +167,27 @@ with tab_rank:
             selection_default={"selection": {"rows": [0], "columns": []}},
             key=f"deals-{op}-{muni}-{prop}",
             column_config={
-                "area": st.column_config.TextColumn("Barrio", pinned=True, width="medium"),
+                "area": st.column_config.TextColumn("Barrio", pinned=True, width=150),
                 "tier": st.column_config.MultiselectColumn(
                     "Verdict", options=tiers,
                     color=[DEAL_TIER_COLORS[k] for k in DEAL_TIER_LABELS],
                 ),
                 "opportunity_score": st.column_config.ProgressColumn(
                     "Score", min_value=0, max_value=100, format="%d", color=TEAL_700,
+                    width=110,
                     help="50 = exactly the price of comparable flats. Higher is cheaper.",
                 ),
                 "vs_area": st.column_config.NumberColumn(
                     "vs area", format="%+.0f%%",
                     help="Price per m² against the flats it was compared with."),
                 "price_eur": st.column_config.NumberColumn(
-                    "Price", format=f"€%,d{per}"),
+                    "Price", format=f"€%,d{per}", width=100),
                 "size_sqm": st.column_config.NumberColumn("m²", format="%d"),
                 "compared": st.column_config.TextColumn(
                     "Scored vs", width="small",
                     help="What the flat was compared with: the finest area with at "
                          "least 8 comparable flats — its barrio, its district or the "
                          "whole city."),
-                "url": st.column_config.LinkColumn("", display_text="open ↗"),
             },
         )
         st.caption("Pick a row to see why it scored what it did.")

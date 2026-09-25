@@ -113,6 +113,9 @@ def _portfolio_brand() -> alt.theme.ThemeConfig:
             # Labels are mono: they are almost always figures, and mono is what
             # carries numbers everywhere else in the brand.
             "axis": {
+                # Mono labels are wide, and "2,5003,000" is what two touching
+                # tick labels looked like. Drop every other label on collision.
+                "labelOverlap": True,
                 "labelColor": INK_MUTED,
                 "labelFont": MONO_STACK,
                 "labelFontSize": 11,

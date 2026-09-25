@@ -67,7 +67,9 @@ models:
     description: >
       All valid snapshots per listing across time.
       Grain: one row per snapshot_pk.
-      Use this for price evolution and trend analysis.
+      Feeds int_listing_lifecycle (days on market, price cuts). Not a market
+      trend: a few weekly snapshots trace which flats were listed, not where
+      prices went — the app's trend is the INE series in rpt_market_trend.
     columns:
       - name: snapshot_pk
         tests: [unique, not_null]
