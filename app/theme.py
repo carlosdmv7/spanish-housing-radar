@@ -176,7 +176,7 @@ def altair_chart(chart: alt.TopLevelMixin, **kwargs) -> None:
 # Header / footer chrome
 # ══════════════════════════════════════════════════════════════════════════════
 AUTHOR_NAME = "Carlos De Manuel"
-AUTHOR_ROLE = "Analytics Engineer"
+AUTHOR_ROLE = "Data & Analytics Engineer"
 PORTFOLIO_URL = "https://carlosdmv7.github.io/personal-portfolio/"
 LINKEDIN_URL = "https://www.linkedin.com/in/carlos-de-manuel"
 
