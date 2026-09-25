@@ -43,27 +43,32 @@ neighbourhood** — so the question stops being "can I afford this?" and becomes
 <a href="docs/status.json"><code>docs/status.json</code></a>, which the pipeline rewrites on every
 run — the same file the app itself reads. They cannot go stale without this README saying so.</sub></p>
 
-![Opportunities — every listing scored against its own barrio](docs/img/opportunities.png)
+![Deals — every listing scored 0–100 against comparable flats nearby](docs/img/opportunities.png)
 
 ---
 
 ## What you can ask it
 
-| | |
-|---|---|
-| **Which flats are underpriced right now?** | Every listing scored against comparable flats in its own barrio, ranked, on a map. |
-| **What does a m² cost here?** | The €/m² benchmark per neighbourhood — the number the score is measured against — next to the official INE index of what buyers actually paid. |
-| **Can I afford this?** | Not just the instalment: the transfer tax and fees due in cash on signing day, what the bank's tie-in products are really worth, and whether renting and investing the difference beats buying. |
-| **Who can afford to live here?** | What each barrio demands of *your* income — and, using official INE household income, what it demands of the people already living in it. |
-| **How does it work, and what can it not tell me?** | The arithmetic, the data's provenance, and the questions it honestly cannot answer. |
+Six pages across the top. Each answers its question on the first screen and keeps the detail
+one click further down.
+
+| Page | Question | What you get |
+|---|---|---|
+| **Overview** | What's on the market right now? | The headline numbers, what a m² costs barrio by barrio, and today's best deals. |
+| **Deals** | Which flats are cheap for their area? | Every listing scored 0–100, its verdict in colour, ranked and on a map. Pick one to see the arithmetic behind its score. |
+| **Neighbourhoods** | What does a m² cost, barrio by barrio? | Each barrio's median and the spread around it, next to the official INE index of what homes actually sold for. |
+| **Value check** | Is the area itself overpriced? | Price against what flats there rent for, and against what the people who live there earn. |
+| **Budget** | What will buying really cost me? | The cash to sign, the monthly payment, the most you could buy, and the year buying starts to beat renting. |
+| **How it works** | Where do the numbers come from? | The pipeline and the score as diagrams, every source, and what the data cannot tell you. |
 
 <details>
 <summary>📸 More screenshots</summary>
 
-![Market overview](docs/img/market.png)
-![Mortgage simulator](docs/img/mortgage.png)
-![Affordability index](docs/img/affordability.png)
-![How it works & data quality](docs/img/how_it_works.png)
+![Overview](docs/img/home.png)
+![Neighbourhoods — each barrio's median and spread, beside the official INE trend](docs/img/market.png)
+![Value check — price against rents and against local income](docs/img/affordability.png)
+![Budget — cash to sign, monthly payment, and when buying beats renting](docs/img/mortgage.png)
+![How it works — the pipeline and the score, drawn](docs/img/how_it_works.png)
 
 </details>
 
@@ -75,9 +80,8 @@ Most of the engineering here went into *not* overclaiming, because a housing too
 confident is easy and a housing tool you can trust is not.
 
 - **These are asking prices, not sale prices.** What a seller wants is not what a flat is worth.
-  The official INE transaction index sits on the Market page as the counterweight, labelled with
-  the quarter it describes and how old that quarter is — currently four behind, and the app says so
-  rather than letting a year-old figure read as today's.
+  The official INE transaction index sits on the Neighbourhoods page as the counterweight,
+  labelled with the quarter it describes, so an old figure can never read as today's.
 - **A score is only as good as what it was compared against.** A flat measured against 9 neighbours
   and a flat measured against the whole city are not the same claim, so **every** score on every
   screen shows which one it got and how many comparables backed it.
@@ -224,13 +228,14 @@ thin city grain are flagged `low_confidence` and **surfaced with a warning rathe
 1_bronze   stg_idealista__listings · stg_fotocasa__listings        (sources + light typing)
            stg_ine__hpi · stg_ine__income                          (the two official feeds)
 2_silver   int_listings_unioned → int_listings_current             (latest snapshot per listing)
-                                 → int_listings_history             (all snapshots, for trends)
+                                 → int_listings_history             (every snapshot, kept)
            int_neighborhood_stats · dim_neighborhoods              (benchmarks + dimension)
            int_listing_lifecycle                                   (days-on-market, price cuts)
            int_market_context · int_district_income                (INE, resolved to joinable grains)
 3_gold     fct_listings_scored                                     (the scoring fact table)
            rpt_opportunities                                       (consumption view for the app)
-           rpt_market_context · rpt_district_affordability         (market direction + income)
+           rpt_market_context · rpt_market_trend                   (INE: latest quarter + series)
+           rpt_district_affordability                              (prices against local income)
 ```
 
 Every model carries a **grain declaration**, column descriptions, and tests
@@ -241,12 +246,13 @@ loudly when an assumption breaks. See [`transform/models/`](transform/models/).
 
 ## The app
 
-Six pages, listed at the top of this README. Two things about all of them:
+Six pages, listed at the top of this README, all laid out the same way: a question as the title,
+four numbers, one or two charts, and the detail in an expander rather than in paragraphs.
 
-Every page carries a **freshness header** — last ingest, row counts, share of scores computed at
-barrio grain, dbt test results — so a visitor sees the data's condition before reading any figure.
-Colour comes only from native theme keys and a registered Altair theme; there is no CSS injection
-anywhere, so a Streamlit upgrade can't silently break the look.
+Overview and How it works carry a **freshness strip** — last ingest, row counts and the share of
+scores computed at barrio grain, queried live, plus dbt test results from the same
+`docs/status.json` as the badges above. Colour comes only from native theme keys and a registered Altair theme; there is no CSS
+injection anywhere, so a Streamlit upgrade can't silently break the look.
 
 ---
 
@@ -270,7 +276,12 @@ anywhere, so a Streamlit upgrade can't silently break the look.
   to −3 → **score 100 → "great deal"** — the pipeline's most confident verdict from its least
   evidence. The z-score is coalesced to 0 (score 50) instead.
 - **Snapshot history as a first-class table.** `int_listings_history` keeps every observation so
-  price-evolution is real (accumulated one scrape at a time) rather than reconstructed.
+  days on market and price cuts are real (accumulated one scrape at a time) rather than
+  reconstructed.
+- **Scraped history is not a price trend.** A per-barrio line drawn from a few weekly snapshots
+  mostly traced *which* flats happened to be listed that week. The trend the app draws is the
+  official INE series (`rpt_market_trend`); the scraped snapshots feed only the per-listing
+  signals they can actually support.
 - **Per-table source freshness, not one global threshold.** The INE feed is production-critical and
   fails CI after 10 days of staleness; the metered listings table warns without failing, because its
   staleness is a recorded decision rather than a fault. One global threshold would have forced a
@@ -280,8 +291,12 @@ anywhere, so a Streamlit upgrade can't silently break the look.
   so that gate returns a green PASS however old the index inside the table is, and it did, for a
   year. It catches a cron that died and nothing else. `assert_ine_hpi_period_is_current` watches
   `period_date` instead and **warns** when the newest quarter falls further behind than a
-  publication gap explains. Warn, not error: whether the IPV advances is INE's business, and a red
-  build would assert a fault in code that is working correctly.
+  publication gap explains. The first time it fired, the fault was ours: INE had rebased the IPV to
+  2025 = 100 under a new table, and the loader was still reading the frozen base-2015 one. Fixing
+  that turned up a second bug: every quarter was labelled one quarter early. INE timestamps a
+  quarter at local midnight on its first day, which in UTC is the last day of the previous quarter,
+  so dates now come from INE's own period codes. The load also replaces the whole table, because
+  a rebase changes every series code.
 
 ### Key decisions (ADRs)
 
@@ -372,34 +387,35 @@ benchmarks, which is the only grain the score is actually worth reading at.
       price-cut count and cumulative price change from the snapshot history, surfaced as a
       "motivated seller" filter/badge (a stronger negotiability signal than €/m² alone)
 - [x] **Official market context** — free INE house-price-index (IPV) feed (`raw.ine_hpi` →
-      `int_market_context` → `rpt_market_context`), grounding scraped asking prices against
-      transaction-based reality and keeping the app fresh with zero scraping credits
-- [x] **Data-trust surface** — freshness header on every page, per-listing score provenance
-      (benchmark grain + comparable count shown wherever a score is), a "How it works & data
-      quality" page, and `dbt source freshness` gating CI per source table
+      `int_market_context` → `rpt_market_context` · `rpt_market_trend`), grounding scraped asking
+      prices against transaction-based reality and keeping the app fresh with zero scraping credits
+- [x] **Data-trust surface** — freshness strip on Overview and How it works, per-listing score
+      provenance (benchmark grain + comparable count shown wherever a score is), a How it works
+      page, and `dbt source freshness` gating CI per source table
 - [ ] Ingest **Fotocasa** (`raw.fotocasa_listings`) — staging + union are ready, only the source feed is missing
 - [ ] Barrio centroids for Zaragoza / Valladolid / Bilbao
 
 ## Known limitations
 
-1. **Data volume is still growing.** Most listings currently benchmark against the **city** grain
-   (`benchmark_level`); barrios flip to local benchmarks as they accumulate ≥ 8 comparables. The fix
-   is sustained scraping, not lowering the threshold.
+1. **Depth is uneven.** In València, scraped every week, 61% of listings are scored against their
+   own barrio and 12% fall back to the whole city. In the seven cities that hold one older snapshot
+   it is the other way round: 78% are scored against the city. Barrios flip to local benchmarks as
+   they accumulate ≥ 8 comparables; the fix is sustained scraping, not a lower threshold.
 2. **Geocoding is barrio-centroid level** (Valencia, Madrid, Barcelona, Sevilla, Málaga) — listings
    plot at their neighbourhood's centroid, not their exact address (search-card scraping doesn't
    expose per-listing coordinates). Zaragoza/Valladolid/Bilbao have no centroids yet.
 3. **Fotocasa** scraper and staging exist but `raw.fotocasa_listings` isn't fed yet.
-4. **Price-evolution charts and behavioural signals** (`int_listing_lifecycle`: days-on-market,
-   price cuts) need several accumulated snapshots to be meaningful. The models are correct from
+4. **Behavioural signals** (`int_listing_lifecycle`: days-on-market, price cuts) need several
+   accumulated snapshots to be meaningful. The models are correct from
    day one — a listing seen once reads as "no signal yet" (0), not a fabricated one — and light
    up as the weekly pipeline runs.
 5. **INE context is autonomous-community grain**, not per-listing. The IPV is an official
-   *regional* transaction-price index (quarterly), so it grounds *market direction* honestly;
-   it is deliberately not presented as a per-flat "fair price" (that would be an AVM — future work).
-6. **The IPV is currently four quarters behind.** The feed reloads weekly and the newest quarter
-   INE has published into it is 2025 Q3. That is a property of the source, not of this pipeline,
-   but it is the app's job to say so: the Market page names the reference quarter and its age, and
-   `assert_ine_hpi_period_is_current` warns in every build until it advances.
+   *regional* transaction-price index, published quarterly about ten weeks after each quarter
+   ends, so it grounds *market direction* honestly; it is deliberately not presented as a
+   per-flat "fair price" (that would be an AVM — future work).
+6. **Household income lags two years.** INE's atlas is the only official income at district grain,
+   and its newest year is 2023, so Value check sets today's asking prices against 2023 incomes.
+   Its ratios show which way things point, not an exact multiple.
 
 ---
 

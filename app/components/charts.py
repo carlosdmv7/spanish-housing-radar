@@ -478,7 +478,8 @@ def line_buy_vs_rent(series: pd.DataFrame, breakeven: int | None) -> alt.LayerCh
                        var_name="path", value_name="eur")
     scale = alt.Scale(domain=["Buy", "Rent and invest"], range=[PETROL_900, RUST_500])
     lines = alt.Chart(long).mark_line(strokeWidth=2.5).encode(
-        x=alt.X("year:Q", title="Years after buying", axis=alt.Axis(format="d")),
+        x=alt.X("year:Q", title="Years after buying",
+                axis=alt.Axis(format="d", values=[1, *range(5, int(series["year"].max()) + 1, 5)])),
         y=alt.Y("eur:Q", title=None,
                 axis=alt.Axis(format="~s", labelExpr="'€' + datum.label")),
         color=alt.Color("path:N", title=None, scale=scale,
