@@ -140,12 +140,16 @@ def get_freshness_strip() -> list[StripItem]:
 
     # ── Listings in warehouse ──────────────────────────────────────────────
     try:
+        # What the app scores, not every listing ever scraped: implausible and
+        # stale listings are set aside before scoring (ADR-0009).
         listing_count = query("""
-            SELECT COUNT(*) as n FROM spanish_housing_radar.main_silver.int_listings_current
+            SELECT COUNT(*) as n FROM spanish_housing_radar.main_gold.rpt_opportunities
         """).iloc[0]["n"]
         items.append(StripItem(
             label="listings",
             value=f"{int(listing_count):,}",
+            help="Listings scored right now: seen in the last two months and "
+                 "passing the plausibility check. How it works lists what was set aside.",
         ))
     except Exception:
         items.append(StripItem(
@@ -159,7 +163,7 @@ def get_freshness_strip() -> list[StripItem]:
     try:
         city_count = query("""
             SELECT COUNT(DISTINCT municipality) AS n
-            FROM spanish_housing_radar.main_silver.int_listings_current
+            FROM spanish_housing_radar.main_gold.rpt_opportunities
         """).iloc[0]["n"]
         items.append(StripItem(
             label="cities",
@@ -339,3 +343,21 @@ def get_benchmark_grain_counts() -> pd.DataFrame:
     total = df["listings"].sum()
     df["share"] = df["listings"] / total if total else 0.0
     return df
+
+
+@st.cache_data(ttl=600)
+def get_shrinkage_k() -> pd.DataFrame:
+    """
+    The empirical-Bayes constant per operation for apartments (ADR-0011), with
+    a null k where the data shows no barrio effect. Empty frame on failure,
+    including a warehouse built before the column existed.
+    """
+    try:
+        return query("""
+            SELECT operation_type, ANY_VALUE(shrinkage_k) AS k
+            FROM spanish_housing_radar.main_gold.fct_listings_scored
+            WHERE property_type = 'apartment'
+            GROUP BY 1
+        """)
+    except Exception:
+        return pd.DataFrame(columns=["operation_type", "k"])

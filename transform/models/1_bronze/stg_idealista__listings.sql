@@ -1,9 +1,18 @@
 -- transform/models/bronze/stg_idealista__listings.sql
 -- unique_key ahora incluye _run_id → guardamos CADA snapshot, no solo el último
+-- full_refresh=false: this table is the only complete snapshot history in the
+-- warehouse. raw.idealista_listings upserts on (source_name, source_id), so a
+-- re-scrape overwrites the previous observation (ADR-0003); rebuilt from raw,
+-- this model would keep one snapshot per listing and every days-on-market and
+-- price-cut signal downstream would silently reset. A full refresh of the
+-- project therefore skips this model — which is what makes rebuilding silver
+-- and gold safe. Verified 2026-09-25: a --full-refresh into ci_* left 1,426
+-- snapshots for 1,426 listings, against 1,618 kept in prod.
 {{ config(
     materialized='incremental',
     unique_key=['source_id', '_run_id'],
-    schema='bronze'
+    schema='bronze',
+    full_refresh=false
 ) }}
 
 with source as (

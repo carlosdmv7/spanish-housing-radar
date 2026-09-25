@@ -31,7 +31,7 @@ models:
           - accepted_values:
               values: [great_deal, good_deal, fair, overpriced, very_overpriced]
       - name: benchmark_level
-        description: Which grain actually scored the listing once the comparable threshold was applied.
+        description: The area carrying most of the benchmark's weight — the barrio when barrio_weight ≥ 0.5, else the district or city it is blended with.
         tests:
           - not_null
           - accepted_values:
@@ -40,6 +40,21 @@ models:
         tests:
           - dbt_utils.accepted_range:
               min_value: 1
+      - name: barrio_weight
+        description: >
+          How much of the benchmark is the barrio's own median, n / (n + k); the
+          rest is the parent area's (ADR-0011). 0 when the barrio has too few
+          listings or the data cannot tell barrios in a district apart.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+      - name: shrinkage_k
+        description: >
+          The empirical-Bayes constant for this city, operation and property
+          type: within-barrio variance over between-barrio variance. Null when
+          it cannot be estimated.
       - name: low_confidence_flag
         tests: [not_null]
       - name: ppsqm_z_score

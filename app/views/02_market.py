@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from chrome import page_header
 from components.charts import dot_barrio_range, line_official_trend
-from components.filters import load_municipalities
+from components.filters import city_picker, load_municipalities
 from connection import query
 import pandas as pd
 import streamlit as st
@@ -52,12 +52,7 @@ with c_op:
         format_func=lambda k: {"sale": "Buy", "rent": "Rent"}[k],
     )
 with c_city:
-    cities = sorted(munis)
-    city = st.selectbox(
-        "City", cities,
-        index=cities.index("valència") if "valència" in cities else 0,
-        format_func=str.title,
-    )
+    city = city_picker(munis)
 
 MARKET_SQL = (Path(__file__).parent.parent / "queries" / "market.sql").read_text()
 

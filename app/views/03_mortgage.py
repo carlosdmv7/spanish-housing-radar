@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from chrome import page_header
 from components.charts import bar_amortisation, bar_signing_day, line_buy_vs_rent
-from components.filters import load_municipalities
+from components.filters import city_picker, load_municipalities
 from components.mortgage import compute_mortgage, compute_variable_mortgage, max_affordable_loan
 from components.purchase_costs import (
     DEFAULT_BONIFICATIONS,
@@ -78,9 +78,11 @@ except Exception:
 c_city, c_price, c_savings, c_income, c_more = st.columns(
     [1.2, 1.2, 1.2, 1.2, 1], vertical_alignment="bottom")
 with c_city:
-    city = st.selectbox(
-        "City", cities, index=cities.index("valència") if "valència" in cities else 0,
-        format_func=str.title, help="Sets the transfer tax, which is regional.")
+    city = city_picker(cities, help="Sets the transfer tax, which is regional.")
+    if len(cities) <= 1:
+        # No dropdown to hold the answer, so say it: the tax regime is the one
+        # thing the city sets on this page.
+        st.markdown(f"**{city.title()}**  \n:small[:gray[Transfer tax is regional]]")
 with c_price:
     # €180,000 is where València's under-35 transfer-tax cut stops, so the
     # opening example shows the one lever most first-time buyers miss.

@@ -1,6 +1,6 @@
 # ADR 0009 — Set aside implausible and stale listings, and show them
 
-**Status:** accepted
+**Status:** accepted · amended 2026-09-25 (see the end)
 
 ## Context
 Bronze drops what is impossible row by row: no price, no size, more than
@@ -53,3 +53,11 @@ operation are implausible: a few typos are the portal's, a flood is our parser.
 - **Tighter bounds (a factor of three).** Would catch a real €10,000/month
   penthouse in Málaga's Pacífico at 3.0× the city. The rule is for errors,
   not for the expensive end of the market.
+
+## Amendment (2026-09-25)
+`not_seen_recently` was first measured from each city's own latest scrape.
+That kept a one-off June 2026 snapshot of seven other cities "current" three
+months later, and the app served its flats as today's deals. It is now measured
+from the warehouse's latest scrape of any city. A paused pipeline still does not
+empty the app, and a city the pipeline no longer visits ages out like any
+listing that stopped being seen, staying in the history.

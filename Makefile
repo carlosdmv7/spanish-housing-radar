@@ -105,9 +105,14 @@ dbt-test: ## Run all dbt tests
 .PHONY: transform-test
 transform-test: transform dbt-test ## dbt run + dbt test
 
+# Rebuilds every incremental from scratch EXCEPT bronze stg_idealista__listings,
+# which is marked full_refresh=false: it holds the only snapshot history (raw
+# upserts in place, ADR-0003). Needed after a change silver cannot pick up
+# incrementally — a new seed row, a new repair rule. Default target is dev,
+# which writes the same main_* tables the live app reads.
 .PHONY: transform-full-refresh
-transform-full-refresh: ## Full dbt run with full-refresh (rebuilds all incrementals from scratch)
-	$(DBT_RUN) run --project-dir transform --full-refresh
+transform-full-refresh: ## Rebuild silver + gold from bronze (bronze history is protected)
+	$(DBT_RUN) build --project-dir transform --full-refresh
 
 .PHONY: deploy-prod
 deploy-prod: ## Full dbt BUILD (seed+run+test) to PROD — rebuilds the live app's main_* tables
