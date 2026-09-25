@@ -324,6 +324,7 @@ and the alternatives I rejected and why.
 | [0007](docs/adr/0007-repair-location-in-silver-not-extraction.md) | Repair scraped locations **in silver**, with the seed outranking the pattern | Makes every parser fix retroactive and stops streets becoming benchmarks; the cost is that the seed is now load-bearing while covering only five cities |
 | [0008](docs/adr/0008-district-income-as-the-missing-denominator.md) | Ground prices in **district income** from INE's ADRH, via bulk CSV | Answers *is this area cheap?* rather than only *is this cheap for the area?*; the cost is a ~2-year lag and València-only district coverage |
 | [0009](docs/adr/0009-screen-implausible-and-stale-listings.md) | **Set aside** listings whose €/m² is under ¼ or over 4× their city, or unseen for 60 days, and list them on How it works | A real outlier beyond 4× is set aside with the typos; it is shown, not lost |
+| [0010](docs/adr/0010-scrape-newest-first.md) | Scrape search pages **newest first** | Each week's credits buy new listings instead of re-reading the same ones; a listing is rarely seen twice, so days-on-market signals are rarer |
 
 ---
 

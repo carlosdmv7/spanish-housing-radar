@@ -30,6 +30,7 @@ from extraction.config import (
     IDEALISTA_MAX_LISTINGS,
     IDEALISTA_MAX_SEARCH_PAGES,
     IDEALISTA_SELECTORS,
+    IDEALISTA_SORT,
     get_idealista_search_url,
 )
 from extraction.scrapers.base import AbstractScraper, CreditBudgetExhausted
@@ -48,7 +49,7 @@ class IdealistaScraper(AbstractScraper):
 
         yielded = 0
         for page in range(1, IDEALISTA_MAX_SEARCH_PAGES + 1):
-            page_url = self._build_page_url(search_url, page)
+            page_url = self._build_page_url(search_url, page, IDEALISTA_SORT)
             logger.info("[idealista] Fetching page %d → %s", page, page_url)
 
             try:
@@ -311,10 +312,10 @@ class IdealistaScraper(AbstractScraper):
         return m.group(1) if m else None
 
     @staticmethod
-    def _build_page_url(base: str, page: int) -> str:
-        if page == 1:
-            return base
-        return base.rstrip("/") + f"/pagina-{page}.htm"
+    def _build_page_url(base: str, page: int, sort: str = "") -> str:
+        url = base if page == 1 else base.rstrip("/") + f"/pagina-{page}.htm"
+        # The same query string Idealista's own sort menu links to.
+        return f"{url}?ordenado-por={sort}" if sort else url
 
     @staticmethod
     def _is_blocked(html: str) -> bool:
