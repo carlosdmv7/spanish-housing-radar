@@ -88,6 +88,17 @@ IDEALISTA_BASE_URL: str = "https://www.idealista.com"
 IDEALISTA_MAX_SEARCH_PAGES: int = int(os.getenv("IDEALISTA_MAX_SEARCH_PAGES", "1"))
 IDEALISTA_MAX_LISTINGS: int = int(os.getenv("IDEALISTA_MAX_LISTINGS", "30"))
 
+# Which listings the pages we can afford actually show. Idealista's default is
+# "relevance", and relevance is sticky: 77 of the 107 sale listings on
+# 2026-09-22 had already been seen in August, so a week's credits bought about
+# 30 new flats. Newest first buys a fresh page of the market every week, and
+# with int_listings_screened dropping anything unseen for 60 days, the pool is
+# then roughly the last two months of new listings — which is what "on the
+# market right now" means. The cost: a listing is rarely seen twice, so days on
+# market and price cuts light up less often (ADR-0010). Empty string restores
+# Idealista's default.
+IDEALISTA_SORT: str = os.getenv("IDEALISTA_SORT", "fecha-publicacion-desc")
+
 # Most cities follow {city}-{city}. List ONLY the exceptions here.
 _IDEALISTA_SLUG_OVERRIDES: dict[str, str] = {
     "bilbao":     "bilbao-vizcaya",

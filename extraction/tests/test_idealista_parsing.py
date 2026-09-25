@@ -197,3 +197,12 @@ class TestBuildPageUrl:
             scraper._build_page_url("https://x.com/venta-pisos/madrid/", 3)
             == "https://x.com/venta-pisos/madrid/pagina-3.htm"
         )
+
+    def test_sort_is_a_query_string_on_every_page(self):
+        # The form Idealista's own sort menu links to (captured HTML):
+        # /venta-viviendas/madrid-madrid/?ordenado-por=fecha-publicacion-desc
+        base = "https://www.idealista.com/venta-viviendas/valencia-valencia/"
+        assert (scraper._build_page_url(base, 1, "fecha-publicacion-desc")
+                == base + "?ordenado-por=fecha-publicacion-desc")
+        assert (scraper._build_page_url(base, 2, "fecha-publicacion-desc")
+                == base + "pagina-2.htm?ordenado-por=fecha-publicacion-desc")
