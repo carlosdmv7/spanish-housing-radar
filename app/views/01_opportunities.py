@@ -22,7 +22,7 @@ from components.charts import (
     strip_deal_tiers,
     tier_legend,
 )
-from components.filters import load_municipalities
+from components.filters import city_picker, load_municipalities
 from components.map_view import listings_map
 from components.provenance import GRAIN_WORDING, confidence_note
 from config import DEAL_TIER_COLORS, DEAL_TIER_LABELS, PROPERTY_TYPE_LABELS
@@ -51,20 +51,22 @@ MAX_PRICE = {
     "sale": [None, 200_000, 300_000, 400_000, 600_000, 1_000_000],
     "rent": [None, 1_000, 1_500, 2_000, 3_000],
 }
-c_op, c_city, c_type, c_price, c_more = st.columns([1.2, 1.4, 1.4, 1.4, 1],
-                                                   vertical_alignment="bottom")
+# The city column exists only when there is a city to choose; an empty one left
+# a hole in the middle of the row.
+many_cities = len(munis) > 1
+cols = st.columns([1.2, 1.4, 1.4, 1.4, 1] if many_cities else [1.2, 1.4, 1.4, 1],
+                  vertical_alignment="bottom")
+c_op, c_type, c_price, c_more = (cols[0], *cols[-3:])
 with c_op:
     op = st.segmented_control(
         "Looking to", ["sale", "rent"], default="sale", required=True,
         format_func=lambda k: {"sale": "Buy", "rent": "Rent"}[k],
     )
-with c_city:
-    cities = sorted(munis)
-    muni = st.selectbox(
-        "City", cities,
-        index=cities.index("valència") if "valència" in cities else 0,
-        format_func=str.title,
-    )
+if many_cities:
+    with cols[1]:
+        muni = city_picker(munis)
+else:
+    muni = city_picker(munis)
 with c_type:
     prop = st.selectbox(
         "Type", ["all", *PROPERTY_TYPE_LABELS],
@@ -79,7 +81,7 @@ with c_price:
 with c_more, st.popover("More filters", width="stretch"):
     min_score = st.slider("Minimum score", 0, 100, 0, step=5)
     own_barrio_only = st.toggle(
-        "Only scored against their own barrio",
+        "Only scored mostly on their own barrio",
         help="The strongest comparison. Off by default so nothing is hidden.",
     )
     motivated_only = st.toggle(
@@ -127,10 +129,11 @@ m2.metric("Great deals", f"{int((df['deal_tier'] == 'great_deal').sum()):,}",
           help="Score 75+: well below what comparable flats ask.")
 m3.metric("Typical price", f"€{df['price_per_sqm'].median():,.0f}/m²"
           + ("/mo" if op == "rent" else ""))
-m4.metric("Compared with their own barrio",
+m4.metric("Scored mostly on their barrio",
           f"{(df['benchmark_level'] == 'neighbourhood').mean():.0%}",
-          help="The rest are compared with their district or the whole city, "
-               "because their barrio has too few listings to be a fair yardstick.")
+          help="The barrio's own median carries at least half of the benchmark. The "
+               "rest lean on their district or the city: the barrio has too few "
+               "listings, or differs too little from its district, to carry it.")
 
 altair_chart(strip_deal_tiers(df))
 st.markdown(f":small[{tier_legend(df)}]")
@@ -185,9 +188,9 @@ with tab_rank:
                 "size_sqm": st.column_config.NumberColumn("m²", format="%d"),
                 "compared": st.column_config.TextColumn(
                     "Scored vs", width="small",
-                    help="What the flat was compared with: the finest area with at "
-                         "least 8 comparable flats — its barrio, its district or the "
-                         "whole city."),
+                    help="The area that carried most of the benchmark. Its district "
+                         "(or the city, if the district has under 8 flats), pulled "
+                         "towards its barrio by how many flats the barrio has."),
             },
         )
         st.caption("Pick a row to see why it scored what it did.")

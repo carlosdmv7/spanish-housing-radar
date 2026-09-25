@@ -4,6 +4,6 @@
 -- there is set aside everywhere at once — no consumer has to remember a filter.
 {{ config(materialized='view', schema='silver') }}
 
-select * exclude (city_median_ppsqm, ppsqm_to_city_ratio, city_last_scraped_date, dq_issue)
+select * exclude (city_median_ppsqm, ppsqm_to_city_ratio, reference_scraped_date, dq_issue)
 from {{ ref('int_listings_screened') }}
 where dq_issue is null

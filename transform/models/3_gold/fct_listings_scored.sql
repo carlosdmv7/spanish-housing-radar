@@ -1,17 +1,35 @@
 -- transform/models/gold/fct_listings_scored.sql
--- Opportunity score with a HIERARCHICAL benchmark.
+-- Opportunity score against a benchmark that trusts a barrio as far as its
+-- data earns, and no further.
 --
--- Each listing is compared against the median €/sqm of its own area. But a
--- neighbourhood with only one or two listings can't benchmark anything (you'd be
--- comparing a flat to itself → z-score 0 → a meaningless "fair" 50). So we build
--- three benchmark grains and, per listing, pick the FINEST one that has at least
--- `min_comps_for_benchmark` comparables:
---     neighbourhood  →  district  →  city (municipality)
--- always within the same operation_type + property_type. `benchmark_level` records
--- which grain actually scored each listing, so the app can be honest about it.
+-- Each listing is compared with the median €/m² around it, always within the
+-- same operation_type + property_type. The *parent* area is the district when
+-- it has `min_comps_for_benchmark` comparables, else the whole city (ADR-0004).
+-- The barrio then moves the benchmark away from its parent by an
+-- empirical-Bayes weight (ADR-0011):
+--
+--     benchmark = w · barrio median + (1 − w) · parent median,  w = n / (n + k)
+--
+-- n is the barrio's listing count; k is estimated from the data on every build,
+-- per city × operation × property type, as the within-barrio variance over the
+-- between-barrio variance within districts. A large k means barrios barely
+-- differ from their district beyond noise, so it takes many listings before a
+-- barrio's own median is believed.
+--
+-- This replaced a hard switch — 8 listings and the barrio median counted in
+-- full, 7 and it counted not at all. Measured on València (2026-09-25), k was
+-- about 6 for sales: a barrio of 8 deserves ~57% weight, not 100%, and one of 5
+-- deserves ~45%, not 0. For rents the barrio effect within a district was not
+-- distinguishable from noise at all, so rents are scored against their district.
+--
+-- `benchmark_level` names the area that carries most of the weight, and
+-- `barrio_weight` records the exact blend, so the app can say what a score was
+-- measured against.
 {{ config(materialized='table', schema='gold') }}
 
 {% set min_comps = var('min_comps_for_benchmark', 8) %}
+{% set min_barrio = var('min_listings_for_barrio_weight', 3) %}
+{% set min_barrios = var('min_barrios_for_shrinkage', 5) %}
 
 with listings as (
     select * from {{ ref('int_listings_valid') }}
@@ -62,30 +80,77 @@ city_stats as (
     group by 1, 2, 3
 ),
 
--- ── Pick the finest grain with enough comparables ─────────────────────────────
-benched as (
+-- ── How far to trust a barrio: the shrinkage constant k ─────────────────────
+-- Method of moments over barrios with at least `min_barrio` listings:
+--   within  = pooled variance of listings around their barrio's mean
+--   between = variance of barrio means around their district's mean, minus the
+--             part of it that sampling noise alone would produce
+-- k = within / between. No k (so no barrio weight) when fewer than
+-- `min_barrios` barrios inform it or when `between` is not positive — the data
+-- cannot tell barrios in a district apart.
+barrio_moments as (
+    select
+        municipality, operation_type, property_type, district, neighborhood,
+        count(*)                          as n,
+        avg(price_per_sqm)                as mean_ppsqm,
+        var_samp(price_per_sqm)           as var_ppsqm
+    from listings
+    where neighborhood is not null
+      and neighborhood_is_benchmarkable
+      and district is not null
+    group by 1, 2, 3, 4, 5
+    having count(*) >= {{ min_barrio }}
+),
+
+district_means as (
+    select municipality, operation_type, property_type, district,
+           avg(price_per_sqm) as mean_ppsqm
+    from listings
+    where district is not null
+    group by 1, 2, 3, 4
+),
+
+shrinkage as (
+    select
+        b.municipality, b.operation_type, b.property_type,
+        count(*)                                                    as n_barrios,
+        sum((b.n - 1) * b.var_ppsqm) / nullif(sum(b.n - 1), 0)      as within_var,
+        avg(power(b.mean_ppsqm - d.mean_ppsqm, 2))
+            - avg(b.var_ppsqm / b.n)                                as between_var
+    from barrio_moments b
+    join district_means d
+      on b.municipality = d.municipality and b.operation_type = d.operation_type
+     and b.property_type = d.property_type and b.district = d.district
+    group by 1, 2, 3
+),
+
+shrinkage_k as (
+    select
+        municipality, operation_type, property_type,
+        case when n_barrios >= {{ min_barrios }} and between_var > 0
+             then within_var / between_var end                      as shrinkage_k
+    from shrinkage
+),
+
+-- ── Parent area, then the barrio's pull on it ────────────────────────────────
+parented as (
     select
         l.*,
+        case when di.n >= {{ min_comps }} then 'district' else 'city' end  as parent_level,
+        case when di.n >= {{ min_comps }} then di.median_ppsqm else ci.median_ppsqm end
+                                                                            as parent_median_ppsqm,
+        case when di.n >= {{ min_comps }} then di.stddev_ppsqm else ci.stddev_ppsqm end
+                                                                            as parent_stddev_ppsqm,
+        case when di.n >= {{ min_comps }} then di.n else ci.n end          as parent_n,
+        nb.n                                                                as barrio_n,
+        nb.median_ppsqm                                                     as barrio_median_ppsqm,
+        nb.stddev_ppsqm                                                     as barrio_stddev_ppsqm,
+        k.shrinkage_k,
         case
-            when nb.n >= {{ min_comps }} then 'neighbourhood'
-            when di.n >= {{ min_comps }} then 'district'
-            else 'city'
-        end as benchmark_level,
-        case
-            when nb.n >= {{ min_comps }} then nb.median_ppsqm
-            when di.n >= {{ min_comps }} then di.median_ppsqm
-            else ci.median_ppsqm
-        end as benchmark_median_ppsqm,
-        case
-            when nb.n >= {{ min_comps }} then nb.stddev_ppsqm
-            when di.n >= {{ min_comps }} then di.stddev_ppsqm
-            else ci.stddev_ppsqm
-        end as benchmark_stddev_ppsqm,
-        case
-            when nb.n >= {{ min_comps }} then nb.n
-            when di.n >= {{ min_comps }} then di.n
-            else ci.n
-        end as benchmark_comp_count
+            when nb.n >= {{ min_barrio }} and k.shrinkage_k is not null
+                then nb.n / (nb.n + k.shrinkage_k)
+            else 0
+        end                                                                 as barrio_weight
     from listings l
     left join nbhd_stats nb
         on l.municipality = nb.municipality and l.operation_type = nb.operation_type
@@ -100,6 +165,25 @@ benched as (
     left join city_stats ci
         on l.municipality = ci.municipality and l.operation_type = ci.operation_type
        and l.property_type = ci.property_type
+    left join shrinkage_k k
+        on l.municipality = k.municipality and l.operation_type = k.operation_type
+       and l.property_type = k.property_type
+),
+
+benched as (
+    select
+        * exclude (barrio_weight),
+        round(barrio_weight, 3)                                             as barrio_weight,
+        -- Named after the area carrying most of the weight.
+        case when barrio_weight >= 0.5 then 'neighbourhood' else parent_level end
+                                                                            as benchmark_level,
+        barrio_weight * coalesce(barrio_median_ppsqm, 0)
+            + (1 - barrio_weight) * parent_median_ppsqm                     as benchmark_median_ppsqm,
+        -- The spread blends the same way, as variances.
+        sqrt(barrio_weight * power(coalesce(barrio_stddev_ppsqm, 0), 2)
+             + (1 - barrio_weight) * power(parent_stddev_ppsqm, 2))         as benchmark_stddev_ppsqm,
+        case when barrio_weight >= 0.5 then barrio_n else parent_n end     as benchmark_comp_count
+    from parented
 ),
 
 with_zscore as (

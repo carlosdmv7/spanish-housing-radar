@@ -15,9 +15,11 @@ from __future__ import annotations
 # Wording for each benchmark grain: what the listing was compared against, and
 # the noun for the median shown next to it.
 GRAIN_WORDING: dict[str, tuple[str, str]] = {
-    "neighbourhood": ("its own barrio", "Barrio median"),
-    "district": ("its district", "District median"),
-    "city": ("the whole city", "City median"),
+    # "Benchmark", not "median": since ADR-0011 the number is the parent area's
+    # median pulled towards the barrio's, so calling it either median was wrong.
+    "neighbourhood": ("its own barrio", "Barrio benchmark"),
+    "district": ("its district", "District benchmark"),
+    "city": ("the whole city", "City benchmark"),
 }
 
 
@@ -44,7 +46,8 @@ def confidence_note(row: dict) -> str | None:
     if level != "neighbourhood":
         compared_to, _ = _grain_wording(level)
         return (
-            f"**Reduced confidence** — too few comparables in this barrio, so the "
-            f"score comes from {compared_to}. It reads the market, not the street."
+            f"**Reduced confidence** — the score mostly reads {compared_to}: this "
+            "barrio has too few listings, or differs too little from its district, "
+            "to carry the benchmark. It reads the market, not the street."
         )
     return None

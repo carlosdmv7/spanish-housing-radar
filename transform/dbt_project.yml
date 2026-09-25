@@ -18,6 +18,12 @@ vars:
   # Below it, the opportunity score falls back to the next-coarser grain
   # (neighbourhood → district → city) instead of comparing a flat to itself.
   min_comps_for_benchmark: 8
+  # The barrio's pull on that benchmark (ADR-0011): a barrio needs this many
+  # listings before its median gets any weight at all...
+  min_listings_for_barrio_weight: 3
+  # ...and the shrinkage constant behind the weight is estimated only from at
+  # least this many such barrios; fewer, and barrios get no weight.
+  min_barrios_for_shrinkage: 5
   # The same question asked of an area statistic rather than of a score: how many
   # listings a district or barrio median must rest on before it describes the area
   # instead of describing one flat. Deliberately the same number as
@@ -34,8 +40,8 @@ vars:
   # of, or over four times, the median of its city and operation — a typo in the
   # price or the size, not a flat (ADR-0009).
   max_ppsqm_ratio_to_city: 4
-  # ...and when the scraper has not seen it for this many days before the city's
-  # latest scrape: most likely sold or withdrawn.
+  # ...and when the scraper has not seen it for this many days before the
+  # warehouse's latest scrape: most likely sold or withdrawn.
   max_listing_age_days: 60
 
 seeds:

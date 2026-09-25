@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from chrome import page_header
 from components.charts import bar_district_burden, scatter_price_vs_yield
-from components.filters import load_municipalities
+from components.filters import city_picker, load_municipalities
 from config import OVERBURDEN_PCT
 from connection import query
 import pandas as pd
@@ -48,14 +48,12 @@ except Exception as exc:
     st.caption(f"Underlying error: {exc}")
     st.stop()
 
-c_city, _ = st.columns([1.4, 4.6])
-with c_city:
-    cities = sorted(munis)
-    city = st.selectbox(
-        "City", cities,
-        index=cities.index("valència") if "valència" in cities else 0,
-        format_func=str.title,
-    )
+if len(munis) > 1:
+    c_city, _ = st.columns([1.4, 4.6])
+    with c_city:
+        city = city_picker(munis)
+else:
+    city = city_picker(munis)
 
 
 @st.cache_data(ttl=600, show_spinner="Loading prices and incomes…")

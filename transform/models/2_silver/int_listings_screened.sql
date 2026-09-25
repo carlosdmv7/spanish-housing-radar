@@ -33,29 +33,36 @@ city as (
     select
         municipality,
         operation_type,
-        median(price_per_sqm) as city_median_ppsqm,
-        -- A city's clock is its own last scrape, not today: a paused pipeline
-        -- must not empty the app, and the cities held as one older snapshot are
-        -- as current as they are ever going to be.
-        max(scraped_date)     as city_last_scraped_date
+        median(price_per_sqm) as city_median_ppsqm
     from listings
     group by 1, 2
+),
+
+-- The clock is the warehouse's latest scrape, of any city — not today, so a
+-- paused pipeline does not empty the app. Not each city's own latest scrape
+-- either, as this model first had it: that kept a one-off June snapshot of
+-- seven other cities "current" in October, served as deals that had almost
+-- certainly sold. A city the pipeline no longer visits ages out like any
+-- listing that stopped being seen, and stays in the history.
+latest_scrape as (
+    select max(scraped_date) as reference_scraped_date from listings
 )
 
 select
     l.*,
     c.city_median_ppsqm,
     round(l.price_per_sqm / nullif(c.city_median_ppsqm, 0), 3) as ppsqm_to_city_ratio,
-    c.city_last_scraped_date,
+    r.reference_scraped_date,
     case
         when l.price_per_sqm < c.city_median_ppsqm / {{ ratio }}
           or l.price_per_sqm > c.city_median_ppsqm * {{ ratio }}
             then 'implausible_price_per_sqm'
-        -- Not seen for two months while the scraper kept visiting the city: most
-        -- likely sold or withdrawn. Last seen is not proof of anything, but a
-        -- page that says "right now" must not lead with a flat that left in July.
-        when l.scraped_date < c.city_last_scraped_date - interval {{ max_age }} day
+        -- Not seen for two months while the scraper kept running: most likely
+        -- sold or withdrawn. Last seen is not proof of anything, but a page that
+        -- says "right now" must not lead with a flat that left in July.
+        when l.scraped_date < r.reference_scraped_date - interval {{ max_age }} day
             then 'not_seen_recently'
     end as dq_issue
 from listings l
 join city c using (municipality, operation_type)
+cross join latest_scrape r

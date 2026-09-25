@@ -221,8 +221,10 @@ def dot_barrio_range(df: pd.DataFrame, city_median: float, unit: str) -> alt.Lay
         ],
     )
     band = base.mark_bar(height=8, cornerRadius=4, color=INK_MUTED, opacity=0.28).encode(
+        # Six ticks, not Vega's ~ten: the theme flushes the end labels inwards,
+        # and at ten they sat on top of their neighbours ("2,5003,000").
         x=alt.X("p25_ppsqm:Q", title=unit, scale=alt.Scale(zero=False),
-                axis=alt.Axis(format=fmt)),
+                axis=alt.Axis(format=fmt, tickCount=6)),
         x2="p75_ppsqm:Q",
     )
     dots = base.mark_circle(size=110, opacity=1).encode(
@@ -477,7 +479,8 @@ def bar_benchmark_grain(counts: pd.DataFrame) -> alt.LayerChart:
     one number a reader wants from it, the share of barrio-grain scores, had to
     be estimated from bar lengths.
     """
-    names = {"neighbourhood": "Own barrio", "district": "District", "city": "Whole city"}
+    names = {"neighbourhood": "Mostly its barrio", "district": "Mostly its district",
+             "city": "Mostly the city"}
     d = counts.assign(
         grain=counts["benchmark_level"].map(names),
         label=[f"{s:.0%} · {n:,}" for s, n in zip(counts["share"], counts["listings"],
@@ -498,6 +501,28 @@ def bar_benchmark_grain(counts: pd.DataFrame) -> alt.LayerChart:
     )
     labels = base.mark_text(align="left", dx=6, color=INK, fontSize=12).encode(text="label:N")
     return (bars + labels).properties(height=108)
+
+
+def line_barrio_weight(k: float, max_n: int = 40) -> alt.LayerChart:
+    """
+    How much a barrio's own median counts, by how many listings it has:
+    n / (n + k). Three points labelled, so the curve is read without an axis
+    lookup — the argument it makes is "8 listings is not the whole story".
+    """
+    d = pd.DataFrame({"n": range(1, max_n + 1)})
+    d["w"] = d["n"] / (d["n"] + k)
+    marks = d[d["n"].isin([3, 8, 30])].assign(label=lambda x: [f"{w:.0%}" for w in x["w"]])
+    base = alt.Chart(d).encode(
+        x=alt.X("n:Q", title="Listings in the barrio", axis=alt.Axis(tickCount=4)),
+        y=alt.Y("w:Q", title=None, scale=alt.Scale(domain=[0, 1]),
+                axis=alt.Axis(format="%", tickCount=3)),
+    )
+    line = base.mark_line(color=TEAL_700, strokeWidth=2.5)
+    dots = alt.Chart(marks).mark_point(filled=True, size=50, color=TEAL_700).encode(
+        x="n:Q", y="w:Q")
+    labels = alt.Chart(marks).mark_text(dy=-10, color=INK, fontSize=12).encode(
+        x="n:Q", y="w:Q", text="label:N")
+    return (line + dots + labels).properties(height=150)
 
 
 def bar_signing_day(items: pd.DataFrame) -> alt.LayerChart:

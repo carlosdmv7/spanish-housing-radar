@@ -193,32 +193,34 @@ score     = clamp(50 − z_clamped × (50/3), 0, 100)
 ```mermaid
 flowchart TD
     L["<b>A listing</b><br/>€225,000 · 120 m² · Patraix"] --> P["Its price per m²<br/><b>€1,875</b>"]
-    P --> Q1{"Does its own barrio hold<br/>≥ 8 comparable flats?<br/><i>same operation, same property type</i>"}
+    P --> Q{"Does its district hold<br/>≥ 8 comparable flats?<br/><i>same operation, same property type</i>"}
 
-    Q1 -->|"yes — 9 found"| B["Benchmark: <b>Patraix</b><br/>median €2,865/m²<br/><code>benchmark_level = neighbourhood</code>"]
-    Q1 -->|no| Q2{"Does its district?"}
-    Q2 -->|yes| D["Benchmark: <b>the district</b><br/><code>benchmark_level = district</code>"]
-    Q2 -->|no| C["Benchmark: <b>the whole city</b><br/><code>benchmark_level = city</code>"]
+    Q -->|"yes — 19 in Patraix district"| D["Parent: <b>the district</b><br/>median €3,000/m²"]
+    Q -->|no| C["Parent: <b>the whole city</b>"]
     C -.->|"only if even the city holds &lt; 8"| W["⚠ <b>low_confidence_flag</b>"]
 
-    B --> S["<b>34.6% below its benchmark</b><br/>z-score → <b>80 / 100</b> · great deal"]
-    D --> S
-    C --> S
+    D --> B["The barrio pulls it its way<br/>9 listings, median €2,865/m²<br/>weight = 9 / (9 + k) = <b>61%</b><br/><i>k = 5.7, measured on this build</i>"]
+    C --> B
 
-    S --> U["Shown with the grain it was scored at,<br/>and the number of comparables behind it —<br/><i>always, on every screen</i>"]
+    B --> S["Benchmark <b>€2,918/m²</b> → 35.7% below<br/>z-score → <b>74 / 100</b> · good deal<br/><code>benchmark_level = neighbourhood</code>"]
+
+    S --> U["Shown with the area that carried it,<br/>and the number of comparables behind it —<br/><i>always, on every screen</i>"]
 ```
 
-The last box is the point. A score of 80 measured against 9 flats in the same barrio and a score of
-80 measured against the whole city are not the same claim, so the app never shows one without the
+The last box is the point. A score measured against 9 flats in the same barrio and a score
+measured against the whole city are not the same claim, so the app never shows one without the
 other. That rule comes from [ADR-0004](docs/adr/0004-hierarchical-benchmark-grain.md) and it is the
 reason `benchmark_level` is a column in the gold contract rather than an implementation detail.
 
-**Hierarchical benchmark.** Spanish listings are sparse at the neighbourhood level, so comparing a
-flat only against its own barrio would mean comparing it against itself (z-score 0 → a meaningless
-"fair" 50). Instead the score picks the **finest grain with enough comparables**: neighbourhood →
-district → **city**, controlled by `min_comps_for_benchmark` (default 8). Each row records which grain
-scored it (`benchmark_level`), and the app shows it ("scored vs city"). Only rows that fall back to a
-thin city grain are flagged `low_confidence` and **surfaced with a warning rather than dropped**.
+**A barrio is trusted as far as its data earns** ([ADR-0011](docs/adr/0011-empirical-bayes-barrio-benchmark.md)).
+The score starts from the district — or the whole city, when the district has fewer than
+`min_comps_for_benchmark` (8) comparables — and the barrio pulls that median towards its own by an
+**empirical-Bayes weight**, n / (n + k). k is estimated in SQL on every build as the within-barrio
+variance over the between-barrio variance within districts. It replaced a hard switch (8 listings
+and the barrio counted in full, 7 and not at all) after measuring it: for València sales k ≈ 6, so a
+barrio of 8 deserves ~57% weight, not 100%; for rents, barrios of one district did not differ beyond
+noise, so rents are scored against their district. Only rows whose parent is a thin city grain are
+flagged `low_confidence` and **surfaced with a warning rather than dropped**.
 
 **Implausible and stale listings are set aside, visibly.** Before anything is scored,
 `int_listings_screened` checks each listing's €/m² against its city: under a quarter of the median, or
@@ -318,13 +320,14 @@ and the alternatives I rejected and why.
 | [0001](docs/adr/0001-search-card-scraping.md) | Scrape **search cards**, not detail pages | ~30 listings per 25-credit request instead of one — but **no per-listing coordinates**, so the map plots barrio centroids |
 | [0002](docs/adr/0002-warehouse-motherduck-medallion.md) | MotherDuck (DuckDB) warehouse with a dbt medallion | Free and zero-ops at this scale; free-tier limits are a real ceiling |
 | [0003](docs/adr/0003-idempotent-upserts.md) | Idempotent upserts keyed on `(source_name, source_id)` | Retry-safe, but a re-scrape overwrites the prior observation — history has to live in silver |
-| [0004](docs/adr/0004-hierarchical-benchmark-grain.md) | Hierarchical benchmark grain: neighbourhood → district → city, `min_comps_for_benchmark = 8` | Grain is **per row**, so `benchmark_level` is a visible gold column the app must always show — a score without its grain isn't interpretable |
+| [0004](docs/adr/0004-hierarchical-benchmark-grain.md) | Hierarchical benchmark grain: neighbourhood → district → city, `min_comps_for_benchmark = 8` (the barrio step refined by 0011) | Grain is **per row**, so `benchmark_level` is a visible gold column the app must always show — a score without its grain isn't interpretable |
 | [0005](docs/adr/0005-show-low-confidence-rows.md) | Show low-confidence rows, flagged, rather than dropping them | Some visible scores are genuinely weak; disclosure becomes a presentation responsibility |
 | [0006](docs/adr/0006-zero-dispersion-neutral-zscore.md) | Zero dispersion → **neutral z-score (0)**, not a ±3 snap | A one-comparable benchmark would otherwise fabricate a `great_deal`; the cost is that a score of 50 is ambiguous without its comparable count |
 | [0007](docs/adr/0007-repair-location-in-silver-not-extraction.md) | Repair scraped locations **in silver**, with the seed outranking the pattern | Makes every parser fix retroactive and stops streets becoming benchmarks; the cost is that the seed is now load-bearing while covering only five cities |
 | [0008](docs/adr/0008-district-income-as-the-missing-denominator.md) | Ground prices in **district income** from INE's ADRH, via bulk CSV | Answers *is this area cheap?* rather than only *is this cheap for the area?*; the cost is a ~2-year lag and València-only district coverage |
 | [0009](docs/adr/0009-screen-implausible-and-stale-listings.md) | **Set aside** listings whose €/m² is under ¼ or over 4× their city, or unseen for 60 days, and list them on How it works | A real outlier beyond 4× is set aside with the typos; it is shown, not lost |
 | [0010](docs/adr/0010-scrape-newest-first.md) | Scrape search pages **newest first** | Each week's credits buy new listings instead of re-reading the same ones; a listing is rarely seen twice, so days-on-market signals are rarer |
+| [0011](docs/adr/0011-empirical-bayes-barrio-benchmark.md) | **Empirical-Bayes** barrio weight, n / (n + k), with k estimated on every build | Fewer extreme scores, and rents scored against their district, because that is what the data supports |
 
 ---
 
@@ -386,8 +389,8 @@ benchmarks, which is the only grain the score is actually worth reading at.
 - [x] **Prefect** flow orchestrating `extract → dbt build`, with task-level retries
 - [x] **GitHub Actions** CI: lint + `pytest` + `dbt build` on every PR; weekly scheduled pipeline run
 - [x] `pytest` unit tests for the `_parse_location()` heuristic, orchestration flow, and mortgage math
-- [x] **Hierarchical opportunity score** (neighbourhood → district → city fallback) so the score is
-      meaningful even where a barrio is sparse
+- [x] **Hierarchical opportunity score** (district → city parent, barrio weighted in by
+      empirical Bayes) so the score is meaningful even where a barrio is sparse
 - [x] **Offline geocoding** of Valencia barrios (seed of canonical names + centroids) → the map works
 - [x] **Barrio map** of València on the Overview, from the city's official outlines
       (`scripts/fetch_barrio_shapes.py`, committed so the app never depends on the Geoportal)
@@ -406,17 +409,16 @@ benchmarks, which is the only grain the score is actually worth reading at.
       provenance (benchmark grain + comparable count shown wherever a score is), a How it works
       page, and `dbt source freshness` gating CI per source table
 - [ ] Ingest **Fotocasa** (`raw.fotocasa_listings`) — staging + union are ready, only the source feed is missing
-- [ ] Barrio centroids for Zaragoza / Valladolid / Bilbao
 
 ## Known limitations
 
-1. **Depth is uneven.** In València, scraped every week, 61% of listings are scored against their
-   own barrio and 12% fall back to the whole city. In the seven cities that hold one older snapshot
-   it is the other way round: 78% are scored against the city. Barrios flip to local benchmarks as
-   they accumulate ≥ 8 comparables; the fix is sustained scraping, not a lower threshold.
+1. **One city.** València is scraped every week. Seven other cities were scraped once, in June
+   2026; that snapshot stays in the warehouse history but ages out of scoring
+   ([ADR-0009](docs/adr/0009-screen-implausible-and-stale-listings.md)). Within València, about 73% of
+   sale listings are scored mostly on their own barrio; the rest lean on their district or the city.
 2. **Geocoding is barrio-centroid level** (Valencia, Madrid, Barcelona, Sevilla, Málaga) — listings
    plot at their neighbourhood's centroid, not their exact address (search-card scraping doesn't
-   expose per-listing coordinates). Zaragoza/Valladolid/Bilbao have no centroids yet.
+   expose per-listing coordinates).
 3. **Fotocasa** scraper and staging exist but `raw.fotocasa_listings` isn't fed yet.
 4. **Behavioural signals** (`int_listing_lifecycle`: days-on-market, price cuts) need several
    accumulated snapshots to be meaningful. The models are correct from

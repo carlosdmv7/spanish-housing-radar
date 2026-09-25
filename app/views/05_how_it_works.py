@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from chrome import page_header
-from components.charts import bar_benchmark_grain
+from components.charts import bar_benchmark_grain, line_barrio_weight
 from config import (
     DBT_DOCS_URL,
     DEAL_TIER_COLORS,
@@ -22,12 +22,13 @@ from config import (
     SOURCES_CONSULTED_ON,
 )
 from connection import query
-from freshness import get_benchmark_grain_counts, get_snapshot_coverage
+from freshness import get_benchmark_grain_counts, get_shrinkage_k, get_snapshot_coverage
 import pandas as pd
 import streamlit as st
 from theme import BORDER, INK, INK_MUTED, SURFACE_2, TEAL_700, altair_chart
 
 MIN_COMPS = 8  # transform/dbt_project.yml → vars.min_comps_for_benchmark
+MIN_BARRIO = 3  # transform/dbt_project.yml → vars.min_listings_for_barrio_weight
 
 page_header(
     "How it works",
@@ -78,17 +79,14 @@ digraph {{
   rankdir=TB; bgcolor="transparent"; nodesep=0.3; ranksep=0.3;
   {_NODE}; {_EDGE};
   flat [label="A listing's price per m²"];
-  q1 [label="Its barrio has {MIN_COMPS}+\\ncomparable flats?"];
-  q2 [label="Its district has {MIN_COMPS}+?"];
-  b [label="Compare with the barrio", {_KEY}];
-  d [label="Compare with the district"];
-  c [label="Compare with the city"];
+  q [label="Its district has {MIN_COMPS}+\\ncomparable flats?"];
+  d [label="Start from the district"];
+  c [label="Start from the city"];
+  b [label="Its barrio pulls that median its way,\\nby how many flats back it", {_KEY}];
   s [label="Score 0–100\\n50 = the typical price"];
-  flat -> q1; q1 -> b [label=" yes"]; q1 -> q2 [label=" no"];
-  q2 -> d [label=" yes"]; q2 -> c [label=" no"];
-  {{b d c}} -> s;
-  // A staircase: each "yes" stops beside its question, each "no" steps down.
-  {{rank=same; b; q2}} {{rank=same; d; c}}
+  flat -> q; q -> d [label=" yes"]; q -> c [label=" no"];
+  {{d c}} -> b -> s;
+  {{rank=same; d; c}}
 }}
 """, width="content")
 with rules:
@@ -103,11 +101,39 @@ with rules:
     ))
     st.caption("Same operation and property type only. Dividing by the spread makes "
                "10% under in a tight barrio count for more than 10% under in a mixed "
-               "one. Every score is shown with the grain that produced it.")
+               "one. Every score is shown with the area that carried it.")
     grain = get_benchmark_grain_counts()
     if not grain.empty:
         st.markdown("**What each listing was compared with, right now**")
         altair_chart(bar_benchmark_grain(grain))
+
+# How far a barrio is trusted — measured, not chosen. Drawn once the warehouse
+# carries the estimate (ADR-0011).
+ks = get_shrinkage_k().set_index("operation_type")["k"]
+sale_k = ks.get("sale")
+if sale_k is not None and pd.notna(sale_k):
+    curve, words = st.columns([3, 2], gap="large")
+    with curve:
+        st.markdown("**How much a barrio's own median counts**")
+        altair_chart(line_barrio_weight(float(sale_k)))
+    with words:
+        rent_k = ks.get("rent")
+        rent_line = (
+            "For rents the data shows no difference between the barrios of one "
+            "district beyond noise, so rents are scored against their district."
+            if rent_k is None or pd.isna(rent_k) else
+            f"For rents, k is {rent_k:.1f}."
+        )
+        st.markdown(
+            f"The weight is n / (n + k). k is measured from the listings on every "
+            f"build: how much flats vary inside a barrio, against how much barrios "
+            f"of one district differ. For flats for sale it is **{sale_k:.1f}**, so "
+            f"a barrio needs about {sale_k:.0f} listings before its own median "
+            f"counts for half. {rent_line}"
+        )
+        st.caption(f"A barrio needs {MIN_BARRIO}+ listings for any weight at all. "
+                   "A fixed cut-off — 8 listings and the barrio counts in full, 7 and "
+                   "not at all — trusted small barrios far too much.")
 
 st.divider()
 
@@ -134,10 +160,11 @@ barrio_share = (float(grain.loc[grain["benchmark_level"] == "neighbourhood", "sh
                 if not grain.empty else None)
 
 q1, q2, q3, q4 = st.columns(4)
-q1.metric("Scored against their own barrio",
+q1.metric("Scored mostly on their own barrio",
           f"{barrio_share:.0%}" if barrio_share is not None else "—",
-          help="The strongest comparison. It rises with scraping depth, not with a "
-               f"lower bar than {MIN_COMPS} comparables.")
+          help="The barrio's own median carries at least half of the benchmark. It "
+               "rises with scraping depth; rents stay at their district while the "
+               "data shows no barrio effect within one.")
 q2.metric("Listings seen more than once",
           f"{coverage['repeat_share']:.0%}" if coverage else "—",
           help="Days on market and price cuts need a listing observed twice or more. "
@@ -236,8 +263,9 @@ l1.markdown(
 l2.markdown(
     "- **No exact addresses.** Search cards are ~30× cheaper to scrape than detail "
     "pages, so map dots sit at their barrio's centre.\n"
-    "- **Depth in one city.** València is scraped every week; the other cities hold "
-    "one older snapshot, too thin for barrio benchmarks."
+    "- **One city.** València is scraped every week. Seven other cities were "
+    "scraped once, in June 2026; that snapshot stays in the warehouse's history "
+    "but is too old to score as today's market."
 )
 st.caption(
     f"Decisions behind all of this are written down as [ADRs]({REPO_URL}/tree/main/docs/adr)."
