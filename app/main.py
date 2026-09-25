@@ -21,10 +21,15 @@ sys.path.insert(0, str(Path(__file__).parent))
 # Before anything imports a helper module: a Cloud redeploy pulls new code into
 # the running server, and without this the pages run new code against the old
 # helpers still cached in sys.modules. See app/hot_reload.py.
-from hot_reload import drop_stale
+import importlib
+
+import hot_reload
 import streamlit as st
 
-drop_stale(Path(__file__).parent)
+# The reloader is itself an app module a deploy can change, and a stale one
+# cannot be trusted to notice. Reloading it costs microseconds.
+importlib.reload(hot_reload)
+hot_reload.drop_stale(Path(__file__).parent)
 
 from config import PAGE_ICON, PAGE_TITLE, REPO_URL  # noqa: E402
 from theme import render_footer  # noqa: E402

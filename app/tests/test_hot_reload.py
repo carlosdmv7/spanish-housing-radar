@@ -1,12 +1,18 @@
 """
-The live-app ImportError, reproduced: a new page importing a name that the
-cached, pre-deploy `components.charts` does not have.
+Two live-app failures after a Cloud redeploy, reproduced.
+
+1. An ImportError: a new page importing a name the cached, pre-deploy
+   `components.charts` does not have.
+2. An UnserializableReturnValueError: `chrome.py` unchanged and kept, still
+   calling the function of a dropped `freshness`, which built a `StripItem`
+   from a dropped `theme` that `st.cache_data` could no longer pickle.
 """
 from __future__ import annotations
 
 import importlib
 import os
 from pathlib import Path
+import pickle
 import sys
 import types
 
@@ -21,16 +27,18 @@ CHARTS = APP_DIR / "components" / "charts.py"
 
 @pytest.fixture
 def clean_state():
-    saved = sys.modules.get("components.charts")
+    # drop_stale now removes every app module, so put every one of them back —
+    # and remove any the test added. A module swapped under the other test
+    # files is this bug, reproduced in every test that runs after.
+    saved = dict(hot_reload._app_modules(APP_DIR))
+    saved = {name: sys.modules[name] for name in saved}
     had_state = hasattr(sys, hot_reload._STATE_ATTR)
     old_state = getattr(sys, hot_reload._STATE_ATTR, None)
     yield
-    # Always put back what was there, including "nothing": a fake left behind
-    # is this bug, reproduced in every test that runs after.
-    if saved is not None:
-        sys.modules["components.charts"] = saved
-    else:
-        sys.modules.pop("components.charts", None)
+    for name in hot_reload._app_modules(APP_DIR):
+        if name not in saved:
+            sys.modules.pop(name, None)
+    sys.modules.update(saved)
     if had_state:
         setattr(sys, hot_reload._STATE_ATTR, old_state)
     elif hasattr(sys, hot_reload._STATE_ATTR):
@@ -78,6 +86,40 @@ def test_a_later_deploy_is_picked_up_by_mtime():
         from components.charts import dot_barrio_range  # noqa: F401
     finally:
         os.utime(CHARTS, (stat.st_atime, stat.st_mtime))
+
+
+@pytest.mark.usefixtures("clean_state")
+def test_an_unchanged_module_is_dropped_with_the_changed_one():
+    importlib.import_module("theme")
+    hot_reload.drop_stale(APP_DIR)
+    importlib.import_module("theme")
+    importlib.import_module("chrome")
+    importlib.import_module("freshness")
+    old_item = sys.modules["freshness"].StripItem("label", "value")
+
+    theme_py = APP_DIR / "theme.py"
+    stat = theme_py.stat()
+    os.utime(theme_py, (stat.st_atime, stat.st_mtime + 5))   # only theme changed
+    try:
+        dropped = hot_reload.drop_stale(APP_DIR)
+    finally:
+        os.utime(theme_py, (stat.st_atime, stat.st_mtime))
+
+    # chrome did not change, but it held freshness, which held the old theme.
+    assert {"theme", "freshness", "chrome"} <= set(dropped)
+    # What broke the live app: an old instance no longer pickles once theme
+    # is re-imported. Everything re-imported together pickles again.
+    importlib.import_module("theme")
+    with pytest.raises(pickle.PicklingError):
+        pickle.dumps(old_item)
+    fresh = importlib.import_module("freshness")
+    pickle.dumps(fresh.StripItem("label", "value"))
+
+
+@pytest.mark.usefixtures("clean_state")
+def test_the_reloader_does_not_drop_itself():
+    hot_reload.drop_stale(APP_DIR)
+    assert "hot_reload" in sys.modules
 
 
 @pytest.mark.usefixtures("clean_state")
