@@ -199,10 +199,10 @@ flowchart TD
     Q -->|no| C["Parent: <b>the whole city</b>"]
     C -.->|"only if even the city holds &lt; 8"| W["⚠ <b>low_confidence_flag</b>"]
 
-    D --> B["The barrio pulls it its way<br/>9 listings, median €2,865/m²<br/>weight = 9 / (9 + k) = <b>61%</b><br/><i>k = 5.7, measured on this build</i>"]
+    D --> B["The barrio pulls it its way<br/>9 listings, median €2,865/m²<br/>weight = 9 / (9 + k) = <b>60%</b><br/><i>k = 5.9, measured on this build</i>"]
     C --> B
 
-    B --> S["Benchmark <b>€2,918/m²</b> → 35.7% below<br/>z-score → <b>74 / 100</b> · good deal<br/><code>benchmark_level = neighbourhood</code>"]
+    B --> S["Benchmark <b>€2,918/m²</b> → 35.8% below<br/>z-score → <b>74 / 100</b> · good deal<br/><code>benchmark_level = neighbourhood</code>"]
 
     S --> U["Shown with the area that carried it,<br/>and the number of comparables behind it —<br/><i>always, on every screen</i>"]
 ```
