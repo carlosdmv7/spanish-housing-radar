@@ -30,6 +30,13 @@ vars:
   # about a quarter in arrears, so ~160 days back is normal just before a
   # release; this clears that without clearing a feed that has actually stopped.
   max_ine_period_lag_days: 200
+  # int_listings_screened sets a listing aside when its €/m² is under a quarter
+  # of, or over four times, the median of its city and operation — a typo in the
+  # price or the size, not a flat (ADR-0009).
+  max_ppsqm_ratio_to_city: 4
+  # ...and when the scraper has not seen it for this many days before the city's
+  # latest scrape: most likely sold or withdrawn.
+  max_listing_age_days: 60
 
 seeds:
   spanish_housing_radar:

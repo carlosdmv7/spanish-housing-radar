@@ -24,6 +24,7 @@ exposures:
       - ref('rpt_district_affordability') # Value check: income denominators
       - ref('int_neighborhood_stats')     # Neighbourhoods: €/m² benchmarks
       - ref('int_listings_current')       # freshness strip, city filters
+      - ref('int_listings_screened')      # How it works: listings set aside
       - ref('ccaa_by_municipality')       # seed bridging municipality → CCAA
     owner:
       name: Carlos DMV

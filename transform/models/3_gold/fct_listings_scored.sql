@@ -14,7 +14,7 @@
 {% set min_comps = var('min_comps_for_benchmark', 8) %}
 
 with listings as (
-    select * from {{ ref('int_listings_current') }}
+    select * from {{ ref('int_listings_valid') }}
 ),
 
 -- ── Benchmark grains ──────────────────────────────────────────────────────────

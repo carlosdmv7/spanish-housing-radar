@@ -63,6 +63,29 @@ models:
           - accepted_values:
               values: [apartment, house, other]
 
+  - name: int_listings_screened
+    description: >
+      Every current listing with a verdict: `dq_issue` is null when the listing
+      may be benchmarked and scored, otherwise why not. Grain: one row per
+      listing_pk. Kept whole so the app can show what was set aside (ADR-0009).
+    columns:
+      - name: listing_pk
+        tests: [unique, not_null]
+      - name: dq_issue
+        tests:
+          - accepted_values:
+              values: [implausible_price_per_sqm, not_seen_recently]
+      - name: ppsqm_to_city_ratio
+        description: The listing's €/m² over the median of its city and operation.
+
+  - name: int_listings_valid
+    description: >
+      The current listings that passed int_listings_screened. Every benchmark,
+      score and area statistic reads from here. Grain: one row per listing_pk.
+    columns:
+      - name: listing_pk
+        tests: [unique, not_null]
+
   - name: int_listings_history
     description: >
       All valid snapshots per listing across time.

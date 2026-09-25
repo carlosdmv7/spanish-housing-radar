@@ -21,5 +21,5 @@ select
         (order by price_per_sqm), 2)                            as p75_ppsqm,
     round(median(size_sqm), 1)                                  as median_size_sqm,
     current_timestamp                                           as _refreshed_at
-from {{ ref('int_listings_current') }}
+from {{ ref('int_listings_valid') }}
 group by municipality, neighborhood, operation_type, property_type
