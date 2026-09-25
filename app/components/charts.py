@@ -403,30 +403,36 @@ def bar_amortisation(schedule: list[dict]) -> alt.Chart:
     )
 
 
-def bar_benchmark_grain(counts: pd.DataFrame) -> alt.Chart:
+def bar_benchmark_grain(counts: pd.DataFrame) -> alt.LayerChart:
     """
-    Share of listings scored at each benchmark grain. The headline data-quality
-    chart: a tall city bar means most scores rest on a coarse comparison.
+    How many listings were scored against each grain, with the share printed on
+    the bar — three bars, no axis to read.
+
+    Was a full-width chart with a 0–600 axis ticked every 20 and no title: the
+    one number a reader wants from it, the share of barrio-grain scores, had to
+    be estimated from bar lengths.
     """
-    order = ["neighbourhood", "district", "city"]
-    return (
-        alt.Chart(counts)
-        .mark_bar()
-        .encode(
-            x=alt.X("listings:Q", title="Listings"),
-            y=alt.Y("benchmark_level:N", title=None, sort=order),
-            color=alt.Color(
-                "benchmark_level:N", legend=None,
-                scale=alt.Scale(domain=order, range=[TEAL_700, "#7FB3A4", BORDER]),
-            ),
-            tooltip=[
-                alt.Tooltip("benchmark_level:N", title="Scored against"),
-                alt.Tooltip("listings:Q", title="Listings", format=","),
-                alt.Tooltip("share:Q", title="Share", format=".1%"),
-            ],
-        )
-        .properties(height=180)
+    names = {"neighbourhood": "Own barrio", "district": "District", "city": "Whole city"}
+    d = counts.assign(
+        grain=counts["benchmark_level"].map(names),
+        label=[f"{s:.0%} · {n:,}" for s, n in zip(counts["share"], counts["listings"],
+                                                  strict=True)],
     )
+    order = list(names.values())
+    base = alt.Chart(d).encode(
+        y=alt.Y("grain:N", title=None, sort=order),
+        x=alt.X("listings:Q", axis=None,
+                scale=alt.Scale(domain=[0, d["listings"].max() * 1.35])),
+    )
+    bars = base.mark_bar(cornerRadiusEnd=3, height=18).encode(
+        color=alt.Color("grain:N", legend=None,
+                        scale=alt.Scale(domain=order, range=[TEAL_700, "#7FB3A4", BORDER])),
+        tooltip=[alt.Tooltip("grain:N", title="Scored against"),
+                 alt.Tooltip("listings:Q", title="Listings", format=","),
+                 alt.Tooltip("share:Q", title="Share", format=".1%")],
+    )
+    labels = base.mark_text(align="left", dx=6, color=INK, fontSize=12).encode(text="label:N")
+    return (bars + labels).properties(height=108)
 
 
 def bar_signing_day(items: pd.DataFrame) -> alt.LayerChart:

@@ -83,8 +83,10 @@ digraph {{
   flat -> q1; q1 -> b [label=" yes"]; q1 -> q2 [label=" no"];
   q2 -> d [label=" yes"]; q2 -> c [label=" no"];
   {{b d c}} -> s;
+  // A staircase: each "yes" stops beside its question, each "no" steps down.
+  {{rank=same; b; q2}} {{rank=same; d; c}}
 }}
-""", width="stretch")
+""", width="content")
 with rules:
     st.latex(r"z = \frac{\text{€/m}^2 - \text{median}}{\text{spread}}"
              r"\qquad \text{score} = 50 - \tfrac{50}{3}\,\text{clamp}(z,\,-3,\,3)")
@@ -98,10 +100,10 @@ with rules:
     st.caption("Same operation and property type only. Dividing by the spread makes "
                "10% under in a tight barrio count for more than 10% under in a mixed "
                "one. Every score is shown with the grain that produced it.")
-
-grain = get_benchmark_grain_counts()
-if not grain.empty:
-    altair_chart(bar_benchmark_grain(grain))
+    grain = get_benchmark_grain_counts()
+    if not grain.empty:
+        st.markdown("**What each listing was compared with, right now**")
+        altair_chart(bar_benchmark_grain(grain))
 
 st.divider()
 
