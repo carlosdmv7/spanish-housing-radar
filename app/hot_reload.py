@@ -32,12 +32,30 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+import time
 
 # Kept on `sys`, which outlives every script run, because this module's own
 # globals are dropped along with everything else.
 # Versioned: a new name makes the first run of new logic count as a first run,
 # so it drops everything even if an older version already recorded mtimes.
 _STATE_ATTR = "_housing_radar_module_mtimes_v2"
+_STARTED = "__started__"
+
+
+def _changed(seen: dict[str, float], name: str, mtime: float | None) -> bool:
+    """
+    Whether a module's file moved on since this process loaded it.
+
+    A module first imported *after* a drop has no recorded mtime until the next
+    run looks at it; a pull landing in that gap used to become the baseline and
+    go unnoticed. For such a module the process start is the baseline instead:
+    a file written after the server's first run cannot be the one it loaded.
+    """
+    if mtime is None:
+        return True
+    if name in seen:
+        return seen[name] != mtime
+    return mtime > seen.get(_STARTED, float("inf"))
 
 
 def _app_modules(app_dir: Path) -> dict[str, Path]:
@@ -56,7 +74,7 @@ def _app_modules(app_dir: Path) -> dict[str, Path]:
 def drop_stale(app_dir: Path) -> list[str]:
     """If any app module is stale, drop them all; return the names removed."""
     first_run = not hasattr(sys, _STATE_ATTR)
-    seen: dict[str, float] = getattr(sys, _STATE_ATTR, {})
+    seen: dict[str, float] = getattr(sys, _STATE_ATTR, {_STARTED: time.time()})
     modules = _app_modules(app_dir)
     mtimes = {}
     for name, path in modules.items():
@@ -64,8 +82,7 @@ def drop_stale(app_dir: Path) -> list[str]:
             mtimes[name] = path.stat().st_mtime
         except OSError:
             mtimes[name] = None  # deleted by the pull: stale by definition
-    stale = first_run or any(seen.get(name, mtime) != mtime
-                             for name, mtime in mtimes.items())
+    stale = first_run or any(_changed(seen, name, mtime) for name, mtime in mtimes.items())
     dropped = []
     if stale:
         for name in modules:

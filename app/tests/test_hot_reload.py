@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import pickle
 import sys
+import time
 import types
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -114,6 +115,24 @@ def test_an_unchanged_module_is_dropped_with_the_changed_one():
         pickle.dumps(old_item)
     fresh = importlib.import_module("freshness")
     pickle.dumps(fresh.StripItem("label", "value"))
+
+
+@pytest.mark.usefixtures("clean_state")
+def test_a_pull_before_the_second_run_is_still_seen():
+    # First run: drop, and only the modules imported so far get an mtime.
+    if hasattr(sys, hot_reload._STATE_ATTR):
+        delattr(sys, hot_reload._STATE_ATTR)
+    sys.modules.pop("theme", None)
+    hot_reload.drop_stale(APP_DIR)
+    importlib.import_module("theme")        # imported after the drop: no baseline
+
+    theme_py = APP_DIR / "theme.py"
+    stat = theme_py.stat()
+    os.utime(theme_py, (stat.st_atime, time.time() + 5))   # the pull lands now
+    try:
+        assert "theme" in hot_reload.drop_stale(APP_DIR)
+    finally:
+        os.utime(theme_py, (stat.st_atime, stat.st_mtime))
 
 
 @pytest.mark.usefixtures("clean_state")
