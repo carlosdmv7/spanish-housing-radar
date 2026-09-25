@@ -18,9 +18,16 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config import PAGE_ICON, PAGE_TITLE
+# Before anything imports a helper module: a Cloud redeploy pulls new code into
+# the running server, and without this the pages run new code against the old
+# helpers still cached in sys.modules. See app/hot_reload.py.
+from hot_reload import drop_stale
 import streamlit as st
-from theme import render_footer
+
+drop_stale(Path(__file__).parent)
+
+from config import PAGE_ICON, PAGE_TITLE  # noqa: E402
+from theme import render_footer  # noqa: E402
 
 st.set_page_config(
     page_title=PAGE_TITLE,
