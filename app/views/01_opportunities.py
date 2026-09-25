@@ -215,7 +215,7 @@ with tab_rank:
                                           float(pick["neighborhood_median_ppsqm"]),
                                           bench_label))
         st.caption(f"€/m² · compared with {int(pick['benchmark_comp_count'] or 0)} "
-                   "comparable flats.")
+                   f"comparable flats · last seen {pd.Timestamp(pick['scraped_date']):%-d %b}.")
 
         note = confidence_note(pick.to_dict())
         if note:

@@ -26,7 +26,7 @@ import streamlit as st
 
 drop_stale(Path(__file__).parent)
 
-from config import PAGE_ICON, PAGE_TITLE  # noqa: E402
+from config import PAGE_ICON, PAGE_TITLE, REPO_URL  # noqa: E402
 from theme import render_footer  # noqa: E402
 
 st.set_page_config(
@@ -61,4 +61,4 @@ PAGES = [
 
 nav = st.navigation(PAGES, position="top")
 nav.run()
-render_footer()
+render_footer(repo_url=REPO_URL)

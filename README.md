@@ -54,7 +54,7 @@ one click further down.
 
 | Page | Question | What you get |
 |---|---|---|
-| **Overview** | What's on the market right now? | The headline numbers, what a m² costs barrio by barrio, and today's best deals. |
+| **Overview** | What's on the market right now? | The headline numbers, a map of what a m² costs barrio by barrio, and today's best deals. |
 | **Deals** | Which flats are cheap for their area? | Every listing scored 0–100, its verdict in colour, ranked and on a map. Pick one to see the arithmetic behind its score. |
 | **Neighbourhoods** | What does a m² cost, barrio by barrio? | Each barrio's median and the spread around it, next to the official INE index of what homes actually sold for. |
 | **Value check** | Is the area itself overpriced? | Price against what flats there rent for, and against what the people who live there earn. |
@@ -220,6 +220,14 @@ district → **city**, controlled by `min_comps_for_benchmark` (default 8). Each
 scored it (`benchmark_level`), and the app shows it ("scored vs city"). Only rows that fall back to a
 thin city grain are flagged `low_confidence` and **surfaced with a warning rather than dropped**.
 
+**Implausible and stale listings are set aside, visibly.** Before anything is scored,
+`int_listings_screened` checks each listing's €/m² against its city: under a quarter of the median, or
+over four times it, is a typo in the price or the size, not a flat. A 707 m² one-bedroom rent in
+Russafa at €1.84/m² was once València's top "great deal". Listings unseen for 60 days before the
+city's latest scrape are set aside too. Benchmarks and scores read `int_listings_valid`, and How it
+works lists what was removed and why ([ADR-0009](docs/adr/0009-screen-implausible-and-stale-listings.md)).
+A warn-level test fires if more than 3% of a city's listings trip the check, which would mean the parser broke.
+
 ---
 
 ## dbt models (lineage)
@@ -228,6 +236,7 @@ thin city grain are flagged `low_confidence` and **surfaced with a warning rathe
 1_bronze   stg_idealista__listings · stg_fotocasa__listings        (sources + light typing)
            stg_ine__hpi · stg_ine__income                          (the two official feeds)
 2_silver   int_listings_unioned → int_listings_current             (latest snapshot per listing)
+                                 → int_listings_screened → _valid   (implausible / stale set aside)
                                  → int_listings_history             (every snapshot, kept)
            int_neighborhood_stats · dim_neighborhoods              (benchmarks + dimension)
            int_listing_lifecycle                                   (days-on-market, price cuts)
@@ -314,6 +323,7 @@ and the alternatives I rejected and why.
 | [0006](docs/adr/0006-zero-dispersion-neutral-zscore.md) | Zero dispersion → **neutral z-score (0)**, not a ±3 snap | A one-comparable benchmark would otherwise fabricate a `great_deal`; the cost is that a score of 50 is ambiguous without its comparable count |
 | [0007](docs/adr/0007-repair-location-in-silver-not-extraction.md) | Repair scraped locations **in silver**, with the seed outranking the pattern | Makes every parser fix retroactive and stops streets becoming benchmarks; the cost is that the seed is now load-bearing while covering only five cities |
 | [0008](docs/adr/0008-district-income-as-the-missing-denominator.md) | Ground prices in **district income** from INE's ADRH, via bulk CSV | Answers *is this area cheap?* rather than only *is this cheap for the area?*; the cost is a ~2-year lag and València-only district coverage |
+| [0009](docs/adr/0009-screen-implausible-and-stale-listings.md) | **Set aside** listings whose €/m² is under ¼ or over 4× their city, or unseen for 60 days, and list them on How it works | A real outlier beyond 4× is set aside with the typos; it is shown, not lost |
 
 ---
 
@@ -378,6 +388,8 @@ benchmarks, which is the only grain the score is actually worth reading at.
 - [x] **Hierarchical opportunity score** (neighbourhood → district → city fallback) so the score is
       meaningful even where a barrio is sparse
 - [x] **Offline geocoding** of Valencia barrios (seed of canonical names + centroids) → the map works
+- [x] **Barrio map** of València on the Overview, from the city's official outlines
+      (`scripts/fetch_barrio_shapes.py`, committed so the app never depends on the Geoportal)
 - [x] `int_listings_unioned` as the multi-source spine with cross-source dedup wired in
 - [x] **Dockerised** pipeline (`make docker-build && make docker-run`) — image build verified in CI
 - [x] **`dbt docs` on GitHub Pages** — lineage graph, column docs and tests, auto-published on merge

@@ -9,10 +9,25 @@ affordability, principal vs interest) and never for decoration.
 """
 from __future__ import annotations
 
+import base64
+import json
+
 import altair as alt
 from config import DEAL_TIER_COLORS, DEAL_TIER_LABELS
 import pandas as pd
-from theme import BORDER, INK, INK_MUTED, PETROL_900, RUST_500, RUST_700, TEAL_700
+from theme import (
+    BORDER,
+    INK,
+    INK_MUTED,
+    PETROL_900,
+    RUST_500,
+    RUST_700,
+    SAND_100,
+    SURFACE,
+    SURFACE_2,
+    TEAL_500,
+    TEAL_700,
+)
 
 # Ordered tier axis, shared by the scatter and any other tier-coloured encoding,
 # so the legend reads best-deal-first and matches the map's colours.
@@ -93,41 +108,91 @@ def bar_flat_vs_area(ppsqm: float, bench: float, bench_label: str) -> alt.Chart:
     )
 
 
-def bar_barrio_ppsqm(df: pd.DataFrame, city_median: float) -> alt.LayerChart:
-    """
-    Median asking €/m² per barrio, cheapest to dearest, against the city median.
+# Five bands rather than a continuous ramp: "12% under" and "14% under" are the
+# same answer at a median of a dozen asking prices, and a band can be named in
+# the legend. The middle band is sand, not the page colour, so "at the city
+# median" can never be mistaken for "no data".
+_MAP_BANDS = [
+    ("15%+ under", TEAL_700),
+    ("5–15% under", TEAL_500),
+    ("Within 5%", SAND_100),
+    ("5–15% over", RUST_500),
+    ("15%+ over", RUST_700),
+]
+_MAP_NO_DATA = "Too few listings"
 
-    Only barrios the caller has already filtered to a reliable sample should reach
-    this. Bars run from the city median rather than from zero because the story
-    is the gap — "this barrio asks 30% under the city" — and a bar from zero makes
-    €3,100 and €3,700 look nearly the same.
-    """
-    d = df.copy()
-    d["area"] = d["neighborhood"].str.title()
-    d["city_median"] = city_median
-    d["side"] = (d["median_ppsqm"] >= city_median).map({True: "above", False: "below"})
 
-    base = alt.Chart(d).encode(
-        y=alt.Y("area:N", title=None, sort=alt.EncodingSortField("median_ppsqm")),
+def _map_band(gap_pct: float) -> str:
+    for edge, (label, _) in zip([-15, -5, 5, 15], _MAP_BANDS, strict=False):
+        if gap_pct < edge:
+            return label
+    return _MAP_BANDS[-1][0]
+
+
+def _inline_url(payload: dict, prop: str) -> alt.UrlData:
+    """
+    Nested data as a `data:` URL instead of inline values.
+
+    `st.altair_chart` lifts every inline dataset out of the spec and ships it as
+    an Arrow table, which suits flat rows and destroys GeoJSON: the geometry
+    arrives as Arrow structs d3-geo cannot read, and the map rendered as a
+    legend over nothing. A URL is left alone, and Vega loads a `data:` URL
+    like any other.
+    """
+    raw = base64.b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode()
+    return alt.UrlData(url=f"data:application/json;base64,{raw}",
+                       format=alt.DataFormat(type="json", property=prop))
+
+
+def map_barrio_ppsqm(shapes: dict, df: pd.DataFrame, city_median: float,
+                     min_listings: int) -> alt.Chart:
+    """
+    The city's barrios, shaded by how far their median €/m² sits from the city's.
+
+    `shapes` is app/assets/valencia_barrios.geojson, keyed by the seed's barrio
+    names — the same names `df["neighborhood"]` carries. A barrio with fewer than
+    `min_listings` listings stays drawn, in the page's own well colour: leaving
+    it out would make the city look smaller, not the data thinner.
+    """
+    stats = df.set_index("neighborhood")
+    features = []
+    for f in shapes["features"]:
+        name = f["properties"]["name"]
+        row = stats.loc[name] if name in stats.index else None
+        solid = row is not None and row["listings"] >= min_listings
+        gap = (row["median_ppsqm"] / city_median - 1) * 100 if solid else None
+        features.append({**f, "properties": {
+            "area": name.title(),
+            "band": _map_band(gap) if solid else _MAP_NO_DATA,
+            "median": round(float(row["median_ppsqm"])) if solid else None,
+            "gap": f"{gap:+.0f}%" if solid else "—",
+            "listings": int(row["listings"]) if row is not None else 0,
+        }})
+
+    domain = [label for label, _ in _MAP_BANDS] + [_MAP_NO_DATA]
+    colours = [colour for _, colour in _MAP_BANDS] + [SURFACE_2]
+    return (
+        alt.Chart(_inline_url({"type": "FeatureCollection", "features": features},
+                              "features"))
+        .mark_geoshape(stroke=SURFACE, strokeWidth=1)
+        .encode(
+            color=alt.Color(
+                "properties.band:N", scale=alt.Scale(domain=domain, range=colours),
+                legend=alt.Legend(title=None, orient="bottom", direction="horizontal",
+                                  columns=3, symbolType="square", symbolStrokeColor=BORDER,
+                                  symbolStrokeWidth=1, symbolSize=140, labelFontSize=12,
+                                  labelLimit=160),
+            ),
+            tooltip=[
+                alt.Tooltip("properties.area:N", title="Barrio"),
+                alt.Tooltip("properties.median:Q", title="Median €/m²", format=",.0f"),
+                alt.Tooltip("properties.gap:N", title="vs city"),
+                alt.Tooltip("properties.listings:Q", title="Flats for sale"),
+            ],
+        )
+        .project("mercator")
+        .properties(height=540)
     )
-    bars = base.mark_bar(cornerRadiusEnd=3).encode(
-        x=alt.X("median_ppsqm:Q", title="Median asking €/m²",
-                scale=alt.Scale(zero=False), axis=alt.Axis(format=",.0f")),
-        x2="city_median:Q",
-        color=alt.Color(
-            "side:N", legend=None,
-            scale=alt.Scale(domain=["below", "above"], range=[TEAL_700, RUST_500]),
-        ),
-        tooltip=[
-            alt.Tooltip("area:N", title="Barrio"),
-            alt.Tooltip("median_ppsqm:Q", title="Median €/m²", format=",.0f"),
-            alt.Tooltip("listings:Q", title="Listings behind it"),
-        ],
-    )
-    rule = alt.Chart(pd.DataFrame({"x": [city_median]})).mark_rule(
-        stroke=INK_MUTED, strokeDash=[4, 3],
-    ).encode(x="x:Q")
-    return (bars + rule).properties(height=_row_height(len(d), per_row=22, minimum=260))
 
 
 def dot_barrio_range(df: pd.DataFrame, city_median: float, unit: str) -> alt.LayerChart:
