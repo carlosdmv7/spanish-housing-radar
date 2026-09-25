@@ -288,12 +288,17 @@ def render_header(
     st.markdown("")
 
 
-def render_footer() -> None:
-    """Closing chrome: attribution and the way back to the portfolio."""
+def render_footer(*, repo_url: str | None = None) -> None:
+    """
+    Closing chrome: who built it, and where to read the code.
+
+    The name is the link to the portfolio. A separate "← portfolio" after it,
+    as there once was, was the same link twice in one line; the byline above
+    the title keeps its arrow, because there the name is not a link.
+    """
     st.divider()
-    st.markdown(
-        ":small["
-        f"Built by [{AUTHOR_NAME}]({PORTFOLIO_URL}) · {_mark(AUTHOR_ROLE, INK_MUTED)} · "
-        f"[LinkedIn]({LINKEDIN_URL}) · [← portfolio]({PORTFOLIO_URL})"
-        "]"
-    )
+    parts = [f"Built by [{AUTHOR_NAME}]({PORTFOLIO_URL})", _mark(AUTHOR_ROLE, INK_MUTED),
+             f"[LinkedIn]({LINKEDIN_URL})"]
+    if repo_url:
+        parts.append(f"[Source]({repo_url})")
+    st.markdown(":small[" + " · ".join(parts) + "]")

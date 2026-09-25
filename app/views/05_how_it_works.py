@@ -14,7 +14,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from chrome import page_header
 from components.charts import bar_benchmark_grain
-from config import DEAL_TIER_COLORS, DEAL_TIER_LABELS, SOURCES_CONSULTED_ON
+from config import (
+    DBT_DOCS_URL,
+    DEAL_TIER_COLORS,
+    DEAL_TIER_LABELS,
+    REPO_URL,
+    SOURCES_CONSULTED_ON,
+)
 from connection import query
 from freshness import get_benchmark_grain_counts, get_snapshot_coverage
 import pandas as pd
@@ -22,8 +28,6 @@ import streamlit as st
 from theme import BORDER, INK, INK_MUTED, SURFACE_2, TEAL_700, altair_chart
 
 MIN_COMPS = 8  # transform/dbt_project.yml → vars.min_comps_for_benchmark
-DBT_DOCS_URL = "https://carlosdmv7.github.io/spanish-housing-radar/"
-REPO_URL = "https://github.com/carlosdmv7/spanish-housing-radar"
 
 page_header(
     "How it works",
@@ -51,7 +55,7 @@ digraph {{
   income [label="INE household income\\nyearly"];
   raw [label="raw\\nlanded as fetched"];
   bronze [label="bronze\\ntyped"];
-  silver [label="silver\\nhistory · benchmarks"];
+  silver [label="silver\\nchecks · history · benchmarks"];
   gold [label="gold\\nscores · reports", {_KEY}];
   app [label="this app"];
   {{idealista hpi income}} -> raw -> bronze -> silver -> gold -> app;
@@ -166,6 +170,59 @@ st.dataframe(
 )
 
 st.divider()
+
+
+# ── What the checks set aside ─────────────────────────────────────────────────
+@st.cache_data(ttl=3600)
+def load_set_aside() -> pd.DataFrame | None:
+    """
+    Listings kept out of every benchmark and score (ADR-0009), or None when the
+    warehouse predates the screen — then the section is simply not drawn.
+    """
+    try:
+        return query("""
+            SELECT municipality, neighborhood, operation_type, size_sqm, price_eur,
+                   price_per_sqm, ppsqm_to_city_ratio, dq_issue, url
+            FROM spanish_housing_radar.main_silver.int_listings_screened
+            WHERE dq_issue IS NOT NULL
+        """)
+    except Exception:
+        return None
+
+
+set_aside = load_set_aside()
+if set_aside is not None:
+    implausible = set_aside[set_aside["dq_issue"] == "implausible_price_per_sqm"]
+    stale = int((set_aside["dq_issue"] == "not_seen_recently").sum())
+    st.markdown("#### What the checks set aside")
+    st.markdown(
+        f"Before anything is scored, each listing's €/m² is checked against its "
+        f"city. **{len(implausible)}** asked under a quarter of, or over four times, "
+        f"the typical price — a typo in the price or the size, not a flat — and "
+        f"**{stale}** had not been seen for two months. Both are kept out of every "
+        "benchmark and score. The implausible ones are below, so you can check."
+    )
+    if not implausible.empty:
+        st.dataframe(
+            implausible.assign(
+                where=implausible["neighborhood"].fillna("—").str.title() + ", "
+                + implausible["municipality"].str.title(),
+            )[["where", "operation_type", "size_sqm", "price_eur", "price_per_sqm",
+               "ppsqm_to_city_ratio", "url"]],
+            width="stretch", hide_index=True,
+            column_config={
+                "where": st.column_config.TextColumn("Where"),
+                "operation_type": st.column_config.TextColumn("For"),
+                "size_sqm": st.column_config.NumberColumn("m²", format="%d"),
+                "price_eur": st.column_config.NumberColumn("Price", format="€%,d"),
+                "price_per_sqm": st.column_config.NumberColumn("€/m²", format="%.1f"),
+                "ppsqm_to_city_ratio": st.column_config.NumberColumn(
+                    "× city", format="%.2f×",
+                    help="Its €/m² over the city's median for the same operation."),
+                "url": st.column_config.LinkColumn("", display_text="open ↗"),
+            },
+        )
+    st.divider()
 
 # ── The limits ────────────────────────────────────────────────────────────────
 st.markdown("#### What it cannot tell you")

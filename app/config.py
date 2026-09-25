@@ -142,6 +142,8 @@ AFFORDABILITY_SOURCE_NOTE = (
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 PAGE_TITLE = "Spanish Housing Radar"
+REPO_URL = "https://github.com/carlosdmv7/spanish-housing-radar"
+DBT_DOCS_URL = "https://carlosdmv7.github.io/spanish-housing-radar/"
 # The portfolio's own favicon, copied in rather than an emoji house: the browser
 # tab is the one piece of chrome a visitor sees before the page paints, and it
 # should show the same mark as carlosdmv7.github.io. Kept in sync by hand — it

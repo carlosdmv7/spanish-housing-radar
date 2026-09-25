@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from config import DBT_DOCS_URL
 from connection import query
 import pandas as pd
 import streamlit as st
@@ -19,7 +20,6 @@ from theme import StripItem
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
-DBT_DOCS_URL = "https://carlosdmv7.github.io/spanish-housing-radar/"
 
 # How recently a listing must have been written for the scraper to count as
 # active. The scheduled run is weekly, so 14 days tolerates one missed run before
