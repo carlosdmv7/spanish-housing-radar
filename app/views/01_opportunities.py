@@ -152,6 +152,9 @@ with tab_rank:
         # A one-item list, because MultiselectColumn is the one native column that
         # renders a value as a coloured label — which is the whole point here.
         tier=lambda d: d["deal_tier"].map(DEAL_TIER_LABELS).map(lambda t: [t]),
+        # Rounded here, once: the column's "%d" truncates, so 88.7 read 88 in the
+        # table and 89 on the card beside it.
+        opportunity_score=lambda d: d["opportunity_score"].round(),
         vs_area=lambda d: (d["price_per_sqm"] / d["neighborhood_median_ppsqm"] - 1) * 100,
         compared=lambda d: d["benchmark_level"].map(
             {"neighbourhood": "Barrio", "district": "District", "city": "City"}),
