@@ -1,10 +1,11 @@
 """
-How it works & data quality — the pipeline, the score, and what it can't tell you.
+How it works — the pipeline, the score, the sources and the limits, drawn
+rather than described.
 
-This page exists because a number without its provenance is a guess with better
-typography. It is also the page that keeps the rest of the app honest: the score's
-arithmetic, the fallback rule that decides which comparables it used, and the
-limitations, all in one place a visitor can check against what they just saw.
+The one page with the freshness strip and its explanations, because it is the
+page a visitor comes to when they want to check a number. Everything the other
+pages leave out to stay short is here, as diagrams and tables first and prose
+only where a limitation has no shape to draw.
 """
 from pathlib import Path
 import sys
@@ -13,9 +14,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from chrome import page_header
 from components.charts import bar_benchmark_grain
+from config import DEAL_TIER_COLORS, DEAL_TIER_LABELS, SOURCES_CONSULTED_ON
+from connection import query
 from freshness import get_benchmark_grain_counts, get_snapshot_coverage
+import pandas as pd
 import streamlit as st
-from theme import altair_chart, section
+from theme import BORDER, INK, INK_MUTED, SURFACE_2, TEAL_700, altair_chart
 
 MIN_COMPS = 8  # transform/dbt_project.yml → vars.min_comps_for_benchmark
 DBT_DOCS_URL = "https://carlosdmv7.github.io/spanish-housing-radar/"
@@ -23,196 +27,161 @@ REPO_URL = "https://github.com/carlosdmv7/spanish-housing-radar"
 
 page_header(
     "How it works",
-    "Where the numbers come from, how a flat gets its score, and what this data "
+    "Where the numbers come from, how a flat gets its score, and what the data "
     "cannot tell you.",
     explain_facts=True,
 )
 
-# ── Lineage ───────────────────────────────────────────────────────────────────
-section("From portal to page")
-st.markdown(
-    ":small[Three feeds, one warehouse, three modelling layers. Scraped listings give "
-    "**asking** prices; the INE house-price index grounds them against **transactions**; "
-    "INE household income is the denominator that turns *cheap for the area* into "
-    "*cheap for the people who live there*.]"
+# Shared Graphviz styling, in the brand's tokens. White text only on the 700
+# fill, per the design system's contrast rules.
+_NODE = (f'node [shape=box, style="rounded,filled", fontname="Public Sans", '
+         f'fontsize=11, color="{BORDER}", fillcolor="{SURFACE_2}", '
+         f'fontcolor="{INK}", margin="0.18,0.08"]')
+_EDGE = f'edge [color="{INK_MUTED}", arrowsize=0.6, fontname="Public Sans", fontsize=10, fontcolor="{INK_MUTED}"]'
+_KEY = f'style="rounded,filled", fillcolor="{TEAL_700}", fontcolor="white", color="{TEAL_700}"'
+
+# ── The pipeline ──────────────────────────────────────────────────────────────
+st.markdown("#### From portal to page")
+st.graphviz_chart(f"""
+digraph {{
+  rankdir=LR; bgcolor="transparent"; nodesep=0.25; ranksep=0.45;
+  {_NODE}; {_EDGE};
+  idealista [label="Idealista\\nlistings · weekly"];
+  hpi [label="INE price index\\nquarterly"];
+  income [label="INE household income\\nyearly"];
+  raw [label="raw\\nlanded as fetched"];
+  bronze [label="bronze\\ntyped"];
+  silver [label="silver\\nhistory · benchmarks"];
+  gold [label="gold\\nscores · reports", {_KEY}];
+  app [label="this app"];
+  {{idealista hpi income}} -> raw -> bronze -> silver -> gold -> app;
+}}
+""", width="stretch")
+st.caption(
+    "A GitHub Actions cron runs the flow every Monday under Prefect: scrape, load "
+    "to MotherDuck, `dbt build` with every test. Pull requests build into isolated "
+    f"`ci_*` schemas. [dbt docs and lineage]({DBT_DOCS_URL}) · [source]({REPO_URL})"
 )
-st.code(
-    "Idealista search cards ┐\n"
-    "INE house-price index  ├─→  raw  →  bronze  →  silver  →  gold  →  this app\n"
-    "INE district income    ┘",
-    language="text",
-)
-st.markdown("""
-| Layer | Models | What happens |
-|---|---|---|
-| **raw** | `idealista_listings`, `ine_hpi`, `ine_income` | Append-only landing tables. Loads are idempotent upserts on `(source_name, source_id)`, so a retried run never duplicates rows. |
-| **bronze** | `stg_*` | Typing, renaming, light cleaning. No business logic, one staging model per source table. |
-| **silver** | `int_listings_current`, `int_listings_history`, `int_neighborhood_stats`, `int_listing_lifecycle`, `int_market_context`, `int_district_income`, `dim_neighborhoods` | Latest snapshot per listing, the full snapshot history behind price trends, the €/m² benchmarks the score divides by, and the two INE feeds resolved to the grains this app can join to. |
-| **gold** | `fct_listings_scored`, `rpt_opportunities`, `rpt_market_context`, `rpt_district_affordability` | The scoring fact table and the consumption views this app reads. |
-""")
-st.markdown(
-    f":small[Every model carries a grain declaration, column docs and tests. The full "
-    f"lineage graph is published from CI: [dbt docs]({DBT_DOCS_URL}) · "
-    f"[source]({REPO_URL}/tree/main/transform/models).]"
-)
+
+st.divider()
 
 # ── The score ─────────────────────────────────────────────────────────────────
-st.markdown("")
-section("The opportunity score")
-st.markdown(
-    "A listing's price per m² is compared against the **median and standard "
-    "deviation** of comparable listings — same operation, same property type:"
-)
-st.code(
-    "z         = (price_per_sqm − benchmark_median_ppsqm) / benchmark_stddev_ppsqm\n"
-    "z_clamped = clamp(z, −3, +3)\n"
-    "score     = clamp(50 − z_clamped × (50/3), 0, 100)",
-    language="text",
-)
-st.markdown(
-    "So **50 is exactly the benchmark median**, 100 is three standard deviations "
-    "below it, 0 is three above. The score is a *relative* statement about a market, "
-    "never an appraisal of a building."
-)
+st.markdown("#### How a flat gets its score")
+tree, rules = st.columns([3, 2], gap="large")
+with tree:
+    st.graphviz_chart(f"""
+digraph {{
+  rankdir=TB; bgcolor="transparent"; nodesep=0.3; ranksep=0.3;
+  {_NODE}; {_EDGE};
+  flat [label="A listing's price per m²"];
+  q1 [label="Its barrio has {MIN_COMPS}+\\ncomparable flats?"];
+  q2 [label="Its district has {MIN_COMPS}+?"];
+  b [label="Compare with the barrio", {_KEY}];
+  d [label="Compare with the district"];
+  c [label="Compare with the city"];
+  s [label="Score 0–100\\n50 = the typical price"];
+  flat -> q1; q1 -> b [label=" yes"]; q1 -> q2 [label=" no"];
+  q2 -> d [label=" yes"]; q2 -> c [label=" no"];
+  {{b d c}} -> s;
+  // A staircase: each "yes" stops beside its question, each "no" steps down.
+  {{rank=same; b; q2}} {{rank=same; d; c}}
+}}
+""", width="content")
+with rules:
+    st.latex(r"z = \frac{\text{€/m}^2 - \text{median}}{\text{spread}}"
+             r"\qquad \text{score} = 50 - \tfrac{50}{3}\,\text{clamp}(z,\,-3,\,3)")
+    thresholds = {"great_deal": "75+", "good_deal": "55+", "fair": "45+",
+                  "overpriced": "25+", "very_overpriced": "below 25"}
+    st.markdown("  \n".join(
+        f":color[●]{{foreground=\"{DEAL_TIER_COLORS[k]}\"}} **{DEAL_TIER_LABELS[k]}** "
+        f"· {thresholds[k]}"
+        for k in DEAL_TIER_LABELS
+    ))
+    st.caption("Same operation and property type only. Dividing by the spread makes "
+               "10% under in a tight barrio count for more than 10% under in a mixed "
+               "one. Every score is shown with the grain that produced it.")
+    grain = get_benchmark_grain_counts()
+    if not grain.empty:
+        st.markdown("**What each listing was compared with, right now**")
+        altair_chart(bar_benchmark_grain(grain))
 
-col_a, col_b = st.columns(2)
-with col_a:
-    st.markdown("""
-| Score | Tier |
-|---|---|
-| ≥ 75 | Great deal |
-| ≥ 55 | Good deal |
-| ≥ 45 | Fair price |
-| ≥ 25 | Overpriced |
-| < 25 | Very overpriced |
-""")
-with col_b:
-    st.markdown("""
-**Why a z-score and not a simple % below median?**
-Dividing by the spread makes the score comparable across
-neighbourhoods. Being 10% under median means much more in a
-tight market than in a heterogeneous one, and a raw
-percentage would rank those two identically.
+st.divider()
 
-**Edge case:** when a benchmark has zero variance the
-z-score is undefined, so it's coalesced to 0 — a score of
-exactly 50, which reads as "no signal", not as a deal.
-""")
 
-# ── Fallback rule ─────────────────────────────────────────────────────────────
-st.markdown("")
-section("Which comparables a listing actually got")
-st.markdown(
-    f"Spanish listings are sparse at barrio level. Comparing a flat against three "
-    f"neighbours would mostly compare it against itself — a z-score near zero and a "
-    f"meaningless \"fair\" 50. So the score takes the **finest grain with at least "
-    f"{MIN_COMPS} comparables**:"
-)
-st.markdown(f"""
-1. **Barrio** — if the listing's neighbourhood has ≥ {MIN_COMPS} comparables, score
-   against it. `benchmark_level = 'neighbourhood'`.
-2. **District** — otherwise, if the district has ≥ {MIN_COMPS}, score against that.
-   `benchmark_level = 'district'`.
-3. **City** — otherwise the city, always. If even the city has < {MIN_COMPS}
-   comparables the row is stamped `low_confidence_flag`.
-""")
-st.markdown(
-    "Each row records which grain scored it, and **every surface that shows a score "
-    "also shows that grain** — the cards, the table and the map tooltips. Falling back "
-    "isn't hidden, because a coarser comparison is a weaker claim."
-)
+# ── Data quality, live ────────────────────────────────────────────────────────
+@st.cache_data(ttl=3600)
+def load_reference_dates() -> tuple[pd.Timestamp | None, int | None]:
+    try:
+        quarter = query("SELECT MAX(latest_period) AS q FROM "
+                        "spanish_housing_radar.main_gold.rpt_market_context").iloc[0]["q"]
+        year = query("SELECT MAX(income_reference_year) AS y FROM "
+                     "spanish_housing_radar.main_gold.rpt_district_affordability"
+                     ).iloc[0]["y"]
+        return (pd.Timestamp(quarter) if pd.notna(quarter) else None,
+                int(year) if pd.notna(year) else None)
+    except Exception:
+        return None, None
 
-grain = get_benchmark_grain_counts()
-if grain.empty:
-    st.warning(
-        "**Grain distribution unavailable** — the warehouse didn't answer. Everything "
-        "above still describes the model; only the live counts are missing."
-    )
-else:
-    st.markdown("")
-    section("Live grain distribution")
-    altair_chart(bar_benchmark_grain(grain))
-    barrio_share = float(
-        grain.loc[grain["benchmark_level"] == "neighbourhood", "share"].sum()
-    )
-    st.markdown(
-        f":small[**{barrio_share:.1%}** of scored listings currently reach barrio "
-        "grain. This number rises with scraping volume — the fix is more data, not a "
-        f"lower threshold than {MIN_COMPS}.]"
-    )
 
-# ── Honesty about the data ────────────────────────────────────────────────────
-st.markdown("")
-section("What this data cannot tell you")
-
-# Derived, not written down. The sentence this replaces said "Valencia now has
-# four snapshots since May, so its price evolution and seller-motivation signals
-# are real" — while the warehouse held 1,260 of 1,283 listings observed exactly
-# once. A claim about live data that is typed by hand is true until the data
-# moves, and this page is the last one that should be making one.
+st.markdown("#### The data, in numbers")
 coverage = get_snapshot_coverage()
-if coverage is None:
-    history_note = (
-        "Days-on-market and price-cut counts come from comparing snapshots, so a "
-        "listing seen once reads as \"no signal yet\" rather than a fabricated zero. "
-        "How much repeat history exists right now could not be read from the "
-        "warehouse."
-    )
-else:
-    history_note = (
-        f"Days-on-market and price-cut counts come from comparing snapshots, so a "
-        f"listing seen once reads as \"no signal yet\" rather than a fabricated zero. "
-        f"Right now that is most of them: **{coverage['observed_again']:,} of "
-        f"{coverage['listings']:,}** listings "
-        f"({coverage['repeat_share']:.1%}) have been seen more than once, and the "
-        f"deepest history on any single listing is {coverage['max_snapshots']} "
-        f"observations. The behavioural signals are therefore real for that slice "
-        f"and silent for the rest — they fill in as the scheduled scrape revisits "
-        f"the same city, which is a question of credits, not of modelling."
-    )
+quarter, income_year = load_reference_dates()
+barrio_share = (float(grain.loc[grain["benchmark_level"] == "neighbourhood", "share"].sum())
+                if not grain.empty else None)
 
-with st.container(border=True):
-    st.markdown("""
-**Asking prices, not sale prices.** Everything scraped is what a seller *wants*.
-The INE index on the Market page is the transaction-based counterweight, but it's
-regional and quarterly — deliberately not presented as a per-flat valuation.
+q1, q2, q3, q4 = st.columns(4)
+q1.metric("Scored against their own barrio",
+          f"{barrio_share:.0%}" if barrio_share is not None else "—",
+          help="The strongest comparison. It rises with scraping depth, not with a "
+               f"lower bar than {MIN_COMPS} comparables.")
+q2.metric("Listings seen more than once",
+          f"{coverage['repeat_share']:.0%}" if coverage else "—",
+          help="Days on market and price cuts need a listing observed twice or more. "
+               "The weekly scrape grows this.")
+q3.metric("Official price index up to",
+          f"Q{quarter.quarter} {quarter.year}" if quarter is not None else "—",
+          help="INE publishes each quarter about ten weeks after it ends.")
+q4.metric("Household income year", str(income_year) if income_year else "—",
+          help="INE publishes household income with a two-year lag.")
 
-**No per-listing coordinates.** A search page costs a flat 25 proxy credits and
-returns ~30 listings; a detail page costs 25–29 and returns one. Scraping cards is
-therefore ~30× cheaper per listing, and it buys breadth of comparables at the cost
-of exact addresses. Map dots sit at their barrio's centroid, so several listings
-share a point.
+st.dataframe(
+    pd.DataFrame([
+        ("Listings", "Idealista search results", "Listing, placed in its barrio",
+         "Weekly (València)"),
+        ("Official prices", "INE house price index, table 79563",
+         "Autonomous community, quarterly", "Weekly check"),
+        ("Household income", "INE Atlas de Distribución de Renta, table 30824",
+         "District, yearly", "Yearly"),
+        ("Barrio shapes", "València open data (88 barrios)", "Barrio", "Static"),
+        ("Mortgage rate", "Banco de España reference rate (BOE)", "Spain, monthly",
+         f"Checked {SOURCES_CONSULTED_ON}"),
+        ("Euribor", "EMMI 12-month, last closed month", "Eurozone, monthly",
+         f"Checked {SOURCES_CONSULTED_ON}"),
+        ("Transfer tax", "Each region's tax agency", "Autonomous community",
+         f"Checked {SOURCES_CONSULTED_ON}"),
+        ("Average salary", "INE salary structure survey 2024", "Autonomous community",
+         f"Checked {SOURCES_CONSULTED_ON}"),
+    ], columns=["What", "Source", "Grain", "Refreshed"]),
+    width="stretch", hide_index=True,
+)
 
-**Barrio centroids exist for five cities only** — Valencia, Madrid, Barcelona,
-Sevilla, Málaga. Listings elsewhere are scored but not mapped.
+st.divider()
 
-**The score says nothing about the flat itself** — no condition, floor, light,
-noise, or renovation state. It says a price is unusual for its market, which is
-where a search should *start*, not end.
-""")
-    st.markdown(f"**Price history is accumulated, never backfilled.** {history_note}")
-
-st.markdown("")
-section("How it's kept honest")
-st.markdown(f"""
-- **dbt tests** on sources and models — `unique`, `not_null`, `accepted_values`,
-  `accepted_range` — so a broken assumption fails the build instead of reaching this page.
-- **Two separate staleness checks, because they catch different things.** Source
-  freshness watches *load* time: the INE feed errors CI after 10 days, which catches
-  a cron that has died, while the listings table only warns, because a metered scrape
-  ageing is a decision rather than a fault. Load time says nothing about the data
-  inside, though — the INE loader replaces every row each week, so that gate passes
-  however old the index is. `assert_ine_hpi_period_is_current` watches the newest
-  *quarter* instead and warns when it falls further behind than a publication gap
-  explains. It is warning today, and the Market page shows the reference quarter and
-  its age rather than leaving you to infer currency from a green check.
-- **A contract on `rpt_opportunities`** — the model this app reads is a declared
-  interface, so a column change breaks CI, not the dashboard.
-- **CI builds into isolated `ci_*` schemas**, never `main_*`, so a bad pull request
-  can't overwrite what the live app is reading.
-- **Decisions are written down** as [ADRs]({REPO_URL}/tree/main/docs/adr), including
-  the one that requires this page to exist.
-
-The freshness strip at the top of every page carries the current values: last ingest,
-row counts, share of barrio-grain scores, and dbt test results.
-""")
+# ── The limits ────────────────────────────────────────────────────────────────
+st.markdown("#### What it cannot tell you")
+l1, l2 = st.columns(2, gap="large")
+l1.markdown(
+    "- **Asking prices, not sale prices.** The INE index is the check on them, "
+    "but it is regional.\n"
+    "- **Nothing about the flat itself.** No condition, floor, light or noise — a "
+    "score says the price is unusual, which is where a search starts."
+)
+l2.markdown(
+    "- **No exact addresses.** Search cards are ~30× cheaper to scrape than detail "
+    "pages, so map dots sit at their barrio's centre.\n"
+    "- **Depth in one city.** València is scraped every week; the other cities hold "
+    "one older snapshot, too thin for barrio benchmarks."
+)
+st.caption(
+    f"Decisions behind all of this are written down as [ADRs]({REPO_URL}/tree/main/docs/adr)."
+)
