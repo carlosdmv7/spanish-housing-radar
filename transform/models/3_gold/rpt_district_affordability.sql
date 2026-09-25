@@ -14,7 +14,7 @@
 {{ config(materialized='table', schema='gold') }}
 
 with listings as (
-    select * from {{ ref('int_listings_current') }}
+    select * from {{ ref('int_listings_valid') }}
     where district is not null
 ),
 

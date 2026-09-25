@@ -12,7 +12,7 @@ models:
           - unique
           - not_null
           - relationships:
-              to: ref('int_listings_current')
+              to: ref('int_listings_valid')
               field: listing_pk
       - name: operation_type
         tests:
@@ -145,6 +145,13 @@ models:
       - name: first_seen_date
         data_type: date
         description: First date this listing was ever observed (from snapshot history).
+      - name: last_seen_date
+        data_type: date
+        description: >
+          Last date the scraper saw this listing. A listing unseen for
+          max_listing_age_days before its city's latest scrape never reaches this
+          view (int_listings_screened), so this is always recent; the app shows
+          it so "right now" can be checked.
       - name: days_on_market
         data_type: bigint
         description: Days between first and last observation — a behavioural deal signal.

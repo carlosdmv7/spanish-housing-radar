@@ -36,6 +36,7 @@ select
     -- Coalesced so a listing seen only once reads as "no signal yet" (0 / false)
     -- rather than null. Lights up as the daily pipeline accumulates snapshots.
     l.first_seen_date,
+    l.last_seen_date,
     coalesce(l.days_on_market, 0)   as days_on_market,
     coalesce(l.n_price_changes, 0)  as n_price_changes,
     coalesce(l.price_change_pct, 0) as price_change_pct,
