@@ -55,11 +55,17 @@ async def serve_once() -> int:
         name=f"github-actions-{os.environ.get('GITHUB_RUN_ID', 'local')}",
         limit=1,  # one refresh at a time: they write the same warehouse
         prefetch_seconds=PREFETCH.total_seconds(),
+        # A long-lived `serve` pauses its schedules when it stops, so nothing
+        # piles up while no one is serving. This runner stops after every pass
+        # by design; pausing would switch the schedule off an hour after it was
+        # registered, and it did, on the first run from Actions.
+        pause_on_shutdown=False,
     )
     deployment_id: UUID = await runner.aadd_flow(
         run_pipeline,
         name=DEPLOYMENT,
         cron=SCHEDULE,
+        paused=False,  # re-registering un-pauses: the schedule lives in code
         tags=["spanish-housing-radar"],
         description=(
             "Ingest the INE house-price index, scrape València listings when "
