@@ -160,7 +160,7 @@ flowchart LR
 | **Market context** | INE Tempus3 JSON API | Free, keyless feed of the official house-price index (IPV) — grounds asking prices against transaction-based reality; runs even while scraping is parked |
 | **Warehouse** | MotherDuck (DuckDB in the cloud) | Cheap, serverless, zero-ops analytical store |
 | **Transformation** | dbt Core (Medallion: bronze → silver → gold) | Tested, documented, lineage-tracked SQL models |
-| **Orchestration** | Prefect | `extract → dbt build` flow with task-level retries + structured logging, triggered weekly by a GitHub Actions cron (`.github/workflows/pipeline.yml`) |
+| **Orchestration** | Prefect Cloud | `extract → dbt build` flow with task-level retries, deployed as `spanish-housing-radar-daily/refresh`: Prefect owns the weekly schedule, parameters and run history. The free tier has no hybrid work pools, so an hourly GitHub Actions job serves the deployment for one pass ([`gha_runner.py`](orchestration/gha_runner.py)) |
 | **CI/CD** | GitHub Actions | Ruff + pytest + `dbt build` against an isolated `ci_*` schema on every PR (`.github/workflows/ci.yml`) |
 | **Serving** | Streamlit · Altair · pydeck | 6-page interactive analytical app; charts inherit one brand theme, no CSS injection |
 
@@ -386,8 +386,8 @@ benchmarks, which is the only grain the score is actually worth reading at.
 
 ## Roadmap
 
-- [x] **Prefect** flow orchestrating `extract → dbt build`, with task-level retries
-- [x] **GitHub Actions** CI: lint + `pytest` + `dbt build` on every PR; weekly scheduled pipeline run
+- [x] **Prefect Cloud** deployment of the `extract → dbt build` flow: schedule, parameters, run history and task-level retries, served by an hourly GitHub Actions job
+- [x] **GitHub Actions** CI: lint + `pytest` + `dbt build` on every PR; the machine the Prefect deployment runs on
 - [x] `pytest` unit tests for the `_parse_location()` heuristic, orchestration flow, and mortgage math
 - [x] **Hierarchical opportunity score** (district → city parent, barrio weighted in by
       empirical Bayes) so the score is meaningful even where a barrio is sparse

@@ -1,20 +1,26 @@
 name: Pipeline
 
-# Deliberately not named after its cadence. This was "Daily pipeline" running a
-# weekly cron, and the README, the flow's docstring and the status commit message
-# all repeated the word — five places asserting a schedule the one authoritative
-# line below contradicted. The cron is the only thing that knows the cadence, and
-# it is expected to move again (back to daily once listing scraping resumes).
+# Prefect Cloud holds the `spanish-housing-radar-daily/refresh` deployment: its
+# schedule (Mondays 05:00 UTC), its parameters and its run history. This
+# workflow lends it a machine. Every hour it registers the deployment from the
+# code on main, asks Cloud whether a run is due — the scheduled one, or one
+# started by hand from the Prefect UI — and if so runs it
+# (orchestration/gha_runner.py). An idle hour exits in about a minute.
+#
+# The cadence lives in one place, gha_runner.SCHEDULE. The cron below is only
+# how often the machine checks; it is not the schedule.
+#
+# Why this and not a Prefect work pool: the free tier has no hybrid pools, and
+# its 500 serverless minutes a month are shared with job-market-intelligence,
+# which alone needs ~300. Actions minutes on a public repo are free.
 on:
-  # Weekly cron keeps the FREE feeds fresh (INE market context + dbt rebuild)
-  # without burning Scrapfly credits: the flow scrapes listings only when
-  # SCRAPFLY_ENABLED is 'true' (repo variable), otherwise it refreshes INE + dbt
-  # only. If it ever needs re-enabling at the GitHub level:
-  #   gh workflow enable "Pipeline"
-  # Move to "0 5 * * *" once active listing scraping resumes.
   schedule:
-    - cron: "0 5 * * 1"   # 05:00 UTC every Monday
-  workflow_dispatch: {}   # still runnable on demand from the Actions tab
+    - cron: "13 * * * *"  # hourly, off the hour: shared cron slots are congested
+  workflow_dispatch: {}   # run whatever is due now, e.g. right after a UI "Run"
+
+concurrency:
+  group: pipeline
+  cancel-in-progress: false  # never kill a half-finished warehouse write
 
 # The run pushes docs/status.json back to the default branch.
 permissions:
@@ -22,8 +28,9 @@ permissions:
 
 jobs:
   run-pipeline:
-    name: Extract + dbt build (prod)
+    name: Prefect runner (one pass)
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -35,24 +42,14 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: dbt deps
-        run: uv run dbt deps --project-dir transform
-
-      # transform/profiles.yml is gitignored -- it is the working copy, and only
-      # the .example template is committed. So the file the flow points
-      # DBT_PROFILES_DIR at simply did not exist on the runner, and every dbt
-      # invocation died with "Could not find profile named
-      # 'spanish_housing_radar'". This workflow was disabled at the GitHub level
-      # in June, before it ever ran, which is why nothing caught it.
-      #
-      # The template reads the token via env_var(), so materialising it is the
-      # whole fix -- and it is the same step `make install` performs locally,
-      # rather than a fourth hand-written copy of the profile in YAML.
-      - name: Materialise the dbt profile
-        run: cp transform/profiles.yml.example transform/profiles.yml
-      - name: Run the pipeline (extract → dbt build)
-        run: uv run python -m orchestration.flows.pipeline
+      # The flow prepares dbt itself (profile + deps), so a run needs nothing
+      # else from this job. SCRAPE_* bound what one run may spend.
+      - name: Run what Prefect has due
+        id: serve
+        run: uv run python -m orchestration.gha_runner
         env:
+          PREFECT_API_KEY: ${{ secrets.PREFECT_API_KEY }}
+          PREFECT_API_URL: ${{ secrets.PREFECT_API_URL }}
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
           SCRAPFLY_API_KEY: ${{ secrets.SCRAPFLY_API_KEY }}
           # Listing scrape runs only when this repo variable is 'true'. Until then
@@ -71,27 +68,24 @@ jobs:
           # Two operations puts the hard stop at 250 for the whole run, above the
           # 200 the settings above should cost and below anything that would hurt.
           SCRAPFLY_CREDIT_BUDGET: ${{ vars.SCRAPFLY_CREDIT_BUDGET || '125' }}
-          # Reports this flow run to Prefect Cloud instead of spinning up an
-          # ephemeral local server — gives a persistent UI/history across runs.
-          PREFECT_API_KEY: ${{ secrets.PREFECT_API_KEY }}
-          PREFECT_API_URL: ${{ secrets.PREFECT_API_URL }}
 
       # if: always() is the point of this step. A run that dies mid-pipeline is
       # exactly the run whose status is worth recording — otherwise the only
       # evidence is a red tick in the Actions tab that nothing outside GitHub
       # can read, and docs/status.json silently keeps asserting the last good
       # run's numbers. Recording the failure is what stops the file from lying.
+      # Only when a run happened, though: an idle hour has nothing to record.
       - name: Record pipeline status
-        if: always()
+        if: always() && steps.serve.outputs.ran == 'true'
         run: uv run python -m orchestration.status
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
-          # `job.status` is the job's conclusion so far, which at this point is
-          # the conclusion of the pipeline steps above.
-          RUN_CONCLUSION: ${{ job.status }}
+          # The runner's read of the flow run's final state. Missing means the
+          # runner died mid-run — which is a failed run.
+          RUN_CONCLUSION: ${{ steps.serve.outputs.conclusion || 'failure' }}
 
       - name: Commit pipeline status
-        if: always()
+        if: always() && steps.serve.outputs.ran == 'true'
         run: |
           set -euo pipefail
 

@@ -5,9 +5,10 @@ Run once, ad hoc:
     python -m orchestration.flows.pipeline
 
 Run on a schedule:
-    See .github/workflows/pipeline.yml — a GitHub Actions cron triggers this
-    flow; Prefect itself only provides task structure (retries, logging,
-    dependency ordering), not the scheduler.
+    It is the `spanish-housing-radar-daily/refresh` deployment in Prefect Cloud,
+    which owns the schedule (Mondays 05:00 UTC), the parameters and the run
+    history. An hourly GitHub Actions job serves it for one pass —
+    see orchestration/gha_runner.py for why the machine is borrowed.
 
 This module is deliberately NOT named after its cadence. It was
 `daily_pipeline.py` while the cron ran weekly, which is how a filename ends up
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -113,10 +115,20 @@ def dbt_build(target: str = "prod") -> None:
     # directory, so mixing the two forms makes a cache written by one break the
     # other — and it breaks seeds only, which means the build reports success for
     # every model and fails at the three CSVs. Same form as the Makefile and CI.
+    # The flow prepares its own dbt environment, so a fresh checkout — the
+    # GitHub Actions runner that serves the deployment — needs no setup steps.
+    # profiles.yml is gitignored (it is the working copy); the committed
+    # template reads the token through env_var(), so materialising it is the
+    # same step `make install` performs locally. An existing one is left alone.
+    profile = TRANSFORM_DIR / "profiles.yml"
+    if not profile.exists():
+        shutil.copy(TRANSFORM_DIR / "profiles.yml.example", profile)
+    dbt_env = {"DBT_PROFILES_DIR": str(TRANSFORM_DIR)}
+    _run([DBT, "deps", "--project-dir", str(TRANSFORM_DIR)], cwd=PROJECT_ROOT, extra_env=dbt_env)
     _run(
         [DBT, "build", "--project-dir", str(TRANSFORM_DIR), "--target", target],
         cwd=PROJECT_ROOT,
-        extra_env={"DBT_PROFILES_DIR": str(TRANSFORM_DIR)},
+        extra_env=dbt_env,
     )
 
 

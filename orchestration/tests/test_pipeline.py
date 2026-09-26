@@ -69,7 +69,9 @@ class TestPipeline:
             run_pipeline(scrape=True)
 
         commands = [" ".join(call.args[0]) for call in mock_run.call_args_list]
-        # The medallion rebuild must not have run after the scrape failure.
-        assert not any("build --target" in c for c in commands)
+        # The medallion rebuild must not have run after the scrape failure. (This
+        # looked for "build --target", which the real command never contains —
+        # `dbt build --project-dir … --target …` — so it could not fail.)
+        assert not any(" build " in f" {c} " for c in commands)
         # …but the free INE feed did run before it.
         assert any("run_ine" in c for c in commands)
