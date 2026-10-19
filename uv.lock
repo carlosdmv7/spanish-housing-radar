@@ -216,8 +216,8 @@ wheels = [
 
 [[package]]
 name = "brand"
-version = "0.1.0"
-source = { git = "https://github.com/carlosdmv7/brand?rev=b790ed9c6409eee42e2902fd607a66849c3e4af9#b790ed9c6409eee42e2902fd607a66849c3e4af9" }
+version = "0.2.0"
+source = { git = "https://github.com/carlosdmv7/brand?rev=c3973c4a16bbbe57905ccc7d83a6cb94378b3bba#c3973c4a16bbbe57905ccc7d83a6cb94378b3bba" }
 
 [package.optional-dependencies]
 streamlit = [
@@ -2252,7 +2252,7 @@ dev = [
 requires-dist = [
     { name = "altair", specifier = "==5.5.0" },
     { name = "beautifulsoup4", specifier = "==4.12.3" },
-    { name = "brand", extras = ["streamlit"], git = "https://github.com/carlosdmv7/brand?rev=b790ed9c6409eee42e2902fd607a66849c3e4af9" },
+    { name = "brand", extras = ["streamlit"], git = "https://github.com/carlosdmv7/brand?rev=c3973c4a16bbbe57905ccc7d83a6cb94378b3bba" },
     { name = "dbt-core", specifier = "==1.9.5" },
     { name = "dbt-duckdb", specifier = "==1.10.1" },
     { name = "duckdb", specifier = "==1.5.2" },
