@@ -31,8 +31,8 @@ import streamlit as st
 importlib.reload(hot_reload)
 hot_reload.drop_stale(Path(__file__).parent)
 
+from brand.streamlit import render_footer  # noqa: E402
 from config import PAGE_ICON, PAGE_TITLE, REPO_URL  # noqa: E402
-from theme import render_footer  # noqa: E402
 
 st.set_page_config(
     page_title=PAGE_TITLE,

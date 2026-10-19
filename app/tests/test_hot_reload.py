@@ -5,7 +5,9 @@ Two live-app failures after a Cloud redeploy, reproduced.
    `components.charts` does not have.
 2. An UnserializableReturnValueError: `chrome.py` unchanged and kept, still
    calling the function of a dropped `freshness`, which built a `StripItem`
-   from a dropped `theme` that `st.cache_data` could no longer pickle.
+   from a dropped `theme` that `st.cache_data` could no longer pickle. (`theme`
+   is now the installed `brand` package; the test keeps the chrome→freshness
+   half of that chain.)
 """
 from __future__ import annotations
 
@@ -91,30 +93,29 @@ def test_a_later_deploy_is_picked_up_by_mtime():
 
 @pytest.mark.usefixtures("clean_state")
 def test_an_unchanged_module_is_dropped_with_the_changed_one():
-    importlib.import_module("theme")
-    hot_reload.drop_stale(APP_DIR)
-    importlib.import_module("theme")
-    importlib.import_module("chrome")
     importlib.import_module("freshness")
+    hot_reload.drop_stale(APP_DIR)
+    importlib.import_module("freshness")
+    importlib.import_module("chrome")
     old_item = sys.modules["freshness"].StripItem("label", "value")
 
-    theme_py = APP_DIR / "theme.py"
-    stat = theme_py.stat()
-    os.utime(theme_py, (stat.st_atime, stat.st_mtime + 5))   # only theme changed
+    freshness_py = APP_DIR / "freshness.py"
+    stat = freshness_py.stat()
+    os.utime(freshness_py, (stat.st_atime, stat.st_mtime + 5))   # only freshness changed
     try:
         dropped = hot_reload.drop_stale(APP_DIR)
     finally:
-        os.utime(theme_py, (stat.st_atime, stat.st_mtime))
+        os.utime(freshness_py, (stat.st_atime, stat.st_mtime))
 
-    # chrome did not change, but it held freshness, which held the old theme.
-    assert {"theme", "freshness", "chrome"} <= set(dropped)
-    # What broke the live app: an old instance no longer pickles once theme
-    # is re-imported. Everything re-imported together pickles again.
-    importlib.import_module("theme")
-    with pytest.raises(pickle.PicklingError):
-        pickle.dumps(old_item)
+    # chrome did not change, but it held the old freshness's function.
+    assert {"freshness", "chrome"} <= set(dropped)
+    # What broke the live app in #43 was a StripItem class defined in an app
+    # module that had been dropped. It now lives in the installed `brand`
+    # package, which is never dropped, so an instance built before a deploy
+    # still pickles after it.
     fresh = importlib.import_module("freshness")
-    pickle.dumps(fresh.StripItem("label", "value"))
+    assert fresh.StripItem is type(old_item)
+    pickle.dumps(old_item)
 
 
 @pytest.mark.usefixtures("clean_state")
@@ -122,17 +123,17 @@ def test_a_pull_before_the_second_run_is_still_seen():
     # First run: drop, and only the modules imported so far get an mtime.
     if hasattr(sys, hot_reload._STATE_ATTR):
         delattr(sys, hot_reload._STATE_ATTR)
-    sys.modules.pop("theme", None)
+    sys.modules.pop("config", None)
     hot_reload.drop_stale(APP_DIR)
-    importlib.import_module("theme")        # imported after the drop: no baseline
+    importlib.import_module("config")        # imported after the drop: no baseline
 
-    theme_py = APP_DIR / "theme.py"
-    stat = theme_py.stat()
-    os.utime(theme_py, (stat.st_atime, time.time() + 5))   # the pull lands now
+    config_py = APP_DIR / "config.py"
+    stat = config_py.stat()
+    os.utime(config_py, (stat.st_atime, time.time() + 5))   # the pull lands now
     try:
-        assert "theme" in hot_reload.drop_stale(APP_DIR)
+        assert "config" in hot_reload.drop_stale(APP_DIR)
     finally:
-        os.utime(theme_py, (stat.st_atime, stat.st_mtime))
+        os.utime(config_py, (stat.st_atime, stat.st_mtime))
 
 
 @pytest.mark.usefixtures("clean_state")

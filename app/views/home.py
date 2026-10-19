@@ -22,12 +22,12 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from brand.streamlit import altair_chart
 from chrome import page_header
 from components.charts import map_barrio_ppsqm
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import altair_chart
 
 # transform/dbt_project.yml → vars.min_comps_for_benchmark. A barrio with fewer
 # listings than this has a median that describes a handful of flats, so it is

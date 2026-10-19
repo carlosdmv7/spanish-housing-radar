@@ -15,6 +15,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from brand.streamlit import altair_chart
+from brand.tokens import TEAL_700
 from chrome import page_header
 from components.charts import (
     bar_flat_vs_area,
@@ -29,7 +31,6 @@ from config import DEAL_TIER_COLORS, DEAL_TIER_LABELS, PROPERTY_TYPE_LABELS
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import TEAL_700, altair_chart
 
 page_header(
     "Which flats are cheap for their area?",

@@ -4,7 +4,7 @@ Drop app modules that went stale under a running server.
 Streamlit Community Cloud redeploys a push by pulling the new commit into the
 running container. The page scripts are re-executed on every run, so they are
 always the new code — but the helper modules they import (`components.charts`,
-`theme`, `config`, …) stay in `sys.modules` exactly as they were first imported.
+`chrome`, `config`, …) stay in `sys.modules` exactly as they were first imported.
 After #35 that meant a new Neighbourhoods page asking an old `components.charts`
 for `dot_barrio_range`, and the live app died on an ImportError until someone
 rebooted it by hand.
@@ -24,6 +24,10 @@ and `st.cache_data` could not pickle an instance of a class that is no longer
 `theme.StripItem`. A module that did not change can still hold objects from
 one that did; only a full drop cannot leave such a reference behind. It costs a
 re-import of a dozen small modules, once per deploy.
+
+`theme.py` has since moved into the installed `brand` package. Installed
+packages live in site-packages and are never dropped, so `StripItem` is now one
+class for the life of the process: the #43 pickle failure cannot recur from it.
 
 `st.cache_data` / `st.cache_resource` survive this: their keys come from the
 function's qualified name and source, not from the module object.

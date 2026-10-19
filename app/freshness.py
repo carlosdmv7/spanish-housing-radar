@@ -10,11 +10,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from brand.streamlit import StripItem
 from config import DBT_DOCS_URL
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import StripItem
 
 # Project root (one up from app/).
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -106,7 +106,7 @@ def get_freshness_strip() -> list[StripItem]:
     """
     Build the freshness strip: six key facts about data currency and quality.
 
-    Returns a list of StripItems for app/theme.render_header().
+    Returns a list of StripItems for brand.streamlit.render_header().
     """
     items: list[StripItem] = []
     listing_stale_days: int | None = None

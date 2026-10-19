@@ -32,6 +32,11 @@ dependencies = [
     # Charts are Altair only (declarative theming from the brand tokens);
     # pydeck stays for the map. Plotly was removed — see docs/adr.
     "altair==5.5.0",
+    # The shared design system: tokens, the Altair theme, the page chrome, and
+    # the generator of .streamlit/config.toml's [theme]. A PEP 508 direct
+    # reference, not [tool.uv.sources], so a plain pip install (Community
+    # Cloud) resolves the same commit and never a same-named PyPI package.
+    "brand[streamlit] @ git+https://github.com/carlosdmv7/brand@b790ed9c6409eee42e2902fd607a66849c3e4af9",
     "pandas==2.2.3",
     # ── Extraction ───────────────────────────────────────────────────────────
     "requests==2.32.3",

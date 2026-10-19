@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from theme import AMBER_500, INK_MUTED, RUST_500, RUST_900, TEAL_500, TEAL_700
+from brand.tokens import AMBER_500, INK_MUTED, RUST_500, RUST_900, TEAL_500, TEAL_700
 
 # ── Deal tier ─────────────────────────────────────────────────────────────────
 # The five tiers are an ordered diverging axis, so they take the brand's

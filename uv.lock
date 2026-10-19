@@ -215,6 +215,17 @@ wheels = [
 ]
 
 [[package]]
+name = "brand"
+version = "0.1.0"
+source = { git = "https://github.com/carlosdmv7/brand?rev=b790ed9c6409eee42e2902fd607a66849c3e4af9#b790ed9c6409eee42e2902fd607a66849c3e4af9" }
+
+[package.optional-dependencies]
+streamlit = [
+    { name = "altair" },
+    { name = "streamlit" },
+]
+
+[[package]]
 name = "burner-redis"
 version = "0.1.7"
 source = { registry = "https://pypi.org/simple" }
@@ -2213,6 +2224,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "altair" },
     { name = "beautifulsoup4" },
+    { name = "brand", extra = ["streamlit"] },
     { name = "dbt-core" },
     { name = "dbt-duckdb" },
     { name = "duckdb" },
@@ -2240,6 +2252,7 @@ dev = [
 requires-dist = [
     { name = "altair", specifier = "==5.5.0" },
     { name = "beautifulsoup4", specifier = "==4.12.3" },
+    { name = "brand", extras = ["streamlit"], git = "https://github.com/carlosdmv7/brand?rev=b790ed9c6409eee42e2902fd607a66849c3e4af9" },
     { name = "dbt-core", specifier = "==1.9.5" },
     { name = "dbt-duckdb", specifier = "==1.10.1" },
     { name = "duckdb", specifier = "==1.5.2" },
