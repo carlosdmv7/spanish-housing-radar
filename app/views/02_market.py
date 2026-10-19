@@ -16,13 +16,13 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from brand.streamlit import altair_chart
 from chrome import page_header
 from components.charts import dot_barrio_range, line_official_trend
 from components.filters import city_picker, load_municipalities
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import altair_chart
 
 # transform/dbt_project.yml → vars.min_comps_for_benchmark: the same bar a barrio
 # must clear before the score will use it as a benchmark.

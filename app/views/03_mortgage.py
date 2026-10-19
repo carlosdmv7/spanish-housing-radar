@@ -12,6 +12,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from brand.streamlit import altair_chart
 from chrome import page_header
 from components.charts import bar_amortisation, bar_signing_day, line_buy_vs_rent
 from components.filters import city_picker, load_municipalities
@@ -39,7 +40,6 @@ from config import (
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import altair_chart
 
 page_header(
     "What will buying really cost me?",

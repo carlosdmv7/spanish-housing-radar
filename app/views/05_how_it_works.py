@@ -12,6 +12,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from brand.streamlit import altair_chart
+from brand.tokens import BORDER, INK, INK_MUTED, SURFACE_2, TEAL_700
 from chrome import page_header
 from components.charts import bar_benchmark_grain, line_barrio_weight
 from config import (
@@ -25,7 +27,6 @@ from connection import query
 from freshness import get_benchmark_grain_counts, get_shrinkage_k, get_snapshot_coverage
 import pandas as pd
 import streamlit as st
-from theme import BORDER, INK, INK_MUTED, SURFACE_2, TEAL_700, altair_chart
 
 MIN_COMPS = 8  # transform/dbt_project.yml → vars.min_comps_for_benchmark
 MIN_BARRIO = 3  # transform/dbt_project.yml → vars.min_listings_for_barrio_weight

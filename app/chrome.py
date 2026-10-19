@@ -1,7 +1,7 @@
 """
 Page chrome for this app: the header every view opens with.
 
-`theme.render_header` is the generic brand layer and knows nothing about this
+`brand.streamlit.render_header` is the generic brand layer and knows nothing about this
 project; this module supplies the one project-specific ingredient — the live
 freshness strip.
 
@@ -12,8 +12,8 @@ its title and its answer.
 """
 from __future__ import annotations
 
+from brand.streamlit import render_header
 from freshness import get_freshness_strip
-from theme import render_header
 
 
 def page_header(

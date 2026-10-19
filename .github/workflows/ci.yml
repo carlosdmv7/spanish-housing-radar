@@ -33,6 +33,12 @@ jobs:
       - name: Ruff lint
         run: uv run ruff check .
 
+      # The [theme] tables of .streamlit/config.toml are generated from the
+      # shared brand package. Fails when someone hand-edits them or the pinned
+      # brand moves without a re-sync.
+      - name: Brand theme in sync
+        run: uv run brand sync streamlit --check
+
       # One invocation over the whole repo. This used to be two, because app/,
       # extraction/ and orchestration/ each hold a package named `tests` and
       # pytest's default import mode makes all three claim the same top-level

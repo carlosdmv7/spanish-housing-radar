@@ -8,11 +8,11 @@ alternative is an unlabelled colour field, which is not a chart.
 """
 from __future__ import annotations
 
+from brand.tokens import INK_MUTED, RUST_500
 from config import DEAL_TIER_COLORS, DEAL_TIER_FALLBACK_COLOR, DEAL_TIER_LABELS
 import pandas as pd
 import pydeck as pdk
 import streamlit as st
-from theme import INK_MUTED, RUST_500
 
 
 def _hex_to_rgb(hex_color: str) -> list[int]:

@@ -16,6 +16,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from brand.streamlit import altair_chart
 from chrome import page_header
 from components.charts import bar_district_burden, scatter_price_vs_yield
 from components.filters import city_picker, load_municipalities
@@ -23,7 +24,6 @@ from config import OVERBURDEN_PCT
 from connection import query
 import pandas as pd
 import streamlit as st
-from theme import altair_chart
 
 # transform/dbt_project.yml → vars.min_listings_for_area_stat, the threshold
 # behind rpt_district_affordability.low_sample_flag. The barrio yields below use

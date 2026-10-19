@@ -2,7 +2,7 @@
 Chart builders — Altair only.
 
 Every function returns an `alt.Chart`; the caller renders it with
-`theme.altair_chart()`, which is what actually applies the brand theme. Colour,
+`brand.streamlit.altair_chart()`, which is what actually applies the brand theme. Colour,
 fonts, gridlines and axis furniture come from the registered Altair theme, so
 these builders set colour **only** where the encoding carries meaning (deal tier,
 affordability, principal vs interest) and never for decoration.
@@ -13,9 +13,7 @@ import base64
 import json
 
 import altair as alt
-from config import DEAL_TIER_COLORS, DEAL_TIER_LABELS
-import pandas as pd
-from theme import (
+from brand.tokens import (
     BORDER,
     INK,
     INK_MUTED,
@@ -28,6 +26,8 @@ from theme import (
     TEAL_500,
     TEAL_700,
 )
+from config import DEAL_TIER_COLORS, DEAL_TIER_LABELS
+import pandas as pd
 
 # Ordered tier axis, shared by the scatter and any other tier-coloured encoding,
 # so the legend reads best-deal-first and matches the map's colours.
