@@ -1,8 +1,8 @@
 {
   "project": "spanish-housing-radar",
-  "generated_at": "2026-11-02T10:59:38Z",
-  "last_ingest_at": "2026-11-02T10:59:02Z",
-  "rows_in_warehouse": 1027,
+  "generated_at": "2026-11-09T07:58:44Z",
+  "last_ingest_at": "2026-11-09T07:58:10Z",
+  "rows_in_warehouse": 1233,
   "dbt_tests_passed": 162,
   "dbt_tests_warned": 0,
   "dbt_tests_total": 162,
