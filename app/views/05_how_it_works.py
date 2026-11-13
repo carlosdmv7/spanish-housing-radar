@@ -105,7 +105,9 @@ with rules:
                "one. Every score is shown with the area that carried it.")
     grain = get_benchmark_grain_counts()
     if not grain.empty:
-        st.markdown("**What each listing was compared with, right now**")
+        st.markdown("**What each for-sale listing was compared with, right now**")
+        st.caption("Rentals are left out: they are compared with their district "
+                   "by design, since rents showed no barrio effect.")
         altair_chart(bar_benchmark_grain(grain))
 
 # How far a barrio is trusted — measured, not chosen. Drawn once the warehouse
