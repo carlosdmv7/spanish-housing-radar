@@ -40,4 +40,6 @@ Thumbs.db
 # ── Data / raw files ──────────────────────────────────────────────────────────
 data/
 *.duckdb
-debug_output/.scrape_summary.json
+debug_output/
+# Per-run scrape summary, passed from the flow to orchestration.status
+.scrape_summary.json
