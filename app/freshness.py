@@ -101,6 +101,41 @@ def _load_committed_status() -> dict | None:
         return None
 
 
+def _barrio_share_item() -> StripItem:
+    """
+    Share of FOR-SALE listings scored at barrio grain.
+
+    Sale only, on purpose. Rent listings are never scored at barrio grain: ADR-0011
+    measured no barrio effect on rents, so they use the district. Counting them in
+    the denominator showed 36% in warning colour for what is a design decision, not
+    a data-quality problem. The sale figure is the one the Deals page shows.
+    """
+    label = "neighbourhood (sale)"
+    try:
+        pct = query("""
+            SELECT
+                ROUND(
+                    100.0 * COUNT(*) FILTER (WHERE benchmark_level = 'neighbourhood')
+                    / NULLIF(COUNT(*), 0)
+                , 1) AS pct
+            FROM spanish_housing_radar.main_gold.fct_listings_scored
+            WHERE operation_type = 'sale'
+        """).iloc[0]["pct"]
+    except Exception:
+        return StripItem(label=label, value="—", tone="bad")
+    if pd.isna(pct):
+        return StripItem(label=label, value="—", tone="warn",
+                         help="No for-sale listings are scored yet.")
+    return StripItem(
+        label=label,
+        value=f"{pct:.1f}%",
+        tone="good" if pct >= 70 else "warn",
+        help="% of for-sale listings scored at barrio grain; the rest fall back to "
+             "the district or city, which is lower confidence. Rentals are left out "
+             "on purpose: they are scored at district grain by design (ADR-0011).",
+    )
+
+
 @st.cache_data(ttl=600)
 def get_freshness_strip() -> list[StripItem]:
     """
@@ -177,28 +212,7 @@ def get_freshness_strip() -> list[StripItem]:
         ))
 
     # ── Neighbourhood grain % ──────────────────────────────────────────────
-    try:
-        grain_pct = query("""
-            SELECT
-                ROUND(
-                    100.0 * COUNT(*) FILTER (WHERE benchmark_level = 'neighbourhood')
-                    / NULLIF(COUNT(*), 0)
-                , 1) AS pct
-            FROM spanish_housing_radar.main_gold.fct_listings_scored
-        """).iloc[0]["pct"]
-        tone = "good" if (pd.notna(grain_pct) and grain_pct >= 70) else "warn"
-        items.append(StripItem(
-            label="neighbourhood",
-            value=f"{grain_pct:.1f}%",
-            tone=tone,
-            help="% of listings scored at barrio grain; city fallback is lower confidence",
-        ))
-    except Exception:
-        items.append(StripItem(
-            label="neighbourhood",
-            value="—",
-            tone="bad",
-        ))
+    items.append(_barrio_share_item())
 
     # ── dbt tests ──────────────────────────────────────────────────────────
     results = _load_dbt_test_results()
@@ -324,7 +338,11 @@ def get_snapshot_coverage() -> dict | None:
 @st.cache_data(ttl=600)
 def get_benchmark_grain_counts() -> pd.DataFrame:
     """
-    Listings per benchmark grain, with each grain's share of the total.
+    For-sale listings per benchmark grain, with each grain's share of the total.
+
+    Sale only, matching the freshness strip: rentals are scored at district grain
+    by design (ADR-0011), so mixing them in made the barrio share look like a
+    coverage gap.
 
     Feeds the data-quality page's headline chart. Empty frame on failure — the
     caller decides what to say about it, because a chart module should not own
@@ -336,6 +354,7 @@ def get_benchmark_grain_counts() -> pd.DataFrame:
                 benchmark_level,
                 COUNT(*) AS listings
             FROM spanish_housing_radar.main_gold.fct_listings_scored
+            WHERE operation_type = 'sale'
             GROUP BY 1
         """)
     except Exception:

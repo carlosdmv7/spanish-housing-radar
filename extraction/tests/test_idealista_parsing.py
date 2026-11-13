@@ -52,6 +52,26 @@ class TestParseLocation:
         assert hood is None
 
 
+class TestTruncatedTitles:
+    """A title with no location must not mint a municipality called "piso en"."""
+
+    @pytest.mark.parametrize("title", ["Piso en", "piso en", "Piso en ", "Casa en", "Chalet adosado en"])
+    def test_type_only_title_falls_back_to_searched_city(self, title):
+        assert scraper._parse_location(title, fallback="valencia") == ("valencia", None, None)
+
+    def test_empty_title_falls_back(self):
+        assert scraper._parse_location("", fallback="valencia") == ("valencia", None, None)
+
+    def test_type_phrase_as_last_segment_is_not_a_municipality(self):
+        # Neighbourhood must not survive either: the finer parts are untrusted.
+        muni, district, hood = scraper._parse_location("Russafa, Piso en", fallback="valencia")
+        assert (muni, district, hood) == ("valencia", None, None)
+
+    def test_real_titles_unaffected(self):
+        assert scraper._parse_location("Piso en Russafa, València", fallback="valencia") == (
+            "valència", None, "russafa")
+
+
 class TestParseLocationProductionRegressions:
     """
     Every case here is a real title reconstructed from a value this parser
@@ -206,3 +226,12 @@ class TestBuildPageUrl:
                 == base + "?ordenado-por=fecha-publicacion-desc")
         assert (scraper._build_page_url(base, 2, "fecha-publicacion-desc")
                 == base + "pagina-2.htm?ordenado-por=fecha-publicacion-desc")
+
+
+def test_search_keys_map_to_the_warehouse_spelling():
+    # A fallback municipality must be one the gold test knows, or a truncated
+    # title turns a red build into the new phantom city.
+    from extraction.scrapers.idealista import _MUNICIPALITY_BY_SEARCH_KEY
+
+    assert _MUNICIPALITY_BY_SEARCH_KEY["valencia"] == "valència"
+    assert _MUNICIPALITY_BY_SEARCH_KEY["malaga"] == "málaga"

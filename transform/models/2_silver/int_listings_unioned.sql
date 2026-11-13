@@ -181,3 +181,10 @@ where _dedup_rn = 1
   and not dq_bad_price
   and not dq_bad_size
   and not dq_extreme_ppsqm
+  -- A "municipality" that is a property type ("piso en") came from a truncated
+  -- title, and nothing in the row says which city it was searched under, so it
+  -- cannot be repaired -- only screened. Left in, it became a city in the app
+  -- ("cities 2", a Deals picker entry). Extraction now falls back to the searched
+  -- city; this covers rows scraped before that fix. Same pattern as the
+  -- neighbourhood scrub above, applied to the one column it did not reach.
+  and not {{ is_not_an_area('municipality') }}

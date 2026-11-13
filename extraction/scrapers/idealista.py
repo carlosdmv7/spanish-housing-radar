@@ -38,6 +38,14 @@ from extraction.scrapers.base import AbstractScraper, CreditBudgetExhausted
 logger = logging.getLogger(__name__)
 
 
+# Search keys are ASCII slugs; Idealista titles, and so every municipality in
+# the warehouse, carry the accents. Only the keys that differ are listed.
+_MUNICIPALITY_BY_SEARCH_KEY: dict[str, str] = {
+    "valencia": "valència",
+    "malaga": "málaga",
+}
+
+
 class IdealistaScraper(AbstractScraper):
     source_name = "idealista"
 
@@ -128,7 +136,11 @@ class IdealistaScraper(AbstractScraper):
             if size is None:
                 return None
 
-            muni, district, hood = self._parse_location(title, self.province)
+            # The fallback is the municipality as the warehouse spells it, not
+            # the search key: a title that names no place would otherwise file
+            # the flat under "valencia", a second city beside "valència".
+            searched = _MUNICIPALITY_BY_SEARCH_KEY.get(self.province, self.province)
+            muni, district, hood = self._parse_location(title, searched)
 
             return {
                 "source_id":          sid,
@@ -281,7 +293,11 @@ class IdealistaScraper(AbstractScraper):
             # Strip the property-type words up to the first " en ", however many
             # there are: "chalet adosado en russafa" → "russafa". Gated on a known
             # type word so a real barrio is never truncated at an inner " en ".
-            parts[0] = re.sub(r"^.*?\ben\s+", "", parts[0], count=1)
+            # `(?:\s+|$)` so a truncated title ("Piso en", nothing after it) strips
+            # to empty instead of surviving as the "municipality" "piso en".
+            parts[0] = re.sub(r"^.*?\ben(?:\s+|$)", "", parts[0], count=1).strip()
+            if not parts[0]:
+                parts.pop(0)
 
         # At most ONE leading street segment is dropped, not every segment that
         # looks street-like. Idealista puts the street first and the area second,
@@ -297,6 +313,14 @@ class IdealistaScraper(AbstractScraper):
         # ("calle de Sueca, 34, Russafa"), and a trailing one before the city.
         # Dropping them anywhere is safe: a portal number is never an area.
         parts = [p for p in parts if not cls._HOUSE_NUMBER.match(p)]
+
+        # A municipality that is still a property-type phrase ("piso en", "casa en
+        # calle mayor") is the title talking about the flat, not a place. Price and
+        # size on the card are valid, so keep the listing under the city that was
+        # searched -- and say nothing finer, since the pieces we dropped are
+        # exactly the ones we cannot trust.
+        if parts and cls._TYPE_PREFIX.match(parts[-1]):
+            return fallback, None, None
 
         if not parts:
             return fallback, None, None

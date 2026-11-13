@@ -151,3 +151,36 @@ def test_the_header_does_not_announce_a_failure_for_an_advisory(tmp_path, monkey
     assert dbt_item.tone == "good"
     # And the warning is not simply swallowed to achieve that.
     assert "advisory warning" in dbt_item.help
+
+
+class TestBarrioShareItem:
+    """The strip's barrio share is for-sale only (ADR-0011: rent is district grain)."""
+
+    def test_query_is_restricted_to_sale(self, monkeypatch):
+        import pandas as pd
+        seen = []
+        monkeypatch.setattr(freshness, "query",
+                            lambda sql, **_kw: seen.append(sql) or pd.DataFrame({"pct": [84.0]}))
+        item = freshness._barrio_share_item()
+        assert "operation_type = 'sale'" in seen[0]
+        assert (item.value, item.tone) == ("84.0%", "good")
+        assert "sale" in item.label and "rent" in item.help.lower()
+
+    def test_below_threshold_warns(self, monkeypatch):
+        import pandas as pd
+        monkeypatch.setattr(freshness, "query",
+                            lambda _sql, **_kw: pd.DataFrame({"pct": [50.0]}))
+        assert freshness._barrio_share_item().tone == "warn"
+
+    def test_no_sale_listings_is_a_dash_not_nan(self, monkeypatch):
+        import pandas as pd
+        monkeypatch.setattr(freshness, "query",
+                            lambda _sql, **_kw: pd.DataFrame({"pct": [float("nan")]}))
+        item = freshness._barrio_share_item()
+        assert item.value == "—" and "nan" not in item.value.lower()
+
+    def test_warehouse_failure_is_bad(self, monkeypatch):
+        def boom(_sql, **_kw):
+            raise RuntimeError("down")
+        monkeypatch.setattr(freshness, "query", boom)
+        assert freshness._barrio_share_item().tone == "bad"
