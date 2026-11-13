@@ -22,6 +22,63 @@ models:
       - name: dq_bad_size
         tests: [not_null]
 
+      # ── Card attributes (ADR-0012) ──────────────────────────────────────────
+      # As the advertiser states them on the search card. NULL means the card
+      # did not say it — never "no" — and is the value of every snapshot
+      # loaded before these were scraped. Read through column_or_null, so the
+      # model builds whether or not raw.idealista_listings has them yet.
+      - name: floor
+        description: >
+          Storey as an integer: sótano / semi-sótano -1, bajo and entreplanta 0,
+          "Planta Nª" N. NULL when the card states no floor (houses, chalets).
+          floor_text keeps the span it was read from.
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -3
+              max_value: 60
+      - name: floor_text
+        description: The card's floor span verbatim, e.g. "Planta 3ª exterior con ascensor".
+      - name: is_exterior
+        description: True when the card says "exterior", false for "interior", NULL when unstated.
+      - name: has_lift
+        description: True for "con ascensor", false for "sin ascensor", NULL when unstated.
+      - name: garage
+        description: >
+          'included' — a garage space is in the asking price ("Garaje incluido");
+          'optional' — one is offered separately and is NOT in the asking price
+          ("Garaje opc. 60.000 €"). NULL when the card mentions no garage.
+        tests:
+          - accepted_values:
+              values: [included, optional]
+      - name: garage_price_eur
+        description: Price of an optional garage when the card states it.
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "is null or garage = 'optional'"
+      - name: garage_text
+        description: The card's garage span verbatim.
+      - name: portal_previous_price_eur
+        description: >
+          The previous asking price the portal shows struck through on the card
+          (its own price-drop marker) — not derived from our snapshot history,
+          and possibly older than our first observation of the listing.
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "is null or portal_previous_price_eur > price_eur"
+              config:
+                severity: warn
+      - name: portal_price_drop_pct
+        description: The cut as the portal states it, in percent (rounded by the portal).
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: false
+      - name: description
+        description: The card's description snippet (Idealista cuts it near 550 characters).
+      - name: tags
+        description: The card's listing tags, '|'-delimited, e.g. "Lujo|Villa".
+
   - name: stg_fotocasa__listings
     description: >
       Cleaned and typed snapshot of every Fotocasa listing per run.

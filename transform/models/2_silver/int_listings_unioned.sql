@@ -3,7 +3,14 @@
 -- a zero-row placeholder (raw.fotocasa_listings not populated yet). The UNION +
 -- cross-source dedup below is written so that the moment Fotocasa data lands, the
 -- same listing scraped from both portals collapses to one row (lowest price wins).
-{{ config(materialized='incremental', unique_key='snapshot_pk', schema='silver') }}
+-- append_new_columns: see stg_idealista__listings — new columns must reach an
+-- existing incremental table instead of being dropped by the default 'ignore'.
+{{ config(
+    materialized='incremental',
+    unique_key='snapshot_pk',
+    schema='silver',
+    on_schema_change='append_new_columns'
+) }}
 
 with idealista as (
     select * from {{ ref('stg_idealista__listings') }}
@@ -152,6 +159,19 @@ normalised as (
             s.seed_neighborhood is not null
             or (not s.seed_covers_city and s.nbhd_scrubbed is not null)
         )                                                as neighborhood_is_benchmarkable,
+        -- Card attributes as the advertiser states them (ADR-0012); NULL means
+        -- unstated. Carried untouched: no attribute takes part in the score yet.
+        s.floor,
+        s.floor_text,
+        s.is_exterior,
+        s.has_lift,
+        s.garage,
+        s.garage_price_eur,
+        s.garage_text,
+        s.portal_previous_price_eur,
+        s.portal_price_drop_pct,
+        s.description,
+        s.tags,
         s.scraped_date,
         s._loaded_at,
         s._run_id,

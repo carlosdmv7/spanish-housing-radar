@@ -5,7 +5,12 @@ If a field is missing or the wrong type, the row is logged and skipped.
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+import logging
+from typing import ClassVar, Literal
+
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
+
+logger = logging.getLogger(__name__)
 
 
 class RawListing(BaseModel):
@@ -38,6 +43,65 @@ class RawListing(BaseModel):
     # a source that has no title (Fotocasa parses structured fields) still
     # validates.
     raw_title: str | None = None
+
+    # ── Card attributes, as the advertiser states them (ADR-0012) ────────────
+    # Every one is optional and None means "the card does not say" — never
+    # "no". A house has no floor, and a flat whose card omits the lift may well
+    # have one. Floor is the storey as an integer: sótano/semi-sótano -1,
+    # bajo/entreplanta 0, "Planta Nª" N; raw_floor_text keeps the span verbatim.
+    raw_floor: int | None = None
+    raw_floor_text: str | None = None
+    raw_is_exterior: bool | None = None
+    raw_has_lift: bool | None = None
+    # 'included' (in the asking price) or 'optional' (sold separately, for
+    # raw_garage_price_eur when the card states it).
+    raw_garage: Literal["included", "optional"] | None = None
+    raw_garage_price_eur: float | None = None
+    raw_garage_text: str | None = None
+    # The portal's own price-drop marker: the previous asking price it shows
+    # struck through, and the cut as a percentage.
+    raw_previous_price_eur: float | None = None
+    raw_price_drop_pct: float | None = None
+    raw_description: str | None = None
+    # '|'-delimited, e.g. "Lujo|Villa".
+    raw_tags: str | None = None
+
+    # These attributes are secondary to the listing. A garbled one is a parser
+    # problem, not a reason to lose a listing whose price, size and location are
+    # sound — so an implausible value is dropped to None (and logged) instead of
+    # failing validation the way a bad price or size does.
+    _ATTRIBUTE_RANGES: ClassVar[dict[str, tuple[float, float]]] = {
+        # Below ground is at most a few levels; Spain's tallest residential
+        # towers have under 50 storeys.
+        "raw_floor": (-3, 60),
+        "raw_garage_price_eur": (1, 1_000_000),
+        "raw_previous_price_eur": (1, 100_000_000),
+        # A 0% or 100% "cut" is not a price drop.
+        "raw_price_drop_pct": (0.01, 99.99),
+    }
+
+    @field_validator(
+        "raw_floor", "raw_garage_price_eur", "raw_previous_price_eur", "raw_price_drop_pct",
+    )
+    @classmethod
+    def implausible_attribute_is_unknown(cls, v: float | None, info: ValidationInfo) -> float | None:
+        if v is None:
+            return None
+        lo, hi = cls._ATTRIBUTE_RANGES[info.field_name]
+        if not (lo <= v <= hi):
+            logger.warning("Dropping implausible %s=%r to None", info.field_name, v)
+            return None
+        return v
+
+    @field_validator(
+        "raw_floor_text", "raw_garage_text", "raw_description", "raw_tags",
+    )
+    @classmethod
+    def blank_text_is_unknown(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
 
     @field_validator("raw_operation_type")
     @classmethod

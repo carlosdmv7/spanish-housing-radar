@@ -8,12 +8,26 @@
 -- project therefore skips this model — which is what makes rebuilding silver
 -- and gold safe. Verified 2026-09-25: a --full-refresh into ci_* left 1,426
 -- snapshots for 1,426 listings, against 1,618 kept in prod.
+--
+-- on_schema_change='append_new_columns': the card-attribute columns (ADR-0012)
+-- were added to an incremental table that already holds the only snapshot
+-- history. Under dbt's default ('ignore') they would be dropped silently from
+-- every future insert; 'sync_all_columns' could drop columns. Appending adds
+-- them in place, leaves every existing snapshot NULL in them — correct: those
+-- cards were never read for these fields — and needs no full refresh.
 {{ config(
     materialized='incremental',
     unique_key=['source_id', '_run_id'],
     schema='bronze',
-    full_refresh=false
+    full_refresh=false,
+    on_schema_change='append_new_columns'
 ) }}
+
+{#- The loader adds these raw columns on the first scrape that carries them;
+    until then `dbt build` (CI, and scheduled runs that skip the scrape) still
+    reads the old table. column_or_null makes both shapes compile to the same
+    typed columns. -#}
+{%- set raw_cols = relation_column_names(source('raw', 'idealista_listings')) %}
 
 with source as (
     select * from {{ source('raw', 'idealista_listings') }}
@@ -47,6 +61,25 @@ cleaned as (
         -- Carried through untouched so silver can re-derive location from the
         -- source text rather than trusting the extraction-time parse.
         raw_title                                            as listing_title,
+
+        -- Card attributes as the advertiser states them (ADR-0012). NULL means
+        -- the card did not say — and for every snapshot loaded before these
+        -- were scraped, that the card was not read for them. Never "no".
+        -- floor: sótano/semi-sótano -1, bajo/entreplanta 0, "Planta Nª" N.
+        {{ column_or_null(raw_cols, 'raw_floor', 'integer') }}                as floor,
+        {{ column_or_null(raw_cols, 'raw_floor_text', 'varchar') }}           as floor_text,
+        {{ column_or_null(raw_cols, 'raw_is_exterior', 'boolean') }}          as is_exterior,
+        {{ column_or_null(raw_cols, 'raw_has_lift', 'boolean') }}             as has_lift,
+        -- 'included' (in the asking price) | 'optional' (sold separately)
+        {{ column_or_null(raw_cols, 'raw_garage', 'varchar') }}               as garage,
+        {{ column_or_null(raw_cols, 'raw_garage_price_eur', 'double') }}      as garage_price_eur,
+        {{ column_or_null(raw_cols, 'raw_garage_text', 'varchar') }}          as garage_text,
+        -- The portal's own price-drop marker, not one derived from our history.
+        {{ column_or_null(raw_cols, 'raw_previous_price_eur', 'double') }}    as portal_previous_price_eur,
+        {{ column_or_null(raw_cols, 'raw_price_drop_pct', 'double') }}        as portal_price_drop_pct,
+        {{ column_or_null(raw_cols, 'raw_description', 'varchar') }}          as description,
+        -- '|'-delimited, e.g. 'Lujo|Villa'
+        {{ column_or_null(raw_cols, 'raw_tags', 'varchar') }}                 as tags,
 
         -- Data quality flags (detectar basura antes de silver)
         raw_price_eur is null or raw_price_eur <= 0          as dq_bad_price,

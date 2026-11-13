@@ -328,6 +328,7 @@ and the alternatives I rejected and why.
 | [0009](docs/adr/0009-screen-implausible-and-stale-listings.md) | **Set aside** listings whose €/m² is under ¼ or over 4× their city, or unseen for 60 days, and list them on How it works | A real outlier beyond 4× is set aside with the typos; it is shown, not lost |
 | [0010](docs/adr/0010-scrape-newest-first.md) | Scrape search pages **newest first** | Each week's credits buy new listings instead of re-reading the same ones; a listing is rarely seen twice, so days-on-market signals are rarer |
 | [0011](docs/adr/0011-empirical-bayes-barrio-benchmark.md) | **Empirical-Bayes** barrio weight, n / (n + k), with k estimated on every build | Fewer extreme scores, and rents scored against their district, because that is what the data supports |
+| [0012](docs/adr/0012-card-attributes-as-stated.md) | Keep the card's **floor, lift, exterior, garage and price-drop marker**, as the advertiser states them; NULL = unstated | History starts at the next scrape; every earlier snapshot is NULL, and the score does not use them yet |
 
 ---
 
