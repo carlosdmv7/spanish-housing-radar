@@ -235,3 +235,182 @@ def test_search_keys_map_to_the_warehouse_spelling():
 
     assert _MUNICIPALITY_BY_SEARCH_KEY["valencia"] == "valència"
     assert _MUNICIPALITY_BY_SEARCH_KEY["malaga"] == "málaga"
+
+# ── Card attributes (ADR-0012) ────────────────────────────────────────────────
+# The markup below is trimmed from the cached search page in debug_output/
+# (gitignored), keeping only the elements the extractors read.
+_CARD_WITH_DROP = """
+<article class="item"><div class="item-info-container">
+  <a class="item-link" href="/inmueble/110438977/" title="Piso en Calle de la Lechuga, Sol, Madrid">x</a>
+  <div class="price-row">
+    <span class="item-price h2-simulated">820.000<span class="txt-big">€</span></span>
+    <span class="pricedown">
+      <span class="pricedown_price">845.000 €</span>
+      <span class="pricedown_icon icon-pricedown">3%</span>
+    </span>
+  </div>
+  <div class="item-detail-char">
+    <span class="item-detail">Garaje <span>opc.</span> 60.000 €</span>
+    <span class="item-detail">4 hab.</span>
+    <span class="item-detail">110 m²</span>
+    <span class="item-detail">Planta 3ª exterior con ascensor</span>
+  </div>
+  <div class="item-description description"><p class="ellipsis">GILMAR pone a su
+    disposición   magnífica vivienda</p></div>
+  <div class="listing-tags-container"><span class="listing-tags">Lujo</span>
+    <span class="listing-tags">Villa</span></div>
+</div></article>
+"""
+
+_HOUSE_CARD = """
+<article class="item"><div class="item-info-container">
+  <a class="item-link" href="/inmueble/111278247/" title="Chalet pareado en Calle de Darío Aparicio, Valdemarín, Madrid">x</a>
+  <div class="price-row"><span class="item-price h2-simulated">2.290.000<span class="txt-big">€</span></span>
+    <span class="item-price-by-area">5.725 €/m²</span></div>
+  <div class="item-detail-char">
+    <span class="item-detail">5 hab.</span>
+    <span class="item-detail">400 m²</span>
+  </div>
+</div></article>
+"""
+
+
+def _card(html: str):
+    from bs4 import BeautifulSoup
+    return BeautifulSoup(html, "lxml").select_one("article.item")
+
+
+def _details(card) -> list[str]:
+    return [s.get_text(" ", strip=True) for s in card.select(".item-detail-char span.item-detail")]
+
+
+class TestFloor:
+    @pytest.mark.parametrize("text, expected", [
+        ("Planta 3ª exterior con ascensor", 3),
+        ("Planta 9ª exterior con ascensor", 9),
+        ("Planta 12ª interior sin ascensor", 12),
+        ("Planta 1º exterior", 1),
+        ("Planta -1 interior", -1),
+        ("Bajo exterior sin ascensor", 0),
+        ("Bajo", 0),
+        ("Entreplanta interior con ascensor", 0),
+        ("Sótano interior", -1),
+        ("Semisótano exterior", -1),
+        ("Semi-sótano exterior sin ascensor", -1),
+        ("Semi sótano", -1),
+    ])
+    def test_encoding(self, text, expected):
+        floor_text = scraper._floor_text(["3 hab.", "90 m²", text])
+        assert floor_text == text
+        assert scraper._extract_floor(floor_text) == expected
+
+    def test_a_house_has_no_floor(self):
+        assert scraper._floor_text(["Garaje incluido", "5 hab.", "400 m²"]) is None
+        assert scraper._extract_floor(None) is None
+
+    def test_other_spans_are_not_floors(self):
+        # "Garaje", rooms and size must never be read as a floor span.
+        assert scraper._floor_text(["Garaje opc. 60.000 €", "3 hab.", "218 m²"]) is None
+
+
+class TestExteriorAndLift:
+    @pytest.mark.parametrize("text, exterior, lift", [
+        ("Planta 3ª exterior con ascensor", True, True),
+        ("Planta 6ª interior con ascensor", False, True),
+        ("Bajo exterior sin ascensor", True, False),
+        ("Entreplanta interior", False, None),
+        ("Planta 2ª", None, None),
+    ])
+    def test_stated_values(self, text, exterior, lift):
+        details = ["2 hab.", "70 m²", text]
+        assert scraper._extract_is_exterior(details) is exterior
+        assert scraper._extract_has_lift(details) is lift
+
+    def test_unstated_is_none_never_false(self):
+        details = ["Garaje incluido", "5 hab.", "400 m²"]
+        assert scraper._extract_is_exterior(details) is None
+        assert scraper._extract_has_lift(details) is None
+
+
+class TestGarage:
+    def test_included(self):
+        assert scraper._extract_garage(["Garaje incluido", "5 hab."]) == ("Garaje incluido", "included", None)
+
+    def test_optional_with_price_is_not_in_the_asking_price(self):
+        assert scraper._extract_garage(["Garaje opc. 60.000 €", "3 hab."]) == (
+            "Garaje opc. 60.000 €", "optional", 60000.0,
+        )
+
+    def test_optional_spelled_out(self):
+        assert scraper._extract_garage(["Garaje opcional 20.000 €"]) == (
+            "Garaje opcional 20.000 €", "optional", 20000.0,
+        )
+
+    def test_optional_without_price(self):
+        assert scraper._extract_garage(["Garaje opc."]) == ("Garaje opc.", "optional", None)
+
+    def test_unrecognised_garage_wording_keeps_the_text_only(self):
+        assert scraper._extract_garage(["Garaje comunitario"]) == ("Garaje comunitario", None, None)
+
+    def test_no_garage_span_is_unknown_not_no(self):
+        assert scraper._extract_garage(["3 hab.", "90 m²"]) == (None, None, None)
+
+
+class TestPriceDrop:
+    def test_reads_the_portals_marker(self):
+        assert scraper._extract_price_drop(_card(_CARD_WITH_DROP)) == (845000.0, 3.0)
+
+    def test_no_marker_is_none(self):
+        assert scraper._extract_price_drop(_card(_HOUSE_CARD)) == (None, None)
+
+    def test_price_marker_does_not_leak_into_current_price(self):
+        assert scraper._extract_price(_card(_CARD_WITH_DROP)) == 820000.0
+
+
+class TestDescriptionAndTags:
+    def test_description_collapses_whitespace(self):
+        assert scraper._extract_description(_card(_CARD_WITH_DROP)) == (
+            "GILMAR pone a su disposición magnífica vivienda"
+        )
+
+    def test_description_is_capped_at_a_word_boundary(self):
+        long = "<article class='item'><div class='item-description'><p>" + "palabra " * 300 + "</p></div></article>"
+        text = scraper._extract_description(_card(long))
+        assert len(text) <= scraper._DESCRIPTION_MAX_CHARS + 1
+        assert text.endswith("palabra…")
+
+    def test_missing_description_and_tags_are_none(self):
+        card = _card(_HOUSE_CARD)
+        assert scraper._extract_description(card) is None
+        assert scraper._extract_tags(card) is None
+
+    def test_tags_are_pipe_delimited(self):
+        assert scraper._extract_tags(_card(_CARD_WITH_DROP)) == "Lujo|Villa"
+
+
+class TestParseSearchCard:
+    def test_a_flat_card_end_to_end(self):
+        from extraction.schemas.raw_listings import RawListing
+
+        row = scraper._parse_search_card(_card(_CARD_WITH_DROP), "sale")
+        listing = RawListing(**row)
+        assert listing.raw_price_eur == 820000.0
+        assert listing.raw_floor == 3
+        assert listing.raw_floor_text == "Planta 3ª exterior con ascensor"
+        assert listing.raw_is_exterior is True
+        assert listing.raw_has_lift is True
+        assert listing.raw_garage == "optional"
+        assert listing.raw_garage_price_eur == 60000.0
+        assert listing.raw_previous_price_eur == 845000.0
+        assert listing.raw_price_drop_pct == 3.0
+        assert listing.raw_tags == "Lujo|Villa"
+        assert listing.raw_bathrooms is None   # never on the card
+
+    def test_a_house_card_states_nothing_about_floor_or_lift(self):
+        from extraction.schemas.raw_listings import RawListing
+
+        listing = RawListing(**scraper._parse_search_card(_card(_HOUSE_CARD), "sale"))
+        for field in ("raw_floor", "raw_floor_text", "raw_is_exterior", "raw_has_lift",
+                      "raw_garage", "raw_previous_price_eur", "raw_price_drop_pct",
+                      "raw_description", "raw_tags"):
+            assert getattr(listing, field) is None, field

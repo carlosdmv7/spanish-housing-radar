@@ -12,9 +12,14 @@ Selector reference (Idealista 2026):
       <span class="item-detail">3 hab.</span>
       <span class="item-detail">90 m²</span>
       <span class="item-detail">2 baños</span>
+      <span class="item-detail">Planta 3ª exterior con ascensor</span>
     </div>
-    <p class="item-description">free-text description</p>
+    <div class="item-description"><p class="ellipsis">free-text snippet</p></div>
+    <div class="listing-tags-container"><span class="listing-tags">Lujo</span></div>
   </article>
+In practice bathrooms never appear on the card (raw_bathrooms is null in every
+row loaded so far); floor, lift, exterior/interior, garage, the portal's own
+price-drop marker, the snippet and the tags do — see ADR-0012.
 """
 from __future__ import annotations
 
@@ -161,6 +166,9 @@ class IdealistaScraper(AbstractScraper):
                 # string. Keeping the string itself is what lets a later parser
                 # fix be applied to rows already in the warehouse.
                 "raw_title":          title,
+                # Card attributes as the advertiser states them (ADR-0012).
+                # None always means "the card does not say", never "no".
+                **self._extract_card_attributes(card, details),
             }
         except Exception as exc:
             logger.debug("[idealista] Card parse error: %s", exc, exc_info=True)
@@ -210,6 +218,179 @@ class IdealistaScraper(AbstractScraper):
             if m:
                 return int(m.group(1))
         return None
+
+    # ── Card attributes (ADR-0012) ────────────────────────────────────────────
+    # What explains most of the price difference between two flats in the same
+    # barrio — floor, lift, exterior or interior, garage — is printed on the
+    # search card and was being thrown away. Variants seen in the cached pages
+    # (debug_output/, 30 Madrid sale cards):
+    #   "Planta 3ª exterior con ascensor"   floor + orientation + lift, one span
+    #   "Planta 7ª interior con ascensor"
+    #   "Garaje incluido"                   its own span, first in the row
+    #   "Garaje opc. 60.000 €"              optional: NOT included in the price
+    #   (no floor span at all)              houses and chalets
+    # The cached pages are one luxury Madrid search, so "Bajo", "Entreplanta",
+    # "Sótano"/"Semi-sótano" and "sin ascensor" do not occur in them; they are
+    # handled from Idealista's documented vocabulary and covered by unit tests.
+
+    # Floor encoding: the storey number as an integer, ground = 0.
+    #   Sótano / Semi-sótano → -1   (any below-ground level; raw_floor_text keeps
+    #                                which one)
+    #   Bajo                 →  0
+    #   Entreplanta          →  0   (a mezzanine between bajo and 1ª: an integer
+    #                                cannot hold 0.5, and economically it prices
+    #                                with the ground floor, not the first)
+    #   Planta Nª            →  N   (also "Planta -1", "Planta 12")
+    #   no floor stated      →  None (houses, or an advertiser who left it blank)
+    _FLOOR_SPAN = re.compile(
+        r"^\s*(?:planta\s+-?\d+|bajo\b|entreplanta\b|semi-?\s?s[óo]tano\b|s[óo]tano\b)",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _floor_text(cls, details: list[str]) -> str | None:
+        """The detail span that states the floor, verbatim, or None."""
+        for t in details:
+            if cls._FLOOR_SPAN.match(t):
+                return t.strip()
+        return None
+
+    @staticmethod
+    def _extract_floor(floor_text: str | None) -> int | None:
+        """Encode a floor span as an integer storey (see the table above)."""
+        if not floor_text:
+            return None
+        t = floor_text.strip().lower()
+        m = re.match(r"planta\s+(-?\d+)", t)
+        if m:
+            return int(m.group(1))
+        if re.match(r"(?:semi-?\s?)?s[óo]tano", t):
+            return -1
+        if t.startswith(("bajo", "entreplanta")):
+            return 0
+        return None
+
+    @staticmethod
+    def _extract_is_exterior(details: list[str]) -> bool | None:
+        """True for "exterior", False for "interior", None when not stated."""
+        for t in details:
+            if re.search(r"\bexterior\b", t, re.IGNORECASE):
+                return True
+            if re.search(r"\binterior\b", t, re.IGNORECASE):
+                return False
+        return None
+
+    @staticmethod
+    def _extract_has_lift(details: list[str]) -> bool | None:
+        """True for "con ascensor", False for "sin ascensor", None when unstated."""
+        for t in details:
+            if re.search(r"\bsin\s+ascensor\b", t, re.IGNORECASE):
+                return False
+            if re.search(r"\bcon\s+ascensor\b", t, re.IGNORECASE):
+                return True
+        return None
+
+    _GARAGE_SPAN = re.compile(r"^\s*garaje\b", re.IGNORECASE)
+
+    @classmethod
+    def _extract_garage(cls, details: list[str]) -> tuple[str | None, str | None, float | None]:
+        """
+        (garage_text, garage, garage_price_eur) from the card.
+
+        garage is 'included' ("Garaje incluido": in the asking price) or
+        'optional' ("Garaje opc. 60.000 €" / "Garaje opcional": sold separately,
+        NOT in the asking price, with its own price when stated). A card with no
+        garage span says nothing about a garage, so all three are None — never a
+        'no garage'.
+        """
+        for t in details:
+            if not cls._GARAGE_SPAN.match(t):
+                continue
+            text = re.sub(r"\s+", " ", t).strip()
+            low = text.lower()
+            if "incluid" in low:
+                return text, "included", None
+            if re.search(r"\bopc(?:\.|ional)?", low):
+                m = re.search(r"(\d{1,3}(?:\.\d{3})+|\d+)\s*€", text)
+                price = float(m.group(1).replace(".", "")) if m else None
+                return text, "optional", price
+            return text, None, None
+        return None, None, None
+
+    @staticmethod
+    def _extract_price_drop(card: Tag) -> tuple[float | None, float | None]:
+        """
+        (previous_price_eur, price_drop_pct) from the portal's own price-drop
+        marker, as the portal states it:
+          <span class="pricedown">
+            <span class="pricedown_price">845.000 €</span>
+            <span class="pricedown_icon icon-pricedown">3%</span>
+          </span>
+        The struck-through price is the previous asking price (845.000 against
+        a current 820.000 on that card), the percentage is the cut. Both None
+        when the card carries no marker.
+        """
+        prev = None
+        pct = None
+        price_tag = card.select_one('[class*="pricedown_price"], [class*="price-down_price"]')
+        if price_tag:
+            m = re.search(r"(\d{1,3}(?:\.\d{3})+|\d+)", price_tag.get_text(" ", strip=True))
+            if m:
+                prev = float(m.group(1).replace(".", ""))
+        pct_tag = card.select_one('[class*="pricedown_icon"], [class*="price-down_icon"]')
+        if pct_tag:
+            m = re.search(r"(\d+(?:[,\.]\d+)?)\s*%", pct_tag.get_text(" ", strip=True))
+            if m:
+                pct = float(m.group(1).replace(",", "."))
+        return prev, pct
+
+    # The card snippet is already cut by Idealista at ~550 characters; the cap
+    # only guards against a layout change dumping the full description here.
+    _DESCRIPTION_MAX_CHARS = 1000
+
+    @classmethod
+    def _extract_description(cls, card: Tag) -> str | None:
+        """Card description snippet, whitespace collapsed, capped at a word boundary."""
+        tag = card.select_one(IDEALISTA_SELECTORS["search_desc"]) or card.select_one(".item-description")
+        if not tag:
+            return None
+        text = re.sub(r"\s+", " ", tag.get_text(" ", strip=True)).strip()
+        if not text:
+            return None
+        cap = cls._DESCRIPTION_MAX_CHARS
+        if len(text) > cap:
+            cut = text[:cap]
+            text = (cut.rsplit(" ", 1)[0] if " " in cut else cut) + "…"
+        return text
+
+    @staticmethod
+    def _extract_tags(card: Tag) -> str | None:
+        """Listing tags ("Lujo", "Villa", "Apartamento"…) joined with '|', or None."""
+        tags = [
+            re.sub(r"\s+", " ", s.get_text(" ", strip=True)).replace("|", "/")
+            for s in card.select(IDEALISTA_SELECTORS["search_tags"])
+        ]
+        tags = [t for t in tags if t]
+        return "|".join(tags) if tags else None
+
+    @classmethod
+    def _extract_card_attributes(cls, card: Tag, details: list[str]) -> dict:
+        floor_text = cls._floor_text(details)
+        garage_text, garage, garage_price = cls._extract_garage(details)
+        prev_price, drop_pct = cls._extract_price_drop(card)
+        return {
+            "raw_floor":              cls._extract_floor(floor_text),
+            "raw_floor_text":         floor_text,
+            "raw_is_exterior":        cls._extract_is_exterior(details),
+            "raw_has_lift":           cls._extract_has_lift(details),
+            "raw_garage":             garage,
+            "raw_garage_price_eur":   garage_price,
+            "raw_garage_text":        garage_text,
+            "raw_previous_price_eur": prev_price,
+            "raw_price_drop_pct":     drop_pct,
+            "raw_description":        cls._extract_description(card),
+            "raw_tags":               cls._extract_tags(card),
+        }
 
     @staticmethod
     def _property_type(title: str) -> str:
