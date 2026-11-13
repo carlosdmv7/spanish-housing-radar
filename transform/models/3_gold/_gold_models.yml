@@ -157,6 +157,58 @@ models:
         data_type: bigint
       - name: low_confidence_flag
         data_type: boolean
+      # ── Card attributes (ADR-0012) ────────────────────────────────────────
+      # As the advertiser states them; NULL = the card does not say, never
+      # "no". Shown alongside the score, not part of it.
+      - name: floor
+        data_type: integer
+        description: >
+          Storey: sótano / semi-sótano -1, bajo and entreplanta 0, "Planta Nª" N.
+          NULL for houses and cards that state no floor.
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -3
+              max_value: 60
+      - name: floor_text
+        data_type: varchar
+        description: The card's floor span verbatim, e.g. "Bajo exterior sin ascensor".
+      - name: is_exterior
+        data_type: boolean
+        description: True = exterior, false = interior, NULL = unstated.
+      - name: has_lift
+        data_type: boolean
+        description: True = con ascensor, false = sin ascensor, NULL = unstated.
+      - name: garage
+        data_type: varchar
+        description: >
+          'included' (in the asking price) or 'optional' (sold separately, NOT in
+          price_eur — see garage_price_eur). NULL = no garage mentioned.
+        tests:
+          - accepted_values:
+              values: [included, optional]
+      - name: garage_price_eur
+        data_type: double
+        description: Price of an optional garage, when the card states it.
+      - name: portal_previous_price_eur
+        data_type: double
+        description: >
+          The previous asking price the portal itself shows struck through.
+          Independent of price_change_pct, which is measured from our own
+          snapshots and only covers what we have observed.
+      - name: portal_price_drop_pct
+        data_type: double
+        description: The portal's stated cut, in percent.
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: false
+      - name: description
+        data_type: varchar
+        description: The card's description snippet.
+      - name: tags
+        data_type: varchar
+        description: The card's tags, '|'-delimited, e.g. "Lujo|Villa".
       - name: first_seen_date
         data_type: date
         description: First date this listing was ever observed (from snapshot history).

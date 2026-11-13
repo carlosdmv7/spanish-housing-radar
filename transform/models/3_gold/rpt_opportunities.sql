@@ -32,6 +32,20 @@ select
     s.benchmark_comp_count,
     s.low_confidence_flag,
 
+    -- ── Card attributes (ADR-0012) ───────────────────────────────────────────
+    -- As the advertiser states them; NULL = the card does not say. Not part of
+    -- the score: the score still compares €/m² with the barrio, blind to these.
+    s.floor,
+    s.floor_text,
+    s.is_exterior,
+    s.has_lift,
+    s.garage,
+    s.garage_price_eur,
+    s.portal_previous_price_eur,
+    s.portal_price_drop_pct,
+    s.description,
+    s.tags,
+
     -- ── Behavioural signals (int_listing_lifecycle) ──────────────────────────
     -- Coalesced so a listing seen only once reads as "no signal yet" (0 / false)
     -- rather than null. Lights up as the daily pipeline accumulates snapshots.

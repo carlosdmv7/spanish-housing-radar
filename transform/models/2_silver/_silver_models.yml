@@ -62,6 +62,19 @@ models:
         tests:
           - accepted_values:
               values: [apartment, house, other]
+      - name: floor
+        description: >
+          Card attributes (floor … tags) come from the latest snapshot, as the
+          advertiser states them; NULL = unstated. Defined in
+          stg_idealista__listings and ADR-0012.
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -3
+              max_value: 60
+      - name: garage
+        tests:
+          - accepted_values:
+              values: [included, optional]
 
   - name: int_listings_screened
     description: >
