@@ -226,3 +226,12 @@ class TestBuildPageUrl:
                 == base + "?ordenado-por=fecha-publicacion-desc")
         assert (scraper._build_page_url(base, 2, "fecha-publicacion-desc")
                 == base + "pagina-2.htm?ordenado-por=fecha-publicacion-desc")
+
+
+def test_search_keys_map_to_the_warehouse_spelling():
+    # A fallback municipality must be one the gold test knows, or a truncated
+    # title turns a red build into the new phantom city.
+    from extraction.scrapers.idealista import _MUNICIPALITY_BY_SEARCH_KEY
+
+    assert _MUNICIPALITY_BY_SEARCH_KEY["valencia"] == "valència"
+    assert _MUNICIPALITY_BY_SEARCH_KEY["malaga"] == "málaga"

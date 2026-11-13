@@ -38,6 +38,14 @@ from extraction.scrapers.base import AbstractScraper, CreditBudgetExhausted
 logger = logging.getLogger(__name__)
 
 
+# Search keys are ASCII slugs; Idealista titles, and so every municipality in
+# the warehouse, carry the accents. Only the keys that differ are listed.
+_MUNICIPALITY_BY_SEARCH_KEY: dict[str, str] = {
+    "valencia": "valència",
+    "malaga": "málaga",
+}
+
+
 class IdealistaScraper(AbstractScraper):
     source_name = "idealista"
 
@@ -128,7 +136,11 @@ class IdealistaScraper(AbstractScraper):
             if size is None:
                 return None
 
-            muni, district, hood = self._parse_location(title, self.province)
+            # The fallback is the municipality as the warehouse spells it, not
+            # the search key: a title that names no place would otherwise file
+            # the flat under "valencia", a second city beside "valència".
+            searched = _MUNICIPALITY_BY_SEARCH_KEY.get(self.province, self.province)
+            muni, district, hood = self._parse_location(title, searched)
 
             return {
                 "source_id":          sid,
