@@ -25,6 +25,7 @@ EXPECTED_KEYS = {
     "dbt_tests_warned",
     "dbt_tests_total",
     "last_run_conclusion",
+    "scrape_coverage",
 }
 
 
@@ -152,3 +153,40 @@ class TestQueryWarehouse:
         monkeypatch.setenv("MOTHERDUCK_TOKEN", "not-a-real-token")
         with patch("duckdb.connect", side_effect=RuntimeError("no route to host")):
             assert status.query_warehouse() == (None, None)
+
+
+class TestScrapeCoverage:
+    FULL = [{"operation": "sale", "pages_requested": 4, "pages_with_cards": 4,
+             "pages_blocked": 0, "listings": 120},
+            {"operation": "rent", "pages_requested": 4, "pages_with_cards": 4,
+             "pages_blocked": 0, "listings": 118}]
+    STARVED = [FULL[0], {"operation": "rent", "pages_requested": 1, "pages_with_cards": 0,
+                         "pages_blocked": 1, "listings": 0}]
+
+    def test_no_summary_is_skipped(self):
+        assert status.scrape_coverage(None) == "skipped"
+
+    def test_full(self):
+        assert status.scrape_coverage(self.FULL) == "full"
+
+    def test_a_starved_operation_is_partial(self):
+        assert status.scrape_coverage(self.STARVED) == "partial"
+
+    @patch.object(status, "query_warehouse", return_value=(None, None))
+    @patch.object(status, "read_dbt_test_results", return_value=(None, None, None))
+    def test_summary_file_reaches_status(self, _t, _w, tmp_path, monkeypatch):
+        f = tmp_path / "s.json"
+        f.write_text(json.dumps(self.STARVED))
+        monkeypatch.setattr(status, "SCRAPE_SUMMARY_PATH", f)
+        result = status.build_status()
+        assert result["scrape_coverage"] == "partial"
+        assert result["scrape"]["rent"]["pages_blocked"] == 1
+        assert "operation" not in result["scrape"]["rent"]
+
+    @patch.object(status, "query_warehouse", return_value=(None, None))
+    @patch.object(status, "read_dbt_test_results", return_value=(None, None, None))
+    def test_no_file_means_no_scrape_object(self, _t, _w, tmp_path, monkeypatch):
+        monkeypatch.setattr(status, "SCRAPE_SUMMARY_PATH", tmp_path / "missing.json")
+        result = status.build_status()
+        assert result["scrape_coverage"] == "skipped"
+        assert "scrape" not in result

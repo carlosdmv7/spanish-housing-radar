@@ -174,6 +174,17 @@ class TestExtractSize:
     def test_returns_none_when_missing(self):
         assert scraper._extract_size(["3 hab.", "2 baños"]) is None
 
+    @pytest.mark.parametrize(("text", "expected"), [
+        ("1.674 m²", 1674.0),
+        ("12.345 m2", 12345.0),
+        ("85 m²", 85.0),
+        ("85,5 m²", 85.5),
+        ("1.674,5 m²", 1674.5),
+        ("999 m²", 999.0),
+    ])
+    def test_spanish_number_formats(self, text, expected):
+        assert scraper._extract_size(["4 hab.", text]) == expected
+
 
 class TestExtractRoomsAndBathrooms:
     def test_extracts_rooms(self):
@@ -414,3 +425,18 @@ class TestParseSearchCard:
                       "raw_garage", "raw_previous_price_eur", "raw_price_drop_pct",
                       "raw_description", "raw_tags"):
             assert getattr(listing, field) is None, field
+
+
+class TestCoverageStats:
+    def test_stats_count_pages_cards_and_blocks(self, monkeypatch):
+        monkeypatch.setattr("extraction.scrapers.idealista.IDEALISTA_MAX_SEARCH_PAGES", 4)
+        s = IdealistaScraper(province="valencia")
+        pages = iter(["<html>ok</html>", "BLOCK"])
+        s._get_html = lambda _url: next(pages)
+        s._is_blocked = lambda html: html == "BLOCK"
+        s._polite_sleep = lambda: None
+        s._parse_search_page = lambda _html, _op: [{"x": 1}]
+        list(s._paginate("sale"))
+        assert s.stats == {
+            "pages_requested": 2, "pages_with_cards": 1, "pages_blocked": 1, "listings": 0,
+        }

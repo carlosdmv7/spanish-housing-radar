@@ -34,6 +34,9 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 STATUS_PATH = PROJECT_ROOT / "docs" / "status.json"
 RUN_RESULTS_PATH = PROJECT_ROOT / "transform" / "target" / "run_results.json"
+# Written by the flow (orchestration/flows/pipeline.py) when it scrapes, removed
+# when it does not. Gitignored: it only travels between two steps of one job.
+SCRAPE_SUMMARY_PATH = PROJECT_ROOT / ".scrape_summary.json"
 
 # On a runner the token is an env var, so this file worked there and only there.
 # Run by hand on a dev box it found no token, took the "we can't tell" branch and
@@ -131,6 +134,28 @@ def read_dbt_test_results() -> tuple[int | None, int | None, int | None]:
     return passed, warned, len(tests)
 
 
+def read_scrape_summary() -> list[dict[str, Any]] | None:
+    """Per-operation scrape coverage from the flow, or None if no scrape ran."""
+    try:
+        data = json.loads(SCRAPE_SUMMARY_PATH.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, list) and data else None
+
+
+def scrape_coverage(summary: list[dict[str, Any]] | None) -> str:
+    """
+    "skipped" when no scrape ran; "partial" when any operation came back empty or
+    hit a block; otherwise "full". Visibility only: a partial scrape never fails
+    the run, the dbt build over what did load is still worth having.
+    """
+    if not summary:
+        return "skipped"
+    if any(r.get("listings", 0) == 0 or r.get("pages_blocked", 0) > 0 for r in summary):
+        return "partial"
+    return "full"
+
+
 def query_warehouse() -> tuple[int | None, str | None]:
     """
     Return (rows_in_warehouse, last_ingest_at) from MotherDuck.
@@ -163,8 +188,9 @@ def query_warehouse() -> tuple[int | None, str | None]:
 def build_status() -> dict[str, Any]:
     rows, last_ingest_at = query_warehouse()
     tests_passed, tests_warned, tests_total = read_dbt_test_results()
+    summary = read_scrape_summary()
 
-    return {
+    result = {
         "project": PROJECT_NAME,
         "generated_at": _utc_now_iso(),
         "last_ingest_at": last_ingest_at,
@@ -177,7 +203,13 @@ def build_status() -> dict[str, Any]:
         "dbt_tests_total": tests_total,
         # Set by the workflow from `job.status`; "unknown" when run by hand.
         "last_run_conclusion": os.environ.get("RUN_CONCLUSION", "unknown"),
+        # Additive: whether the listing scrape covered every operation.
+        "scrape_coverage": scrape_coverage(summary),
     }
+    if summary is not None:
+        result["scrape"] = {r["operation"]: {k: v for k, v in r.items() if k != "operation"}
+                            for r in summary}
+    return result
 
 
 def main() -> int:

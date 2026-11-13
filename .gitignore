@@ -40,4 +40,4 @@ Thumbs.db
 # ── Data / raw files ──────────────────────────────────────────────────────────
 data/
 *.duckdb
-debug_output/
+debug_output/.scrape_summary.json
