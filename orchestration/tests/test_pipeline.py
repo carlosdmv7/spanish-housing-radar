@@ -7,12 +7,14 @@ is off, that a failing scrape short-circuits the dbt step, and that the dbt targ
 is passed through. It does NOT prove the scraper / INE fetch / dbt project work —
 that's extraction/tests/ and `dbt build` in CI.
 """
+import json
 from unittest.mock import MagicMock, patch
 
 from prefect.testing.utilities import prefect_test_harness
 import pytest
 
-from orchestration.flows.pipeline import run_pipeline
+from orchestration.flows import pipeline as pipeline_mod
+from orchestration.flows.pipeline import parse_scrape_summary, rotated_operations, run_pipeline
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -75,3 +77,42 @@ class TestPipeline:
         assert not any(" build " in f" {c} " for c in commands)
         # …but the free INE feed did run before it.
         assert any("run_ine" in c for c in commands)
+
+
+class TestScrapeCoverageWiring:
+    def test_rotation_is_deterministic_and_alternates(self):
+        ops = ["sale", "rent"]
+        assert rotated_operations(ops, 46) == rotated_operations(ops, 46)
+        assert rotated_operations(ops, 46)[0] != rotated_operations(ops, 47)[0]
+        assert rotated_operations([], 3) == []
+
+    def test_parse_summary_ignores_other_lines(self):
+        out = 'noise\nSCRAPE_SUMMARY {"operation": "sale", "listings": 5}\nSCRAPE_SUMMARY bad{\n'
+        assert parse_scrape_summary(out) == [{"operation": "sale", "listings": 5}]
+
+    def test_flow_writes_summary_and_a_partial_scrape_does_not_fail(self, tmp_path, monkeypatch):
+        path = tmp_path / "summary.json"
+        monkeypatch.setattr(pipeline_mod, "SCRAPE_SUMMARY_PATH", path)
+
+        def fake(cmd, *_a, **_k):
+            if "run_extraction.py" in " ".join(cmd):
+                op = cmd[cmd.index("--operation") + 1]
+                n = 0 if op == "rent" else 90
+                line = "SCRAPE_SUMMARY " + json.dumps({
+                    "operation": op, "pages_requested": 3, "pages_with_cards": 3,
+                    "pages_blocked": 0, "listings": n})
+                return MagicMock(returncode=0, stdout=line, stderr="")
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        with patch("orchestration.flows.pipeline.subprocess.run", side_effect=fake):
+            run_pipeline(scrape=True)
+        written = {r["operation"]: r["listings"] for r in json.loads(path.read_text())}
+        assert written == {"sale": 90, "rent": 0}
+
+    def test_no_scrape_removes_a_stale_summary(self, tmp_path, monkeypatch):
+        path = tmp_path / "summary.json"
+        path.write_text("[]")
+        monkeypatch.setattr(pipeline_mod, "SCRAPE_SUMMARY_PATH", path)
+        with patch("orchestration.flows.pipeline.subprocess.run", side_effect=_ok_result):
+            run_pipeline(scrape=False)
+        assert not path.exists()

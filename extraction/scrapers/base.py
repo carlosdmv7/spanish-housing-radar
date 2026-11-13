@@ -80,6 +80,12 @@ class AbstractScraper(ABC):
         self.session.headers.update(DEFAULT_HEADERS)
         # Credits this scraper instance has spent, for the budget guard below.
         self._credits_spent = 0
+        self.stats = self._new_stats()
+
+    @staticmethod
+    def _new_stats() -> dict[str, int]:
+        """Page-level coverage of the last scrape(); see run_extraction's summary."""
+        return {"pages_requested": 0, "pages_with_cards": 0, "pages_blocked": 0, "listings": 0}
 
     # ── Public interface ──────────────────────────────────────────────────────
 
@@ -90,6 +96,7 @@ class AbstractScraper(ABC):
         """
         listings: list[RawListing] = []
         invalid_count = 0
+        self.stats = self._new_stats()
 
         for raw_record in self._paginate(operation=operation):
             try:
@@ -104,6 +111,7 @@ class AbstractScraper(ABC):
                     raw_record,
                 )
 
+        self.stats["listings"] = len(listings)
         logger.info(
             "[%s] province=%s op=%s  valid=%d  skipped=%d",
             self.source_name,

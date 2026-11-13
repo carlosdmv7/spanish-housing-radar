@@ -18,6 +18,8 @@ schedule owns the cadence; the flow is just the flow.
 """
 from __future__ import annotations
 
+from datetime import UTC, datetime
+import json
 import os
 from pathlib import Path
 import shutil
@@ -27,10 +29,14 @@ import sys
 from dotenv import load_dotenv
 from prefect import flow, get_run_logger, task
 
+from orchestration.status import SCRAPE_SUMMARY_PATH
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TRANSFORM_DIR = PROJECT_ROOT / "transform"
 PYTHON = sys.executable
 DBT = str(Path(sys.executable).parent / "dbt")
+
+SUMMARY_PREFIX = "SCRAPE_SUMMARY "
 
 load_dotenv(PROJECT_ROOT / ".env")
 
@@ -50,7 +56,7 @@ def _tail(text: str, limit: int = _MAX_LOG_CHARS) -> str:
     return f"[… {dropped:,} earlier characters omitted …]\n{text[-limit:]}"
 
 
-def _run(cmd: list[str], cwd: Path, extra_env: dict[str, str] | None = None) -> None:
+def _run(cmd: list[str], cwd: Path, extra_env: dict[str, str] | None = None) -> str:
     logger = get_run_logger()
     logger.info("$ %s", " ".join(cmd))
 
@@ -62,6 +68,31 @@ def _run(cmd: list[str], cwd: Path, extra_env: dict[str, str] | None = None) -> 
     if result.returncode != 0:
         logger.error(_tail(result.stderr))
         raise RuntimeError(f"Command failed (exit {result.returncode}): {' '.join(cmd)}")
+    return result.stdout or ""
+
+
+def parse_scrape_summary(stdout: str) -> list[dict]:
+    """The SCRAPE_SUMMARY JSON lines run_extraction.py prints."""
+    out = []
+    for line in stdout.splitlines():
+        if line.startswith(SUMMARY_PREFIX):
+            try:
+                out.append(json.loads(line[len(SUMMARY_PREFIX):]))
+            except json.JSONDecodeError:
+                continue
+    return out
+
+
+def rotated_operations(operations: list[str], iso_week: int) -> list[str]:
+    """
+    Rotate the scrape order by ISO week. After about a dozen pages the portal
+    blocks the next request, so whichever operation goes second starves; a fixed
+    order starved the same one every week. Deterministic: a week is reproducible.
+    """
+    if not operations:
+        return []
+    k = iso_week % len(operations)
+    return operations[k:] + operations[:k]
 
 
 @task(name="ingest-ine", retries=2, retry_delay_seconds=[15, 45], log_prints=True)
@@ -93,10 +124,12 @@ SCRAPE_OPERATIONS = [
 
 
 @task(name="extract-listings", retries=2, retry_delay_seconds=[15, 45], log_prints=True)
-def extract_listings() -> None:
+def extract_listings() -> list[dict]:
     """Scrape the configured source × cities × operations into raw.*."""
-    for operation in SCRAPE_OPERATIONS:
-        _run(
+    summaries: list[dict] = []
+    week = datetime.now(tz=UTC).isocalendar().week
+    for operation in rotated_operations(SCRAPE_OPERATIONS, week):
+        stdout = _run(
             [
                 PYTHON, "extraction/run_extraction.py",
                 "--source", SCRAPE_SOURCE,
@@ -105,6 +138,8 @@ def extract_listings() -> None:
             ],
             cwd=PROJECT_ROOT,
         )
+        summaries.extend(parse_scrape_summary(stdout))
+    return summaries
 
 
 @task(name="dbt-build", retries=1, retry_delay_seconds=10, log_prints=True)
@@ -165,8 +200,14 @@ def run_pipeline(dbt_target: str = "prod", scrape: bool | None = None) -> None:
             SCRAPE_SOURCE, SCRAPE_CITIES, SCRAPE_OPERATIONS,
             25 * len(SCRAPE_CITIES.split(",")) * len(SCRAPE_OPERATIONS),
         )
-        extract_listings()
+        SCRAPE_SUMMARY_PATH.unlink(missing_ok=True)  # never report a previous run's scrape
+        summaries = extract_listings()
+        for rec in summaries:
+            logger.info("Scrape coverage: %s", json.dumps(rec))
+        # Visibility, not failure: a half-empty scrape still gets its dbt build.
+        SCRAPE_SUMMARY_PATH.write_text(json.dumps(summaries) + "\n")
     else:
+        SCRAPE_SUMMARY_PATH.unlink(missing_ok=True)
         logger.info(
             "Scrapfly disabled (SCRAPFLY_ENABLED != true) — skipping listing scrape. "
             "Refreshing INE market context + rebuilding dbt only."

@@ -65,6 +65,7 @@ class IdealistaScraper(AbstractScraper):
             page_url = self._build_page_url(search_url, page, IDEALISTA_SORT)
             logger.info("[idealista] Fetching page %d → %s", page, page_url)
 
+            self.stats["pages_requested"] += 1
             try:
                 html = self._get_html(page_url)
             except CreditBudgetExhausted as exc:
@@ -75,9 +76,11 @@ class IdealistaScraper(AbstractScraper):
                 break
             except Exception as exc:
                 logger.warning("[idealista] Could not fetch page %d: %s", page, exc)
+                self.stats["pages_blocked"] += 1
                 break
 
             if self._is_blocked(html):
+                self.stats["pages_blocked"] += 1
                 logger.error(
                     "[idealista] Anti-bot page detected. Set SCRAPFLY_ENABLED=true in .env."
                 )
@@ -89,6 +92,7 @@ class IdealistaScraper(AbstractScraper):
             if not cards:
                 break
 
+            self.stats["pages_with_cards"] += 1
             for card in cards:
                 yield card
                 yielded += 1
@@ -198,9 +202,16 @@ class IdealistaScraper(AbstractScraper):
     @staticmethod
     def _extract_size(details: list[str]) -> float | None:
         for t in details:
-            m = re.search(r"(\d+(?:[,\.]\d+)?)\s*m[²2]", t, re.IGNORECASE)
+            # "." is the Spanish thousands separator: "1.674 m²" is 1674. A dot
+            # followed by exactly three digits is thousands; "," is the decimal.
+            m = re.search(
+                r"(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[,.]\d+)?)\s*m[²2]", t, re.IGNORECASE
+            )
             if m:
-                return float(m.group(1).replace(",", "."))
+                num = m.group(1)
+                if re.match(r"\d{1,3}(?:\.\d{3})+(?:,|$)", num):
+                    num = num.replace(".", "")
+                return float(num.replace(",", "."))
         return None
 
     @staticmethod

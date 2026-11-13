@@ -41,3 +41,5 @@ Thumbs.db
 data/
 *.duckdb
 debug_output/
+# Per-run scrape summary, passed from the flow to orchestration.status
+.scrape_summary.json

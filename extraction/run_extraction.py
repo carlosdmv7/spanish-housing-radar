@@ -23,6 +23,7 @@ VSCode F5: uses .vscode/launch.json → "Run Extraction (Madrid dry-run)"
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 from pathlib import Path
 import sys
 
@@ -48,6 +49,22 @@ SCRAPER_REGISTRY: dict[str, type] = {
 }
 VALID_SOURCES = list(SCRAPER_REGISTRY.keys())
 VALID_OPERATIONS = ["sale", "rent"]
+
+SUMMARY_PREFIX = "SCRAPE_SUMMARY "
+
+
+def summarise_coverage(per_job: list[tuple[str, dict[str, int]]]) -> list[dict]:
+    """Fold per-job page stats into one record per operation."""
+    out: dict[str, dict] = {}
+    for op, st in per_job:
+        rec = out.setdefault(op, {
+            "operation": op, "pages_requested": 0, "pages_with_cards": 0,
+            "pages_blocked": 0, "listings": 0,
+        })
+        for k in ("pages_requested", "pages_with_cards", "pages_blocked", "listings"):
+            rec[k] += st.get(k, 0)
+    return list(out.values())
+
 
 app = typer.Typer(pretty_exceptions_enable=False, add_completion=False)
 
@@ -136,6 +153,7 @@ def main(
     run_id = datetime.now(tz=UTC).strftime("%Y-%m-%d_%H:%M:%S")
     total_rows = 0
     failed_jobs: list[tuple[str, str, str]] = []
+    coverage: list[tuple[str, dict[str, int]]] = []
 
     logger.info("=" * 65)
     logger.info("Run ID   : %s", run_id)
@@ -152,6 +170,7 @@ def main(
 
             try:
                 listings = scraper.scrape(operation=op)
+                coverage.append((op, dict(scraper.stats)))
             except Exception as exc:
                 logger.error("Job failed (source=%s city=%s op=%s): %s", src, cty, op, exc)
                 failed_jobs.append((src, cty, op))
@@ -178,6 +197,9 @@ def main(
     else:
         logger.info("All jobs completed successfully.")
     logger.info("Next step: cd transform && dbt run")
+    # One machine-readable line per operation on stdout, for the flow to read.
+    for rec in summarise_coverage(coverage):
+        print(SUMMARY_PREFIX + json.dumps(rec), flush=True)
 
     if failed_jobs:
         raise typer.Exit(1)
