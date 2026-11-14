@@ -55,19 +55,21 @@ jobs:
           # Listing scrape runs only when this repo variable is 'true'. Until then
           # the run refreshes INE + dbt only.
           SCRAPFLY_ENABLED: ${{ vars.SCRAPFLY_ENABLED || 'false' }}
-          # Scrapfly bills a flat 25 credits per search page, so the free monthly
-          # allowance is 40 pages. These bound what one scheduled run may spend:
-          # València, sale + rent, 4 pages each = 200 credits, roughly one weekly
-          # run inside a 1 000-credit month with room for an ad-hoc scrape.
-          SCRAPE_CITIES: ${{ vars.SCRAPE_CITIES || 'valencia' }}
-          SCRAPE_OPERATIONS: ${{ vars.SCRAPE_OPERATIONS || 'sale,rent' }}
-          IDEALISTA_MAX_SEARCH_PAGES: ${{ vars.IDEALISTA_MAX_SEARCH_PAGES || '4' }}
-          IDEALISTA_MAX_LISTINGS: ${{ vars.IDEALISTA_MAX_LISTINGS || '150' }}
-          # The scraper enforces this ceiling per *process*, and the flow starts one
-          # process per operation — so this is 125 per operation, not 125 per run.
-          # Two operations puts the hard stop at 250 for the whole run, above the
-          # 200 the settings above should cost and below anything that would hurt.
-          SCRAPFLY_CREDIT_BUDGET: ${{ vars.SCRAPFLY_CREDIT_BUDGET || '125' }}
+          # The scrape plan, target:operation:pages (shared/scrape_plan.py).
+          # Scrapfly bills 30 credits per search page (measured 2026-11-14; it
+          # was 25), so the free 1 000-credit month is ~33 pages. Default plan:
+          #   l'Horta Nord + Camp de Túria area search, sale, 5 pages
+          #   València sale 1 + rent 1
+          #   = 7 pages ≈ 210 credits a run; 4 Mondays ≈ 840 a month. In a
+          #   5-Monday month the last run stops early at the quota.
+          SCRAPE_TARGETS: ${{ vars.SCRAPE_TARGETS || 'horta-nord-camp-turia:sale:5,valencia:sale:1,valencia:rent:1' }}
+          # A per-process cap on cards; pages are capped by the plan above.
+          IDEALISTA_MAX_LISTINGS: ${{ vars.IDEALISTA_MAX_LISTINGS || '300' }}
+          # The scraper enforces this ceiling per *process*, and the flow starts
+          # one process per target — so it is 150 per target (5 pages at 30), not
+          # 150 per run. The default plan's three targets cap the run at 450,
+          # above the ~210 it should cost and below a month's allowance.
+          SCRAPFLY_CREDIT_BUDGET: ${{ vars.SCRAPFLY_CREDIT_BUDGET || '150' }}
 
       # if: always() is the point of this step. A run that dies mid-pipeline is
       # exactly the run whose status is worth recording — otherwise the only

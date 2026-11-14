@@ -31,11 +31,11 @@ models:
           - accepted_values:
               values: [great_deal, good_deal, fair, overpriced, very_overpriced]
       - name: benchmark_level
-        description: The area carrying most of the benchmark's weight — the barrio when barrio_weight ≥ 0.5, else the district or city it is blended with.
+        description: The area carrying most of the benchmark's weight — the barrio when barrio_weight ≥ 0.5, else the district or city it is blended with. For a town (ADR-0013) the municipality when barrio_weight ≥ 0.5, else its comarca.
         tests:
           - not_null
           - accepted_values:
-              values: [neighbourhood, district, city]
+              values: [neighbourhood, district, city, municipality, comarca]
       - name: benchmark_comp_count
         tests:
           - dbt_utils.accepted_range:
@@ -44,7 +44,9 @@ models:
         description: >
           How much of the benchmark is the barrio's own median, n / (n + k); the
           rest is the parent area's (ADR-0011). 0 when the barrio has too few
-          listings or the data cannot tell barrios in a district apart.
+          listings or the data cannot tell barrios in a district apart. For a
+          town (ADR-0013) it is the municipality's weight against its comarca,
+          and barrio_n / barrio_median_ppsqm hold the municipality's figures.
         tests:
           - not_null
           - dbt_utils.accepted_range:
@@ -152,7 +154,7 @@ models:
         data_type: varchar
         tests:
           - accepted_values:
-              values: [neighbourhood, district, city]
+              values: [neighbourhood, district, city, municipality, comarca]
       - name: benchmark_comp_count
         data_type: bigint
       - name: low_confidence_flag

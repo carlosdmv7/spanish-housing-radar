@@ -20,6 +20,20 @@ GRAIN_WORDING: dict[str, tuple[str, str]] = {
     "neighbourhood": ("its own barrio", "Barrio benchmark"),
     "district": ("its district", "District benchmark"),
     "city": ("the whole city", "City benchmark"),
+    # Towns around València (ADR-0013): the town's own median pulled towards
+    # its comarca's, the same blend one level up.
+    "municipality": ("its own town", "Town benchmark"),
+    "comarca": ("its comarca", "Comarca benchmark"),
+}
+
+# The grains where a listing was scored mostly on its own small area: a barrio
+# in a city, the town itself in a comarca.
+OWN_AREA_LEVELS: tuple[str, ...] = ("neighbourhood", "municipality")
+
+# Short labels for the Deals table's "Scored vs" column.
+SCORED_VS: dict[str, str] = {
+    "neighbourhood": "Barrio", "district": "District", "city": "City",
+    "municipality": "Town", "comarca": "Comarca",
 }
 
 
@@ -39,11 +53,18 @@ def confidence_note(row: dict) -> str | None:
     comps = int(row.get("benchmark_comp_count") or 0)
 
     if row.get("low_confidence_flag"):
+        where = "across the comarca" if level == "comarca" else "city-wide"
         return (
-            f"**Low confidence** — only {comps} comparable listings city-wide, "
+            f"**Low confidence** — only {comps} comparable listings {where}, "
             "below the 8 this benchmark needs. Treat the score as a hint, not a verdict."
         )
-    if level != "neighbourhood":
+    if level == "comarca":
+        return (
+            "**Reduced confidence** — the score mostly reads its comarca: this town "
+            "has too few listings, or differs too little from its neighbours, to "
+            "carry the benchmark. It reads the area, not the town."
+        )
+    if level not in OWN_AREA_LEVELS:
         compared_to, _ = _grain_wording(level)
         return (
             f"**Reduced confidence** — the score mostly reads {compared_to}: this "

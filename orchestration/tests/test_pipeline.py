@@ -15,6 +15,7 @@ import pytest
 
 from orchestration.flows import pipeline as pipeline_mod
 from orchestration.flows.pipeline import parse_scrape_summary, rotated_operations, run_pipeline
+from shared.scrape_plan import DEFAULT_SCRAPE_TARGETS, parse_scrape_targets, total_pages
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -116,3 +117,35 @@ class TestScrapeCoverageWiring:
         with patch("orchestration.flows.pipeline.subprocess.run", side_effect=_ok_result):
             run_pipeline(scrape=False)
         assert not path.exists()
+
+
+class TestScrapeTargets:
+    def test_each_target_is_one_process_with_its_own_page_count(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(pipeline_mod, "SCRAPE_SUMMARY_PATH", tmp_path / "s.json")
+        monkeypatch.setattr(pipeline_mod, "SCRAPE_TARGETS", parse_scrape_targets(
+            "horta-nord-camp-turia:sale:5,valencia:sale:1,valencia:rent:1"))
+        with patch("orchestration.flows.pipeline.subprocess.run",
+                   side_effect=_ok_result) as mock_run:
+            run_pipeline(scrape=True)
+        calls = [c.args[0] for c in mock_run.call_args_list
+                 if "run_extraction.py" in " ".join(c.args[0])]
+        got = sorted((c[c.index("--cities") + 1], c[c.index("--operation") + 1],
+                      c[c.index("--max-pages") + 1]) for c in calls)
+        assert got == [("horta-nord-camp-turia", "sale", "5"),
+                       ("valencia", "rent", "1"), ("valencia", "sale", "1")]
+
+
+class TestScrapePlanParsing:
+    def test_default_plan_is_seven_pages(self):
+        plan = parse_scrape_targets(DEFAULT_SCRAPE_TARGETS)
+        assert total_pages(plan) == 7
+        assert plan[0].label == "horta-nord-camp-turia:sale"
+
+    @pytest.mark.parametrize("spec", ["valencia:sale", "valencia:buy:1", "valencia:sale:0",
+                                      "valencia:sale:x", ":sale:1"])
+    def test_malformed_targets_raise(self, spec):
+        with pytest.raises(ValueError):
+            parse_scrape_targets(spec)
+
+    def test_blank_items_and_case_are_tolerated(self):
+        assert [t.label for t in parse_scrape_targets(" Valencia:SALE:2 ,, ")] == ["valencia:sale"]

@@ -51,6 +51,13 @@ seeds:
       +column_types:
         lat: double
         lon: double
+    # Recreated on every build. A seed load otherwise truncates and refills the
+    # existing table with that table's columns, so a seed that gains a column
+    # (comarca, ADR-0013) fails on every warehouse that already holds it --
+    # CI's shared ci_* schemas and prod alike. Seeds are reference data; there
+    # is no history in them to protect.
+    ccaa_by_municipality:
+      +full_refresh: true
 
 models:
   spanish_housing_radar:

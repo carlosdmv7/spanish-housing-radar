@@ -25,11 +25,21 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+from typing import TypeVar
 
 from dotenv import load_dotenv
 from prefect import flow, get_run_logger, task
 
 from orchestration.status import SCRAPE_SUMMARY_PATH
+from shared.scrape_plan import (
+    CREDITS_PER_PAGE,
+    DEFAULT_SCRAPE_TARGETS,
+    ScrapeTarget,
+    parse_scrape_targets,
+    total_pages,
+)
+
+T = TypeVar("T")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TRANSFORM_DIR = PROJECT_ROOT / "transform"
@@ -83,11 +93,12 @@ def parse_scrape_summary(stdout: str) -> list[dict]:
     return out
 
 
-def rotated_operations(operations: list[str], iso_week: int) -> list[str]:
+def rotated_operations(operations: list[T], iso_week: int) -> list[T]:
     """
     Rotate the scrape order by ISO week. After about a dozen pages the portal
-    blocks the next request, so whichever operation goes second starves; a fixed
+    blocks the next request, so whichever target goes last starves; a fixed
     order starved the same one every week. Deterministic: a week is reproducible.
+    Named for what it first rotated; it now rotates scrape targets.
     """
     if not operations:
         return []
@@ -110,31 +121,28 @@ def ingest_ine() -> None:
 # four times over, and the first evidence would be a scraper that silently returns
 # nothing for three weeks out of four.
 #
-# So the scheduled scrape is scoped, and scoped narrowly on purpose: depth in one
-# city produces barrio-level benchmarks, while one page each across ten cities
-# produces city-level fallbacks nobody can act on. Widen it by setting the env
-# vars, with the credit maths in front of you.
+# So the scheduled scrape is an explicit plan, target by target, each with its
+# own page count (shared/scrape_plan.py has the format and the credit maths).
+# The default spends most of the pages on the towns around València the owner is
+# buying in — one area search over l'Horta Nord + Camp de Túria — and keeps
+# València city ticking over with one page of sale and one of rent.
 SCRAPE_SOURCE = os.getenv("SCRAPE_SOURCE", "idealista")
-SCRAPE_CITIES = os.getenv("SCRAPE_CITIES", "valencia")
-SCRAPE_OPERATIONS = [
-    op.strip()
-    for op in os.getenv("SCRAPE_OPERATIONS", "sale,rent").split(",")
-    if op.strip()
-]
+SCRAPE_TARGETS = parse_scrape_targets(os.getenv("SCRAPE_TARGETS") or DEFAULT_SCRAPE_TARGETS)
 
 
 @task(name="extract-listings", retries=2, retry_delay_seconds=[15, 45], log_prints=True)
-def extract_listings() -> list[dict]:
-    """Scrape the configured source × cities × operations into raw.*."""
+def extract_listings(targets: list[ScrapeTarget] | None = None) -> list[dict]:
+    """Scrape each planned target into raw.*, one process per target."""
     summaries: list[dict] = []
     week = datetime.now(tz=UTC).isocalendar().week
-    for operation in rotated_operations(SCRAPE_OPERATIONS, week):
+    for t in rotated_operations(targets if targets is not None else SCRAPE_TARGETS, week):
         stdout = _run(
             [
                 PYTHON, "extraction/run_extraction.py",
                 "--source", SCRAPE_SOURCE,
-                "--cities", SCRAPE_CITIES,
-                "--operation", operation,
+                "--cities", t.target,
+                "--operation", t.operation,
+                "--max-pages", str(t.pages),
             ],
             cwd=PROJECT_ROOT,
         )
@@ -194,11 +202,11 @@ def run_pipeline(dbt_target: str = "prod", scrape: bool | None = None) -> None:
         scrape = os.getenv("SCRAPFLY_ENABLED", "false").lower() == "true"
 
     if scrape:
+        pages = total_pages(SCRAPE_TARGETS)
         logger.info(
-            "Scraping %s × [%s] × %s. At 25 credits per search page this run costs "
-            "≈%d credits per page of depth.",
-            SCRAPE_SOURCE, SCRAPE_CITIES, SCRAPE_OPERATIONS,
-            25 * len(SCRAPE_CITIES.split(",")) * len(SCRAPE_OPERATIONS),
+            "Scraping %s: %s — %d search pages, ≈%d credits at %d a page.",
+            SCRAPE_SOURCE, ", ".join(f"{t.label}×{t.pages}" for t in SCRAPE_TARGETS),
+            pages, pages * CREDITS_PER_PAGE, CREDITS_PER_PAGE,
         )
         SCRAPE_SUMMARY_PATH.unlink(missing_ok=True)  # never report a previous run's scrape
         summaries = extract_listings()

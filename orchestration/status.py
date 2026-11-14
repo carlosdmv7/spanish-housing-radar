@@ -207,8 +207,23 @@ def build_status() -> dict[str, Any]:
         "scrape_coverage": scrape_coverage(summary),
     }
     if summary is not None:
-        result["scrape"] = {r["operation"]: {k: v for k, v in r.items() if k != "operation"}
-                            for r in summary}
+        # `scrape` stays keyed by operation, as the portfolio reads it; with
+        # several targets per operation (ADR-0013) their counts are summed.
+        by_op: dict[str, dict[str, Any]] = {}
+        for r in summary:
+            rec = by_op.setdefault(r["operation"], {})
+            for k, v in r.items():
+                if k not in ("operation", "target") and isinstance(v, int | float):
+                    rec[k] = rec.get(k, 0) + v
+        result["scrape"] = by_op
+        # Additive: the same counts per target, so a starved target is visible
+        # even when another target of its operation filled up.
+        if any("target" in r for r in summary):
+            result["scrape_targets"] = {
+                f"{r.get('target', '?')}:{r['operation']}":
+                    {k: v for k, v in r.items() if k not in ("operation", "target")}
+                for r in summary
+            }
     return result
 
 
