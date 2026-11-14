@@ -36,7 +36,9 @@ from extraction.config import (
     IDEALISTA_MAX_SEARCH_PAGES,
     IDEALISTA_SELECTORS,
     IDEALISTA_SORT,
-    get_idealista_search_url,
+    IDEALISTA_ZONES,
+    comarca_municipalities,
+    get_idealista_target_url,
 )
 from extraction.scrapers.base import AbstractScraper, CreditBudgetExhausted
 
@@ -50,18 +52,86 @@ _MUNICIPALITY_BY_SEARCH_KEY: dict[str, str] = {
     "malaga": "málaga",
 }
 
+# Towns around València appear under a Castilian and a Valencian name, and
+# Idealista is not consistent about which. Every variant maps to the one name
+# the seed (transform/seeds/ccaa_by_municipality.csv) and so the warehouse use:
+# the official one, lower-cased. Without this, "alboraya" and "alboraia" would be
+# two towns, each with half the comparables.
+_MUNICIPALITY_ALIASES: dict[str, str] = {
+    "alboraya": "alboraia",
+    "alboraia/alboraya": "alboraia",
+    "almácera": "almàssera",
+    "almacera": "almàssera",
+    "almassera": "almàssera",
+    "bonrepós i mirambell": "bonrepòs i mirambell",
+    "bonrepos i mirambell": "bonrepòs i mirambell",
+    "bonrepòs": "bonrepòs i mirambell",
+    "burjasot": "burjassot",
+    "foyos": "foios",
+    "puzol": "puçol",
+    "pucol": "puçol",
+    "el puig": "el puig de santa maria",
+    "puig": "el puig de santa maria",
+    "puig de santa maria": "el puig de santa maria",
+    "el puig de santa maría": "el puig de santa maria",
+    "tabernes blanques": "tavernes blanques",
+    "liria": "llíria",
+    "lliria": "llíria",
+    "puebla de vallbona": "la pobla de vallbona",
+    "la puebla de vallbona": "la pobla de vallbona",
+    "pobla de vallbona": "la pobla de vallbona",
+    "la eliana": "l'eliana",
+    "eliana": "l'eliana",
+    "l´eliana": "l'eliana",
+    "betera": "bétera",
+    "ribarroja del turia": "riba-roja de túria",
+    "ribarroja del túria": "riba-roja de túria",
+    "riba-roja de turia": "riba-roja de túria",
+    "riba-roja": "riba-roja de túria",
+    "san antonio de benageber": "san antonio de benagéber",
+    "naquera": "náquera",
+    "nàquera": "náquera",
+    "villamarchante": "vilamarxant",
+    "benisano": "benisanó",
+    "rafelbuñol": "rafelbunyol",
+    "puebla de farnals": "la pobla de farnals",
+    "la puebla de farnals": "la pobla de farnals",
+    "pobla de farnals": "la pobla de farnals",
+    "gatova": "gátova",
+    "montcada": "moncada",
+    "masamagrell": "massamagrell",
+    "masalfasar": "massalfassar",
+    "albuixec": "albuixech",
+}
+
 
 class IdealistaScraper(AbstractScraper):
     source_name = "idealista"
 
+    def __init__(self, province: str, max_pages: int | None = None) -> None:
+        super().__init__(province)
+        # Pages this target may buy; the plan in SCRAPE_TARGETS sets it per target.
+        self.max_pages = max_pages or IDEALISTA_MAX_SEARCH_PAGES
+        # A zone is an area search: its cards are kept only when they name a
+        # municipality the seed puts in a comarca, and a card that names no place
+        # has no search key to fall back on, so it is dropped.
+        self.is_zone = self.province in IDEALISTA_ZONES
+        self._area_municipalities = comarca_municipalities() if self.is_zone else set()
+
+    @staticmethod
+    def _new_stats() -> dict[str, int]:
+        return {**AbstractScraper._new_stats(), "cards_out_of_area": 0}
+
     # ── AbstractScraper interface ─────────────────────────────────────────────
 
     def _paginate(self, operation: str = "sale") -> Iterator[dict]:
-        search_url = get_idealista_search_url(self.province, operation)
-        logger.info("[idealista] Starting: province=%s op=%s url=%s", self.province, operation, search_url)
+        search_url = get_idealista_target_url(self.province, operation)
+        logger.info("[idealista] Starting: target=%s op=%s pages=%d url=%s",
+                    self.province, operation, self.max_pages, search_url)
 
         yielded = 0
-        for page in range(1, IDEALISTA_MAX_SEARCH_PAGES + 1):
+        seen_ids: set[str] = set()
+        for page in range(1, self.max_pages + 1):
             page_url = self._build_page_url(search_url, page, IDEALISTA_SORT)
             logger.info("[idealista] Fetching page %d → %s", page, page_url)
 
@@ -93,6 +163,15 @@ class IdealistaScraper(AbstractScraper):
                 break
 
             self.stats["pages_with_cards"] += 1
+            # A page that repeats only listings already seen means pagination was
+            # ignored (an area search served page 1 again): every further page
+            # would cost credits for the same 30 cards.
+            fresh = [c for c in cards if c["source_id"] not in seen_ids]
+            seen_ids.update(c["source_id"] for c in cards)
+            if not fresh:
+                logger.warning("[idealista] Page %d repeats earlier cards — stopping", page)
+                break
+            cards = self._keep_in_area(fresh)
             for card in cards:
                 yield card
                 yielded += 1
@@ -104,6 +183,28 @@ class IdealistaScraper(AbstractScraper):
 
     def _parse_listing(self, raw: dict) -> dict:
         return raw  # search-card mode builds dicts directly
+
+    @staticmethod
+    def _canonical_municipality(muni: str) -> str:
+        """The seed's spelling: "pobla de farnals (la)" → "la pobla de farnals", aliases."""
+        m = re.fullmatch(r"(.+?)\s*\((la|el|els|les|l')\)", muni)
+        if m:
+            article = m.group(2)
+            muni = f"l'{m.group(1)}" if article == "l'" else f"{article} {m.group(1)}"
+        muni = muni.replace("´", "'").replace("’", "'")
+        return _MUNICIPALITY_ALIASES.get(muni, muni)
+
+    def _keep_in_area(self, cards: list[dict]) -> list[dict]:
+        """For a zone, only the cards in a seeded comarca; a city keeps all."""
+        if not self.is_zone:
+            return cards
+        kept = [c for c in cards if c["raw_municipality"] in self._area_municipalities]
+        dropped = len(cards) - len(kept)
+        if dropped:
+            self.stats["cards_out_of_area"] += dropped
+            logger.info("[idealista] %d card(s) outside the area's comarcas: %s", dropped,
+                        sorted({c["raw_municipality"] for c in cards} - self._area_municipalities))
+        return kept
 
     # ── Page → cards ──────────────────────────────────────────────────────────
 
@@ -148,8 +249,14 @@ class IdealistaScraper(AbstractScraper):
             # The fallback is the municipality as the warehouse spells it, not
             # the search key: a title that names no place would otherwise file
             # the flat under "valencia", a second city beside "valència".
-            searched = _MUNICIPALITY_BY_SEARCH_KEY.get(self.province, self.province)
+            # A zone has no single municipality to fall back on: a card whose
+            # title names no place cannot be filed anywhere, so it is dropped.
+            searched = (None if self.is_zone
+                        else _MUNICIPALITY_BY_SEARCH_KEY.get(self.province, self.province))
             muni, district, hood = self._parse_location(title, searched)
+            if muni is None:
+                return None
+            muni = self._canonical_municipality(muni)
 
             return {
                 "source_id":          sid,
@@ -459,7 +566,9 @@ class IdealistaScraper(AbstractScraper):
     _HOUSE_NUMBER = re.compile(r"^\d+\s*[-–]?\s*\w{0,3}$")
 
     @classmethod
-    def _parse_location(cls, title: str, fallback: str) -> tuple[str, str | None, str | None]:
+    def _parse_location(
+        cls, title: str, fallback: str | None
+    ) -> tuple[str | None, str | None, str | None]:
         """
         Idealista title templates vary, and street-style titles leak into the
         location chain in two different ways:
@@ -529,9 +638,17 @@ class IdealistaScraper(AbstractScraper):
 
     @staticmethod
     def _build_page_url(base: str, page: int, sort: str = "") -> str:
-        url = base if page == 1 else base.rstrip("/") + f"/pagina-{page}.htm"
-        # The same query string Idealista's own sort menu links to.
-        return f"{url}?ordenado-por={sort}" if sort else url
+        # An area search carries its polygon in the query string; the page goes
+        # in the path in front of it, the sort joins the query. City pages are
+        # "/pagina-2.htm" (Idealista's own pager links); area pages are
+        # "/pagina-2" with no suffix — not yet seen live, which is why _paginate
+        # stops on a page that only repeats cards it has already seen.
+        path, _, query = base.partition("?")
+        if page > 1:
+            suffix = "" if "/areas/" in path else ".htm"
+            path = path.rstrip("/") + f"/pagina-{page}{suffix}"
+        params = [p for p in (query, f"ordenado-por={sort}" if sort else "") if p]
+        return f"{path}?{'&'.join(params)}" if params else path
 
     @staticmethod
     def _is_blocked(html: str) -> bool:

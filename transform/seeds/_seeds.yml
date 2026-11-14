@@ -42,6 +42,19 @@ seeds:
         tests: [not_null, unique]
       - name: ine_region
         tests: [not_null]
+      - name: comarca
+        description: >
+          The comarca a town is benchmarked within (ADR-0013), lower-cased and without the article ("horta nord" for l'Horta Nord) so the value never needs quoting in SQL. Null
+          for the cities, which are benchmarked within themselves (ADR-0004/0011).
+          Official comarcas, with one deliberate exception: Paterna is officially
+          l'Horta Oest but is grouped with l'Horta Nord, the towns it borders and
+          is searched with — l'Horta Oest is not scraped, so on its own it would
+          be a comarca of one town and no benchmark at all.
+          The scraper reads this column too: an area search keeps only cards from
+          a municipality listed here (extraction/config.py).
+        tests:
+          - accepted_values:
+              values: [horta nord, camp de túria]
 
   - name: ine_districts
     description: >

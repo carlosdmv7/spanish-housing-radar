@@ -25,6 +25,19 @@
 -- `benchmark_level` names the area that carries most of the weight, and
 -- `barrio_weight` records the exact blend, so the app can say what a score was
 -- measured against.
+--
+-- Towns (ADR-0013). A municipality the ccaa_by_municipality seed puts in a
+-- comarca has no barrio seed and a handful of listings, so it gets the same
+-- rule one level up:
+--
+--     benchmark = w · municipality median + (1 − w) · comarca median,  w = n / (n + k)
+--
+-- with k estimated the same way — within-town variance over between-town
+-- variance within comarcas — per operation × property type, pooled across the
+-- comarcas. `parent_level` is then 'comarca', `benchmark_level` 'municipality'
+-- or 'comarca', and the barrio_* columns hold the municipality's own figures.
+-- Rows outside a comarca (València city and the other cities) take exactly the
+-- path they took before; every town expression is guarded by `town_comarca`.
 {{ config(materialized='table', schema='gold') }}
 
 {% set min_comps = var('min_comps_for_benchmark', 8) %}
@@ -132,8 +145,84 @@ shrinkage_k as (
     from shrinkage
 ),
 
+-- ── Towns: the municipality inside its comarca (ADR-0013) ────────────────────
+town_comarcas as (
+    select municipality, comarca
+    from {{ ref('ccaa_by_municipality') }}
+    where comarca is not null
+),
+
+town_listings as (
+    select l.*, c.comarca
+    from listings l
+    join town_comarcas c on l.municipality = c.municipality
+),
+
+comarca_stats as (
+    select
+        comarca, operation_type, property_type,
+        count(*)                          as n,
+        median(price_per_sqm)             as median_ppsqm,
+        stddev_pop(price_per_sqm)         as stddev_ppsqm
+    from town_listings
+    group by 1, 2, 3
+),
+
+-- The town's own figures; the same numbers city_stats holds for it, named for
+-- what they are here.
+town_stats as (
+    select
+        municipality, operation_type, property_type,
+        count(*)                          as n,
+        median(price_per_sqm)             as median_ppsqm,
+        stddev_pop(price_per_sqm)         as stddev_ppsqm
+    from town_listings
+    group by 1, 2, 3
+),
+
+-- k by the same method of moments as barrios in districts: towns with at least
+-- `min_barrio` listings, against their comarca's mean.
+town_moments as (
+    select
+        comarca, municipality, operation_type, property_type,
+        count(*)                          as n,
+        avg(price_per_sqm)                as mean_ppsqm,
+        var_samp(price_per_sqm)           as var_ppsqm
+    from town_listings
+    group by 1, 2, 3, 4
+    having count(*) >= {{ min_barrio }}
+),
+
+comarca_means as (
+    select comarca, operation_type, property_type, avg(price_per_sqm) as mean_ppsqm
+    from town_listings
+    group by 1, 2, 3
+),
+
+town_shrinkage as (
+    select
+        t.operation_type, t.property_type,
+        count(*)                                                    as n_towns,
+        sum((t.n - 1) * t.var_ppsqm) / nullif(sum(t.n - 1), 0)      as within_var,
+        avg(power(t.mean_ppsqm - c.mean_ppsqm, 2))
+            - avg(t.var_ppsqm / t.n)                                as between_var
+    from town_moments t
+    join comarca_means c
+      on t.comarca = c.comarca and t.operation_type = c.operation_type
+     and t.property_type = c.property_type
+    group by 1, 2
+),
+
+town_k as (
+    select
+        operation_type, property_type,
+        case when n_towns >= {{ min_barrios }} and between_var > 0
+             then within_var / between_var end                      as shrinkage_k
+    from town_shrinkage
+),
+
 -- ── Parent area, then the barrio's pull on it ────────────────────────────────
-parented as (
+parented_base as (
     select
         l.*,
         case when di.n >= {{ min_comps }} then 'district' else 'city' end  as parent_level,
@@ -170,13 +259,59 @@ parented as (
        and l.property_type = k.property_type
 ),
 
+-- Towns swap in comarca as the parent and the municipality as the child. A row
+-- outside a comarca has town_comarca null and keeps every value from above.
+parented as (
+    select
+        p.* replace (
+            case when tc.comarca is null then p.parent_level else 'comarca' end
+                                                                    as parent_level,
+            case when tc.comarca is null then p.parent_median_ppsqm else cs.median_ppsqm end
+                                                                    as parent_median_ppsqm,
+            case when tc.comarca is null then p.parent_stddev_ppsqm else cs.stddev_ppsqm end
+                                                                    as parent_stddev_ppsqm,
+            case when tc.comarca is null then p.parent_n else cs.n end
+                                                                    as parent_n,
+            case when tc.comarca is null then p.barrio_n else ts.n end
+                                                                    as barrio_n,
+            case when tc.comarca is null then p.barrio_median_ppsqm else ts.median_ppsqm end
+                                                                    as barrio_median_ppsqm,
+            case when tc.comarca is null then p.barrio_stddev_ppsqm else ts.stddev_ppsqm end
+                                                                    as barrio_stddev_ppsqm,
+            case when tc.comarca is null then p.shrinkage_k else tk.shrinkage_k end
+                                                                    as shrinkage_k,
+            case
+                when tc.comarca is null then p.barrio_weight
+                when ts.n >= {{ min_barrio }} and tk.shrinkage_k is not null
+                    then ts.n / (ts.n + tk.shrinkage_k)
+                else 0
+            end                                                     as barrio_weight
+        ),
+        tc.comarca                                                  as town_comarca
+    from parented_base p
+    left join town_comarcas tc on p.municipality = tc.municipality
+    left join comarca_stats cs
+        on tc.comarca = cs.comarca and p.operation_type = cs.operation_type
+       and p.property_type = cs.property_type
+    left join town_stats ts
+        on p.municipality = ts.municipality and p.operation_type = ts.operation_type
+       and p.property_type = ts.property_type
+    left join town_k tk
+        on tc.comarca is not null and p.operation_type = tk.operation_type
+       and p.property_type = tk.property_type
+),
+
 benched as (
     select
         * exclude (barrio_weight),
         round(barrio_weight, 3)                                             as barrio_weight,
-        -- Named after the area carrying most of the weight.
-        case when barrio_weight >= 0.5 then 'neighbourhood' else parent_level end
-                                                                            as benchmark_level,
+        -- Named after the area carrying most of the weight. For a town the
+        -- child area is the municipality, not a barrio.
+        case
+            when barrio_weight >= 0.5 and town_comarca is not null then 'municipality'
+            when barrio_weight >= 0.5 then 'neighbourhood'
+            else parent_level
+        end                                                                 as benchmark_level,
         barrio_weight * coalesce(barrio_median_ppsqm, 0)
             + (1 - barrio_weight) * parent_median_ppsqm                     as benchmark_median_ppsqm,
         -- The spread blends the same way, as variances.
@@ -208,8 +343,9 @@ scored as (
     select
         *,
         round(greatest(0, least(100, 50 - ppsqm_z_score * (50.0 / 3.0))), 1) as opportunity_score,
-        -- only the very coarse, thin city grain is flagged unreliable now
-        (benchmark_level = 'city' and benchmark_comp_count < {{ min_comps }})  as low_confidence_flag
+        -- only the very coarse, thin city (or comarca) grain is flagged unreliable
+        (benchmark_level in ('city', 'comarca') and benchmark_comp_count < {{ min_comps }})
+                                                                            as low_confidence_flag
     from with_zscore
 ),
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 
@@ -130,6 +131,98 @@ def get_idealista_search_url(city: str, operation: str) -> str:
         raise ValueError(f"Unknown operation {operation!r}. Use 'sale' or 'rent'.")
     city_slug = _IDEALISTA_SLUG_OVERRIDES.get(city, f"{city}-{city}")
     return f"{IDEALISTA_BASE_URL}/{op_slug}/{city_slug}/"
+
+
+# ── Zones: one search over an area no single municipality URL covers ─────────
+# Idealista has no listing URL per comarca. What it does have is the "draw your
+# area" search, /areas/<op>/?shape=((<polygon>)), and it links one from every
+# search page it serves (seen on the València-province results page captured on
+# 2026-11-14, debug_output/idealista_valencia_provincia_sale.html). The polygon
+# is a Google encoded polyline, precision 5, wrapped in "((…))".
+#
+# One polygon over l'Horta Nord + Camp de Túria costs what one municipality page
+# costs, and newest-first it returns whatever was just listed anywhere in it;
+# one URL per town would be ~40 towns × 25+ credits a week. The edge follows the
+# València city boundary and stays clear of Manises, Quart, Sagunt and the
+# Serranos; whatever still lands outside the area is dropped by the scraper
+# against the `comarca` column of transform/seeds/ccaa_by_municipality.csv.
+#
+# Vertices are (lat, lon), clockwise from the coast at Alboraia.
+IDEALISTA_ZONES: dict[str, list[tuple[float, float]]] = {
+    "horta-nord-camp-turia": [
+        (39.497, -0.318),   # coast, Alboraia / Port Saplaya
+        (39.635, -0.265),   # coast, Puçol / Sagunt line
+        (39.655, -0.385),   # inland of Puçol, short of Segart
+        (39.760, -0.450),   # Serra, Sierra Calderona
+        (39.790, -0.530),   # Gátova / Marines
+        (39.720, -0.640),   # Olocau / Casinos
+        (39.700, -0.715),   # Casinos west
+        (39.640, -0.690),   # short of Pedralba
+        (39.570, -0.680),   # Vilamarxant west
+        (39.500, -0.640),   # Loriguilla, short of Cheste
+        (39.480, -0.560),   # Riba-roja south
+        (39.505, -0.480),   # Paterna, north of Manises
+        (39.497, -0.440),   # Paterna town, València boundary
+        (39.500, -0.415),   # Burjassot / Benimàmet
+        (39.497, -0.380),   # Tavernes Blanques / Orriols
+    ],
+}
+
+
+def encode_polyline(points: list[tuple[float, float]]) -> str:
+    """Google encoded polyline (precision 5), the format Idealista's shape= uses."""
+    out: list[str] = []
+    prev_lat = prev_lon = 0
+    for lat, lon in points:
+        ilat, ilon = round(lat * 1e5), round(lon * 1e5)
+        for delta in (ilat - prev_lat, ilon - prev_lon):
+            v = ~(delta << 1) if delta < 0 else delta << 1
+            while v >= 0x20:
+                out.append(chr((0x20 | (v & 0x1F)) + 63))
+                v >>= 5
+            out.append(chr(v + 63))
+        prev_lat, prev_lon = ilat, ilon
+    return "".join(out)
+
+
+def get_idealista_zone_url(zone: str, operation: str) -> str:
+    """
+    The /areas/ search for a polygon in IDEALISTA_ZONES.
+
+    The shape value is percent-encoded twice, exactly as Idealista's own links
+    carry it ("%2528%2528…" for "(("): its front end decodes it once more.
+    """
+    op_slug = _IDEALISTA_OP_SLUGS.get(operation)
+    if not op_slug:
+        raise ValueError(f"Unknown operation {operation!r}. Use 'sale' or 'rent'.")
+    shape = "((" + encode_polyline(IDEALISTA_ZONES[zone]) + "))"
+    return f"{IDEALISTA_BASE_URL}/areas/{op_slug}/?shape={quote(quote(shape, safe=''), safe='')}"
+
+
+def get_idealista_target_url(target: str, operation: str) -> str:
+    """A zone key → its polygon search; anything else is a city slug."""
+    if target in IDEALISTA_ZONES:
+        return get_idealista_zone_url(target, operation)
+    return get_idealista_search_url(target, operation)
+
+
+# The scrape plan (which targets, how many pages each) is SCRAPE_TARGETS, parsed
+# in shared/scrape_plan.py so the flow can read it without this module's
+# MotherDuck settings.
+
+# The comarca each municipality belongs to, from the same seed dbt reads — one
+# list, so the scraper cannot keep a town the warehouse will reject.
+SEED_MUNICIPALITIES_CSV = (
+    Path(__file__).parent.parent / "transform" / "seeds" / "ccaa_by_municipality.csv"
+)
+
+
+def comarca_municipalities() -> set[str]:
+    """Municipalities the seed assigns a comarca to (the towns, not the cities)."""
+    import csv
+
+    with SEED_MUNICIPALITIES_CSV.open(encoding="utf-8") as fh:
+        return {r["municipality"] for r in csv.DictReader(fh) if r.get("comarca")}
 
 
 # CSS selectors for Idealista search result pages (verified 2026).

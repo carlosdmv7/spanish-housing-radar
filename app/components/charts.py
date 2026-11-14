@@ -480,7 +480,8 @@ def bar_benchmark_grain(counts: pd.DataFrame) -> alt.LayerChart:
     be estimated from bar lengths.
     """
     names = {"neighbourhood": "Mostly its barrio", "district": "Mostly its district",
-             "city": "Mostly the city"}
+             "city": "Mostly the city", "municipality": "Mostly its town",
+             "comarca": "Mostly its comarca"}
     d = counts.assign(
         grain=counts["benchmark_level"].map(names),
         label=[f"{s:.0%} · {n:,}" for s, n in zip(counts["share"], counts["listings"],

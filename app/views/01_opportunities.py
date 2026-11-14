@@ -26,7 +26,7 @@ from components.charts import (
 )
 from components.filters import city_picker, load_municipalities
 from components.map_view import listings_map
-from components.provenance import GRAIN_WORDING, confidence_note
+from components.provenance import GRAIN_WORDING, OWN_AREA_LEVELS, SCORED_VS, confidence_note
 from config import DEAL_TIER_COLORS, DEAL_TIER_LABELS, PROPERTY_TYPE_LABELS
 from connection import query
 import pandas as pd
@@ -82,7 +82,7 @@ with c_price:
 with c_more, st.popover("More filters", width="stretch"):
     min_score = st.slider("Minimum score", 0, 100, 0, step=5)
     own_barrio_only = st.toggle(
-        "Only scored mostly on their own barrio",
+        "Only scored mostly on their own barrio or town",
         help="The strongest comparison. Off by default so nothing is hidden.",
     )
     motivated_only = st.toggle(
@@ -112,7 +112,7 @@ if max_price is not None:
     df = df[df["price_eur"] <= max_price]
 df = df[df["opportunity_score"] >= min_score]
 if own_barrio_only:
-    df = df[df["benchmark_level"] == "neighbourhood"]
+    df = df[df["benchmark_level"].isin(OWN_AREA_LEVELS)]
 if motivated_only:
     df = df[df["seller_motivation"].isin(["medium", "high"])]
 
@@ -130,11 +130,13 @@ m2.metric("Great deals", f"{int((df['deal_tier'] == 'great_deal').sum()):,}",
           help="Score 75+: well below what comparable flats ask.")
 m3.metric("Typical price", f"€{df['price_per_sqm'].median():,.0f}/m²"
           + ("/mo" if op == "rent" else ""))
-m4.metric("Scored mostly on their barrio",
-          f"{(df['benchmark_level'] == 'neighbourhood').mean():.0%}",
+m4.metric("Scored mostly on their barrio or town",
+          f"{df['benchmark_level'].isin(OWN_AREA_LEVELS).mean():.0%}",
           help="The barrio's own median carries at least half of the benchmark. The "
                "rest lean on their district or the city: the barrio has too few "
-               "listings, or differs too little from its district, to carry it.")
+               "listings, or differs too little from its district, to carry it. "
+               "For a town around València, read town for barrio and comarca for "
+               "district.")
 
 altair_chart(strip_deal_tiers(df))
 st.markdown(f":small[{tier_legend(df)}]")
@@ -157,8 +159,7 @@ with tab_rank:
         # table and 89 on the card beside it.
         opportunity_score=lambda d: d["opportunity_score"].round(),
         vs_area=lambda d: (d["price_per_sqm"] / d["neighborhood_median_ppsqm"] - 1) * 100,
-        compared=lambda d: d["benchmark_level"].map(
-            {"neighbourhood": "Barrio", "district": "District", "city": "City"}),
+        compared=lambda d: d["benchmark_level"].map(SCORED_VS),
     )
     left, right = st.columns([3, 2], gap="large")
     with left:
