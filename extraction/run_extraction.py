@@ -53,15 +53,18 @@ VALID_OPERATIONS = ["sale", "rent"]
 SUMMARY_PREFIX = "SCRAPE_SUMMARY "
 
 
-def summarise_coverage(per_job: list[tuple[str, dict[str, int]]]) -> list[dict]:
-    """Fold per-job page stats into one record per operation."""
-    out: dict[str, dict] = {}
-    for op, st in per_job:
-        rec = out.setdefault(op, {
-            "operation": op, "pages_requested": 0, "pages_with_cards": 0,
-            "pages_blocked": 0, "listings": 0,
+COVERAGE_KEYS = ("pages_requested", "pages_with_cards", "pages_blocked", "listings",
+                 "cards_out_of_area")
+
+
+def summarise_coverage(per_job: list[tuple[str, str, dict[str, int]]]) -> list[dict]:
+    """Fold per-job page stats into one record per target × operation."""
+    out: dict[tuple[str, str], dict] = {}
+    for target, op, st in per_job:
+        rec = out.setdefault((target, op), {
+            "target": target, "operation": op, **dict.fromkeys(COVERAGE_KEYS, 0),
         })
-        for k in ("pages_requested", "pages_with_cards", "pages_blocked", "listings"):
+        for k in COVERAGE_KEYS:
             rec[k] += st.get(k, 0)
     return list(out.values())
 
@@ -97,6 +100,10 @@ def main(
     operation: str = typer.Option(
         "sale", "--operation", "-o",
         help="'sale' or 'rent'  (ignored when --all is used)"
+    ),
+    max_pages: int | None = typer.Option(
+        None, "--max-pages",
+        help="Search pages per city/zone (Idealista). Default: IDEALISTA_MAX_SEARCH_PAGES.",
     ),
     # ── Misc ──────────────────────────────────────────────────────────────────
     dry_run: bool = typer.Option(
@@ -166,11 +173,12 @@ def main(
             logger.info("── Job %d/%d  source=%s  city=%s  op=%s ──", i, len(jobs), src, cty, op)
 
             scraper_cls = SCRAPER_REGISTRY[src]
-            scraper = scraper_cls(province=cty)
+            scraper = (scraper_cls(province=cty, max_pages=max_pages)
+                       if max_pages and src == "idealista" else scraper_cls(province=cty))
 
             try:
                 listings = scraper.scrape(operation=op)
-                coverage.append((op, dict(scraper.stats)))
+                coverage.append((cty, op, dict(scraper.stats)))
             except Exception as exc:
                 logger.error("Job failed (source=%s city=%s op=%s): %s", src, cty, op, exc)
                 failed_jobs.append((src, cty, op))
@@ -197,7 +205,7 @@ def main(
     else:
         logger.info("All jobs completed successfully.")
     logger.info("Next step: cd transform && dbt run")
-    # One machine-readable line per operation on stdout, for the flow to read.
+    # One machine-readable line per target × operation on stdout, for the flow.
     for rec in summarise_coverage(coverage):
         print(SUMMARY_PREFIX + json.dumps(rec), flush=True)
 

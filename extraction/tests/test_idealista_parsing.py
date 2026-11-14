@@ -435,8 +435,95 @@ class TestCoverageStats:
         s._get_html = lambda _url: next(pages)
         s._is_blocked = lambda html: html == "BLOCK"
         s._polite_sleep = lambda: None
-        s._parse_search_page = lambda _html, _op: [{"x": 1}]
+        s._parse_search_page = lambda _html, _op: [{"source_id": "1"}]
         list(s._paginate("sale"))
         assert s.stats == {
             "pages_requested": 2, "pages_with_cards": 1, "pages_blocked": 1, "listings": 0,
+            "cards_out_of_area": 0,
         }
+
+    def test_a_page_that_repeats_earlier_cards_stops_the_run(self, monkeypatch):
+        """An area search that ignores pagination must not buy page 1 five times."""
+        s = IdealistaScraper(province="valencia", max_pages=5)
+        fetched = []
+        s._get_html = lambda url: fetched.append(url) or "<html>ok</html>"
+        s._is_blocked = lambda _html: False
+        s._polite_sleep = lambda: None
+        s._parse_search_page = lambda _html, _op: [{"source_id": "1"}, {"source_id": "2"}]
+        assert len(list(s._paginate("sale"))) == 2
+        assert len(fetched) == 2
+
+
+# ── Zones: the l'Horta Nord + Camp de Túria area search (ADR-0013) ─────────────
+
+def _zone_card(sid: str, title: str) -> str:
+    return f"""
+<article class="item"><div class="item-info-container">
+  <a class="item-link" href="/inmueble/{sid}/" title="{title}">x</a>
+  <span class="item-price">250.000<span>€</span></span>
+  <div class="item-detail-char"><span class="item-detail">3 hab.</span>
+  <span class="item-detail">95 m²</span></div>
+</div></article>"""
+
+
+class TestZones:
+    def test_polyline_matches_the_reference_encoding(self):
+        from extraction.config import encode_polyline
+
+        # Google's documented example for the encoded-polyline format.
+        pts = [(38.5, -120.2), (40.7, -120.95), (43.252, -126.453)]
+        assert encode_polyline(pts) == "_p~iF~ps|U_ulLnnqC_mqNvxq`@"
+
+    def test_zone_url_has_idealista_shape_form(self):
+        from extraction.config import get_idealista_target_url
+
+        url = get_idealista_target_url("horta-nord-camp-turia", "sale")
+        assert url.startswith("https://www.idealista.com/areas/venta-viviendas/?shape=%2528%2528")
+        assert url.endswith("%2529%2529")
+        assert get_idealista_target_url("valencia", "rent").endswith(
+            "/alquiler-viviendas/valencia-valencia/")
+
+    def test_page_urls_for_city_and_area(self):
+        b = IdealistaScraper._build_page_url
+        city = "https://www.idealista.com/venta-viviendas/valencia-valencia/"
+        assert b(city, 1, "fecha-publicacion-desc") == city + "?ordenado-por=fecha-publicacion-desc"
+        assert b(city, 2, "fecha-publicacion-desc") == (
+            "https://www.idealista.com/venta-viviendas/valencia-valencia/pagina-2.htm"
+            "?ordenado-por=fecha-publicacion-desc")
+        area = "https://www.idealista.com/areas/venta-viviendas/?shape=%2528%2528abc%2529%2529"
+        assert b(area, 1, "") == area
+        assert b(area, 3, "fecha-publicacion-desc") == (
+            "https://www.idealista.com/areas/venta-viviendas/pagina-3"
+            "?shape=%2528%2528abc%2529%2529&ordenado-por=fecha-publicacion-desc")
+
+    @pytest.mark.parametrize(("raw", "canonical"), [
+        ("alboraya", "alboraia"), ("puzol", "puçol"), ("pobla de farnals (la)", "la pobla de farnals"),
+        ("eliana (l')", "l'eliana"), ("l´eliana", "l'eliana"), ("ribarroja del turia", "riba-roja de túria"),
+        ("montcada", "moncada"), ("valència", "valència"), ("godella", "godella"),
+    ])
+    def test_town_spellings_collapse_to_the_seed(self, raw, canonical):
+        assert IdealistaScraper._canonical_municipality(raw) == canonical
+
+    def test_seed_names_every_canonical_alias_target(self):
+        from extraction.config import comarca_municipalities
+        from extraction.scrapers.idealista import _MUNICIPALITY_ALIASES
+
+        assert set(_MUNICIPALITY_ALIASES.values()) <= comarca_municipalities()
+
+    def test_area_search_keeps_only_seeded_towns(self):
+        s = IdealistaScraper(province="horta-nord-camp-turia")
+        html = "".join([
+            _zone_card("1", "Piso en Calle de Sant Pancrás, Zona Concordia, Burjassot"),
+            _zone_card("2", "Casa o chalet en La Presa - Collado - La Malla, Manises"),
+            _zone_card("3", "Chalet adosado en Alboraya"),
+            _zone_card("4", "Piso en"),            # names no place: no fallback in a zone
+        ])
+        cards = s._keep_in_area(s._parse_search_page(html, "sale"))
+        assert [(c["source_id"], c["raw_municipality"]) for c in cards] == [
+            ("1", "burjassot"), ("3", "alboraia")]
+        assert s.stats["cards_out_of_area"] == 1
+
+    def test_a_city_search_keeps_its_fallback(self):
+        s = IdealistaScraper(province="valencia")
+        cards = s._parse_search_page(_zone_card("9", "Piso en"), "sale")
+        assert cards[0]["raw_municipality"] == "valència"

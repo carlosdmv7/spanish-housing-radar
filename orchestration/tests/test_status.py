@@ -190,3 +190,30 @@ class TestScrapeCoverage:
         result = status.build_status()
         assert result["scrape_coverage"] == "skipped"
         assert "scrape" not in result
+
+
+class TestScrapePerTarget:
+    """ADR-0013: several targets per operation still report per operation, plus per target."""
+
+    SUMMARY = [
+        {"target": "horta-nord-camp-turia", "operation": "sale", "pages_requested": 5,
+         "pages_with_cards": 5, "pages_blocked": 0, "listings": 120, "cards_out_of_area": 9},
+        {"target": "valencia", "operation": "sale", "pages_requested": 1,
+         "pages_with_cards": 1, "pages_blocked": 0, "listings": 30, "cards_out_of_area": 0},
+        {"target": "valencia", "operation": "rent", "pages_requested": 1,
+         "pages_with_cards": 0, "pages_blocked": 1, "listings": 0, "cards_out_of_area": 0},
+    ]
+
+    @patch.object(status, "query_warehouse", return_value=(None, None))
+    @patch.object(status, "read_dbt_test_results", return_value=(None, None, None))
+    def test_operation_totals_and_target_detail(self, _t, _w, tmp_path, monkeypatch):
+        f = tmp_path / "s.json"
+        f.write_text(json.dumps(self.SUMMARY))
+        monkeypatch.setattr(status, "SCRAPE_SUMMARY_PATH", f)
+        result = status.build_status()
+        assert result["scrape"]["sale"]["listings"] == 150
+        assert result["scrape"]["sale"]["pages_requested"] == 6
+        assert "target" not in result["scrape"]["sale"]
+        assert result["scrape_targets"]["valencia:rent"]["pages_blocked"] == 1
+        assert result["scrape_targets"]["horta-nord-camp-turia:sale"]["cards_out_of_area"] == 9
+        assert result["scrape_coverage"] == "partial"

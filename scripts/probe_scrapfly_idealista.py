@@ -3,7 +3,10 @@ One-shot Scrapfly probe: fetch a single Idealista search page and report what
 came back — HTML length, the credits it cost, credits remaining, and whether the
 response is real listings or an anti-bot challenge.
 
-    python scripts/probe_scrapfly_idealista.py
+    python scripts/probe_scrapfly_idealista.py [URL] [OUTPUT_PATH]
+
+URL defaults to the Madrid sale search; OUTPUT_PATH to data/debug/. Pass a
+debug_output/ path to keep a capture for the parser tests (gitignored).
 
 **This spends real money.** Idealista needs Scrapfly's anti-bot protection,
 which is billed at a flat 25 credits per request — 2.5% of the 1,000-credit free
@@ -31,7 +34,7 @@ from extraction.config import (
     SCRAPFLY_RENDER_JS,
 )
 
-URL = "https://www.idealista.com/venta-viviendas/madrid-madrid/"
+URL = sys.argv[1] if len(sys.argv) > 1 else "https://www.idealista.com/venta-viviendas/madrid-madrid/"
 
 if not SCRAPFLY_API_KEY:
     raise RuntimeError("SCRAPFLY_API_KEY is missing from .env")
@@ -49,7 +52,7 @@ result = client.scrape(
 
 html = result.content or ""
 
-output_path = Path("data/debug/idealista_search_madrid_sale.html")
+output_path = Path(sys.argv[2] if len(sys.argv) > 2 else "data/debug/idealista_search_madrid_sale.html")
 output_path.parent.mkdir(parents=True, exist_ok=True)
 output_path.write_text(html, encoding="utf-8")
 

@@ -1,11 +1,50 @@
-municipality,ine_region
-madrid,"madrid, comunidad de"
-barcelona,cataluña
-valència,comunitat valenciana
-sevilla,andalucía
-málaga,andalucía
-bilbao,país vasco
-alicante,comunitat valenciana
-zaragoza,aragón
-palma,"balears, illes"
-valladolid,castilla y león
+municipality,ine_region,comarca
+madrid,"madrid, comunidad de",
+barcelona,cataluña,
+valència,comunitat valenciana,
+sevilla,andalucía,
+málaga,andalucía,
+bilbao,país vasco,
+alicante,comunitat valenciana,
+zaragoza,aragón,
+palma,"balears, illes",
+valladolid,castilla y león,
+albalat dels sorells,comunitat valenciana,horta nord
+alboraia,comunitat valenciana,horta nord
+albuixech,comunitat valenciana,horta nord
+alfara del patriarca,comunitat valenciana,horta nord
+almàssera,comunitat valenciana,horta nord
+bonrepòs i mirambell,comunitat valenciana,horta nord
+burjassot,comunitat valenciana,horta nord
+emperador,comunitat valenciana,horta nord
+foios,comunitat valenciana,horta nord
+godella,comunitat valenciana,horta nord
+massalfassar,comunitat valenciana,horta nord
+massamagrell,comunitat valenciana,horta nord
+meliana,comunitat valenciana,horta nord
+moncada,comunitat valenciana,horta nord
+museros,comunitat valenciana,horta nord
+paterna,comunitat valenciana,horta nord
+puçol,comunitat valenciana,horta nord
+el puig de santa maria,comunitat valenciana,horta nord
+la pobla de farnals,comunitat valenciana,horta nord
+rafelbunyol,comunitat valenciana,horta nord
+rocafort,comunitat valenciana,horta nord
+tavernes blanques,comunitat valenciana,horta nord
+vinalesa,comunitat valenciana,horta nord
+benaguasil,comunitat valenciana,camp de túria
+benisanó,comunitat valenciana,camp de túria
+bétera,comunitat valenciana,camp de túria
+casinos,comunitat valenciana,camp de túria
+l'eliana,comunitat valenciana,camp de túria
+gátova,comunitat valenciana,camp de túria
+llíria,comunitat valenciana,camp de túria
+loriguilla,comunitat valenciana,camp de túria
+marines,comunitat valenciana,camp de túria
+náquera,comunitat valenciana,camp de túria
+olocau,comunitat valenciana,camp de túria
+la pobla de vallbona,comunitat valenciana,camp de túria
+riba-roja de túria,comunitat valenciana,camp de túria
+san antonio de benagéber,comunitat valenciana,camp de túria
+serra,comunitat valenciana,camp de túria
+vilamarxant,comunitat valenciana,camp de túria

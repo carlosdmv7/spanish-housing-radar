@@ -329,6 +329,7 @@ and the alternatives I rejected and why.
 | [0010](docs/adr/0010-scrape-newest-first.md) | Scrape search pages **newest first** | Each week's credits buy new listings instead of re-reading the same ones; a listing is rarely seen twice, so days-on-market signals are rarer |
 | [0011](docs/adr/0011-empirical-bayes-barrio-benchmark.md) | **Empirical-Bayes** barrio weight, n / (n + k), with k estimated on every build | Fewer extreme scores, and rents scored against their district, because that is what the data supports |
 | [0012](docs/adr/0012-card-attributes-as-stated.md) | Keep the card's **floor, lift, exterior, garage and price-drop marker**, as the advertiser states them; NULL = unstated | History starts at the next scrape; every earlier snapshot is NULL, and the score does not use them yet |
+| [0013](docs/adr/0013-towns-benchmarked-within-their-comarca.md) | Towns of **l'Horta Nord + Camp de Túria** from one polygon search; each benchmarked against its **comarca**, pulled towards its own median by n / (n + k) | Towns are scoreable from week one; València's scores are unchanged; the area URL is verified on the first scheduled run |
 
 ---
 
@@ -366,22 +367,20 @@ Branching, commit conventions and how data changes reach production:
 
 ### What a scheduled run costs
 
-Worth stating plainly, because it is the constraint that shapes the whole project. Scrapfly bills a
-**flat 25 credits per search page** — Idealista requires its anti-bot protection, and that price does
-not move — so the free allowance of 1,000 credits a month is exactly **40 pages**.
+Worth stating plainly, because it is the constraint that shapes the whole project. Scrapfly bills
+**30 credits per search page** (25 until late 2026; measured again on 2026-11-14) — Idealista requires
+its anti-bot protection — so the free allowance of 1,000 credits a month is about **33 pages**.
 
-That arithmetic is why the scheduled scrape is scoped rather than broad. Four pages of València sale
-plus four of rent is 200 credits a run, ~800 a month. One page each across ten cities would cost the
-same and buy city-level fallbacks nobody can act on; depth in one city is what produces barrio-level
-benchmarks, which is the only grain the score is actually worth reading at.
+That arithmetic is why the scheduled scrape is an explicit plan rather than a city list. The default
+spends five pages on one area search over l'Horta Nord + Camp de Túria (the towns around València,
+newest first) and one page each of València sale and rent: 7 pages, ~210 credits a run, ~840 a month
+(ADR-0013). Per-town searches across ~40 towns would cost the month in a single run.
 
 | Repo variable | Default | What it does |
 |---|---|---|
 | `SCRAPFLY_ENABLED` | `false` | Listing scrape runs only when `true`. With it off, the weekly run still refreshes the free INE feeds and rebuilds dbt, so the warehouse and the app stay live at zero cost. |
-| `SCRAPE_CITIES` | `valencia` | Comma-separated. Each city multiplies the credit cost. |
-| `SCRAPE_OPERATIONS` | `sale,rent` | Each operation is a separate scraper process. |
-| `IDEALISTA_MAX_SEARCH_PAGES` | `4` | Pages per city × operation. 1 page ≈ 30 listings ≈ 25 credits. |
-| `SCRAPFLY_CREDIT_BUDGET` | `125` | Hard ceiling **per process**, so a misconfiguration stops itself rather than emptying the month. |
+| `SCRAPE_TARGETS` | `horta-nord-camp-turia:sale:5,valencia:sale:1,valencia:rent:1` | `target:operation:pages`, comma-separated. A target is a city slug or a zone in `extraction/config.py` (`IDEALISTA_ZONES`). Each target is its own scraper process. |
+| `SCRAPFLY_CREDIT_BUDGET` | `150` | Hard ceiling **per process**, so a misconfiguration stops itself rather than emptying the month. |
 
 ---
 
