@@ -1,10 +1,50 @@
 {
   "project": "spanish-housing-radar",
-  "generated_at": "2026-11-09T07:58:44Z",
-  "last_ingest_at": "2026-11-09T07:58:10Z",
-  "rows_in_warehouse": 1233,
-  "dbt_tests_passed": 162,
+  "generated_at": "2026-11-16T09:34:53Z",
+  "last_ingest_at": "2026-11-16T09:34:11Z",
+  "rows_in_warehouse": 1421,
+  "dbt_tests_passed": 174,
   "dbt_tests_warned": 0,
-  "dbt_tests_total": 162,
-  "last_run_conclusion": "success"
+  "dbt_tests_total": 174,
+  "last_run_conclusion": "success",
+  "scrape_coverage": "full",
+  "scrape": {
+    "rent": {
+      "pages_requested": 1,
+      "pages_with_cards": 1,
+      "pages_blocked": 0,
+      "listings": 30,
+      "cards_out_of_area": 0
+    },
+    "sale": {
+      "pages_requested": 6,
+      "pages_with_cards": 6,
+      "pages_blocked": 0,
+      "listings": 166,
+      "cards_out_of_area": 13
+    }
+  },
+  "scrape_targets": {
+    "valencia:rent": {
+      "pages_requested": 1,
+      "pages_with_cards": 1,
+      "pages_blocked": 0,
+      "listings": 30,
+      "cards_out_of_area": 0
+    },
+    "horta-nord-camp-turia:sale": {
+      "pages_requested": 5,
+      "pages_with_cards": 5,
+      "pages_blocked": 0,
+      "listings": 136,
+      "cards_out_of_area": 13
+    },
+    "valencia:sale": {
+      "pages_requested": 1,
+      "pages_with_cards": 1,
+      "pages_blocked": 0,
+      "listings": 30,
+      "cards_out_of_area": 0
+    }
+  }
 }
